@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # Mapping, roster, device identity, the driver request layouts and a real pipe round trip.
+      # The HidHide test is ignored here: it needs the driver.
+      - name: Tests
+        run: cargo test --workspace
+      - name: Build
+        run: cargo build --workspace
+
+      # The runner has neither ViGEmBus nor HidHide: the engine must still start, report them
+      # missing and exit 0, and the window must open and draw.
+      - name: Smoke test, resident process
+        shell: pwsh
+        run: |
+          $p = Start-Process target\debug\open-controller.exe -ArgumentList '--smoke','--data-dir',"$env:RUNNER_TEMP\smoke" -PassThru -Wait -NoNewWindow
+          exit $p.ExitCode
+      - name: Smoke test, window
+        shell: pwsh
+        run: |
+          $p = Start-Process target\debug\open-controller-ui.exe -ArgumentList '--smoke' -PassThru -Wait -NoNewWindow
+          exit $p.ExitCode
+      - name: Smoke log
+        if: always()
+        shell: bash
+        run: cat "$RUNNER_TEMP/smoke/smoke.log" 2>/dev/null || echo "no smoke log"
