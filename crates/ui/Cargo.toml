@@ -1,0 +1,23 @@
+[package]
+name = "open-controller-ui"
+description = "Open Controller's window, a separate process that exists only while it is open"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "open-controller-ui"
+path = "src/main.rs"
+
+[dependencies]
+open-controller-core.workspace = true
+# GPUI is published by the gpui-kit maintainers as `gpui-pre-*` snapshots of Zed; the crate
+# names inside are still `gpui` and `gpui_platform`. Pinned exactly: its API moves with Zed.
+gpui = { package = "gpui-pre", version = "=0.3.7" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", features = ["font-kit"] }
+async-channel = "2"
+
+[build-dependencies]
+embed-resource = "3"

@@ -1,0 +1,32 @@
+[package]
+name = "open-controller"
+description = "Open Controller's resident process: the engine and the notification-area icon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "open-controller"
+path = "src/main.rs"
+
+[dependencies]
+open-controller-core.workspace = true
+crossbeam-channel.workspace = true
+dirs = "6"
+serde.workspace = true
+serde_json.workspace = true
+tray-icon = "0.26"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+embed-resource = "3"
