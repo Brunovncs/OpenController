@@ -71,7 +71,7 @@ jobs:
       - name: Tests
         run: cargo test --workspace
       - name: Build
-        run: cargo build --workspace --examples
+        run: cargo build --workspace --bins --examples
       - name: Smoke test, resident process
         run: target/debug/open-controller --smoke --data-dir "$RUNNER_TEMP/smoke"
       # The runner's kernel has uinput: the whole path, from SDL's virtual controller to the
