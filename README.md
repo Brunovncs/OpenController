@@ -421,8 +421,8 @@ Edge into the `.ico` files.
 ## Reporting a problem
 
 Problems, controllers that do not work and ideas are all welcome as
-[issues](https://github.com/Brunovncs/OpenController/issues), or by email to
-brunoviniciusrp.contato@gmail.com. What helps most to find a problem:
+[issues](https://github.com/Brunovncs/OpenController/issues), or through the contact form on the
+[website](https://opencontroller.com.br/#contact). What helps most to find a problem:
 
 - your system and its version (Windows 11, Ubuntu 24.04, macOS 15);
 - the exact controller model, and how it is connected (cable, Bluetooth or its receiver);
