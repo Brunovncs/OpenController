@@ -3,6 +3,13 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.6.0
+
+Pick the language in Settings, English or Portuguese. OpenController starts in English and keeps
+your choice across updates, so after updating it opens in English once until you pick again.
+Uninstalling now asks whether to delete your settings and controller profiles too; choose No to
+keep them for a future installation. Settings carry over.
+
 ## 0.5.0
 
 The name is now written as one word, OpenController, in the window, the installer and the
