@@ -49,11 +49,16 @@ pub fn signal(name: &str, what: &str) -> bool {
     }
 }
 
+/// Whether an instance holds the mutex, including one still starting up.
+pub fn running(name: &str) -> bool {
+    Handle::valid(unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, 0, object(name, "").as_ptr()) }).is_some()
+}
+
 /// Waits until the running instance has exited, up to `timeout`. True if it did.
 pub fn wait_gone(name: &str, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if Handle::valid(unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, 0, object(name, "").as_ptr()) }).is_none() {
+        if !running(name) {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));

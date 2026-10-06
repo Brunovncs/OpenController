@@ -75,11 +75,16 @@ pub fn signal(name: &str, what: &str) -> bool {
     UnixDatagram::unbound().and_then(|s| s.send_to(b"!", path(name, what))).is_ok()
 }
 
+/// Whether an instance holds the lock, including one still starting up.
+pub fn running(name: &str) -> bool {
+    try_lock(name).is_none()
+}
+
 /// Waits until the running instance has exited, up to `timeout`. True if it did.
 pub fn wait_gone(name: &str, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if try_lock(name).is_some() {
+        if !running(name) {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));

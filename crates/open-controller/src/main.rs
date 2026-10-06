@@ -181,8 +181,21 @@ fn main() {
     let args = parse_args();
     let data_dir = args.data_dir.clone().unwrap_or_else(settings::default_data_dir);
     if args.quit {
-        // For the uninstaller: ask the running instance to quit the clean way and wait for it.
-        let done = !instance::signal(APP_NAME, "quit") || instance::wait_gone(APP_NAME, Duration::from_secs(10));
+        // For the uninstaller: ask the running instance to quit the clean way and wait for it. A
+        // copy still starting up holds the lock before it listens for "quit", so keep asking.
+        let start = Instant::now();
+        let done = loop {
+            if !instance::running(APP_NAME) {
+                break true;
+            }
+            if instance::signal(APP_NAME, "quit") {
+                break instance::wait_gone(APP_NAME, Duration::from_secs(10));
+            }
+            if start.elapsed() > Duration::from_secs(10) {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
         std::process::exit(if done { 0 } else { 1 });
     }
     if args.restore {
