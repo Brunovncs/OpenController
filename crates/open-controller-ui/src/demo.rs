@@ -3,7 +3,7 @@
 
 use open_controller_core::binding::{Action, Chord, Step, XboxButton, modifier};
 use open_controller_core::device::{Brand, Link, Power};
-use open_controller_core::extras::{self, Family, Features, Hint};
+use open_controller_core::extras::{self, Family, Features};
 use open_controller_core::mapping::{PadState, axis, button};
 use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
@@ -69,7 +69,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     eightbitdo.features = Features { motion: true, rumble: true, ..Features::default() };
     eightbitdo.profiles = eightbitdo_profiles();
 
-    let mut edge = pad(PadKey::Slot(2), "DualSense Edge Wireless Controller", Brand::PlayStation, Family::DualSenseEdge, (0x054C, 0x0DF2));
+    let mut edge = pad(PadKey::Slot(2), "DualSense Wireless Controller", Brand::PlayStation, Family::DualSense, (0x054C, 0x0CE6));
     edge.links = vec![Link::Bluetooth];
     edge.power = Power::Charging(Some(45));
     edge.role = Role::Virtual { player: Some(1) };
@@ -104,9 +104,11 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     joycons.extras = vec![extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::LEFT_PADDLE2, extras::RIGHT_PADDLE2, extras::MISC1];
     joycons.features = Features { motion: true, rumble: true, player_lights: true, ..Features::default() };
 
-    let mut ds3 = pad(PadKey::Slot(6), "PS3 Controller", Brand::PlayStation, Family::DualShock3, (0x054C, 0x0268));
-    ds3.role = Role::Virtual { player: None };
-    ds3.features = Features { motion: true, rumble: true, player_lights: true, ..Features::default() };
+    let mut sn30 = pad(PadKey::Slot(6), "8BitDo SN30 Pro", Brand::EightBitDo, Family::EightBitDo, (0x2DC8, 0x6001));
+    sn30.links = vec![Link::Bluetooth];
+    sn30.power = Power::Battery(Some(70));
+    sn30.role = Role::Virtual { player: None };
+    sn30.features = Features { motion: true, rumble: true, ..Features::default() };
 
     let mut xbox = pad(PadKey::Device(7), "Xbox Series X Controller", Brand::Xbox, Family::Xbox, (0x045E, 0x0B13));
     xbox.links = vec![Link::Wireless];
@@ -122,15 +124,14 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     ds4.extras = vec![extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT, extras::TOUCH_TWO];
     ds4.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, ..Features::default() };
 
-    let mut xinput =
-        pad(PadKey::Device(8), "8BitDo Ultimate 2 Wireless Controller for PC", Brand::EightBitDo, Family::EightBitDoFour, (0x2DC8, 0x310B));
-    xinput.role = Role::Native { player: None };
-    xinput.store = None;
-    xinput.hidden = false;
-    xinput.hint = Some(Hint::EightBitDoDInput);
-    xinput.features = Features { rumble: true, ..Features::default() };
+    let mut pro = pad(PadKey::Slot(8), "DualSense Edge Wireless Controller", Brand::PlayStation, Family::DualSenseEdge, (0x054C, 0x0DF2));
+    pro.links = vec![Link::Usb];
+    pro.power = Power::Charged;
+    pro.role = Role::Virtual { player: None };
+    pro.extras = vec![extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT];
+    pro.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, player_lights: true, ..Features::default() };
 
-    let mut pads = vec![eightbitdo, edge, switch, joycons, ds3, xbox, ds4, xinput];
+    let mut pads = vec![eightbitdo, edge, switch, joycons, sn30, xbox, ds4, pro];
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
             p.profiles = edited.clone();

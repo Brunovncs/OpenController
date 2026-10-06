@@ -451,15 +451,12 @@ impl MainView {
 
     fn buttons_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
-        let drawing = card(&t).flex().flex_col().flex_none().overflow_hidden().child(
-            stage(&t)
-                .flex()
-                .justify_center()
-                .px(px(20.))
-                .pt(px(28.))
-                .pb(px(20.))
-                .child(art::controller(&pad.input, pad.art, pad.brand, 1.1, &t)),
-        );
+        let drawing = card(&t)
+            .flex()
+            .flex_col()
+            .flex_none()
+            .overflow_hidden()
+            .child(stage(&t).flex().justify_center().px(px(20.)).pt(px(28.)).pb(px(20.)).child(art::controller(pad, 1.1, &t)));
         let hint = pad.hint.map(|h| {
             div()
                 .flex()

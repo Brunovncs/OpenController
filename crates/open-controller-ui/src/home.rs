@@ -17,7 +17,7 @@ use open_controller_core::{PadKey, PadView, Role};
 
 const TILE_W: f32 = 248.;
 const TILE_H: f32 = 296.;
-const ART_SCALE: f32 = 0.66;
+const ART_SCALE: f32 = 0.74;
 
 pub fn link_name(t: &Text, l: Link) -> &'static str {
     match l {
@@ -137,9 +137,11 @@ impl MainView {
             .items_center()
             .justify_center()
             .h(px(184.))
+            // Clear of the player badge in the corner.
+            .pt(px(22.))
             .rounded_t(px(radius::TILE))
             .relative()
-            .child(div().when(away, |d| d.opacity(0.45)).child(art::controller(&pad.input, pad.art, pad.brand, ART_SCALE, &t)))
+            .child(div().when(away, |d| d.opacity(0.45)).child(art::controller(pad, ART_SCALE, &t)))
             .child(
                 div()
                     .absolute()
