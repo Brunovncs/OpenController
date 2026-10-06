@@ -116,6 +116,7 @@ fn main() {
     }
     let Instance::First { _mutex, show } = instance::claim(APP_NAME) else { return };
     let (tx, rx) = async_channel::unbounded::<Event>();
+    let (first_prefs, first_prefs_rx) = std::sync::mpsc::channel::<Prefs>();
 
     let pipe = connect(!smoke).map(Arc::new);
     if let Some(p) = pipe.clone() {
@@ -124,7 +125,13 @@ fn main() {
             .name("pipe-reader".into())
             .spawn(move || {
                 let mut reader = p.reader();
+                let mut first_prefs = Some(first_prefs);
                 while let Ok(msg) = reader.recv::<ToWindow>() {
+                    if let ToWindow::Prefs(p) = &msg
+                        && let Some(first) = first_prefs.take()
+                    {
+                        let _ = first.send(*p);
+                    }
                     if tx.send_blocking(Event::FromTray(msg)).is_err() {
                         return;
                     }
@@ -138,8 +145,11 @@ fn main() {
         let _ = show_tx.send_blocking(Event::Show);
     });
 
+    // So the window opens in the language picked, not in English first.
+    let prefs = first_prefs_rx.recv_timeout(Duration::from_millis(500)).unwrap_or_default();
+
     gpui_platform::application().run(move |cx: &mut App| {
-        let text = i18n::text();
+        let text = i18n::text(prefs.lang);
         let connected = pipe.is_some();
         let mut snapshot = Snapshot::default();
         let last_real = snapshot.clone();
@@ -148,7 +158,7 @@ fn main() {
         }
         let model = cx.new(|_| Model {
             snapshot,
-            prefs: Prefs::default(),
+            prefs,
             text,
             connected,
             pipe,
@@ -176,6 +186,7 @@ fn main() {
                     }),
                     Event::FromTray(ToWindow::Prefs(p)) => model.update(cx, |m, cx| {
                         m.prefs = p;
+                        m.text = i18n::text(p.lang);
                         cx.notify();
                     }),
                     // OpenController quit from the tray: the window goes with it, unless it is the

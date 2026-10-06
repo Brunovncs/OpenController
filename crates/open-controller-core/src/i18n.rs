@@ -1,5 +1,29 @@
-//! Interface text in English and Brazilian Portuguese, picked from the Windows language.
-//! Strings with `{}` take one value, filled in by [`fill`].
+//! Interface text in English and Brazilian Portuguese. English until the user picks another
+//! language in the settings, which keep the choice. Strings with `{}` take one value, filled in
+//! by [`fill`].
+
+use serde::{Deserialize, Serialize};
+
+/// A language the interface is written in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Lang {
+    #[default]
+    En,
+    Pt,
+}
+
+impl Lang {
+    pub const ALL: [Lang; 2] = [Lang::En, Lang::Pt];
+
+    /// Its name in itself, as language pickers show it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Lang::En => "English",
+            Lang::Pt => "Português",
+        }
+    }
+}
 
 pub struct Text {
     pub controllers: &'static str,
@@ -153,6 +177,7 @@ pub struct Text {
     pub update_failed: &'static str,
     pub check_updates: &'static str,
     pub check_updates_hint: &'static str,
+    pub language: &'static str,
     pub start_with_system: &'static str,
     pub start_with_system_hint: &'static str,
     pub hide_originals_hint_linux: &'static str,
@@ -367,6 +392,7 @@ pub const EN: Text = Text {
     update_failed: "The update could not be downloaded ({}).",
     check_updates: "Check for updates",
     check_updates_hint: "Asks GitHub for a newer version when this window opens. Nothing else is sent.",
+    language: "Language",
     start_with_system: "Start when you sign in",
     start_with_system_hint: "Runs in the background, without the window.",
     hide_originals_hint_linux: "Games see only the Xbox version, so nothing is pressed twice.",
@@ -581,6 +607,7 @@ pub const PT: Text = Text {
     update_failed: "Não foi possível baixar a atualização ({}).",
     check_updates: "Procurar atualizações",
     check_updates_hint: "Pergunta ao GitHub se há versão nova quando esta janela abre. Nada mais é enviado.",
+    language: "Idioma",
     start_with_system: "Iniciar ao entrar",
     start_with_system_hint: "Roda em segundo plano, sem a janela.",
     hide_originals_hint_linux: "Os jogos veem só a versão Xbox, então nada é apertado duas vezes.",
@@ -648,37 +675,16 @@ pub fn fill(template: &str, value: impl std::fmt::Display) -> String {
     template.replacen("{}", &value.to_string(), 1)
 }
 
-/// The text in the Windows display language: Portuguese or, for any other, English.
-/// `OPEN_CONTROLLER_LANG=en` or `pt` overrides it.
-pub fn text() -> &'static Text {
+/// The text in `lang`. `OPEN_CONTROLLER_LANG=en` or `pt` overrides it.
+pub fn text(lang: Lang) -> &'static Text {
     match std::env::var("OPEN_CONTROLLER_LANG").as_deref() {
         Ok("en") => &EN,
         Ok("pt") => &PT,
-        _ if portuguese() => &PT,
-        _ => &EN,
+        _ => match lang {
+            Lang::En => &EN,
+            Lang::Pt => &PT,
+        },
     }
-}
-
-#[cfg(windows)]
-fn portuguese() -> bool {
-    const LANG_PORTUGUESE: u16 = 0x16;
-    let lang = unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() };
-    lang & 0x3FF == LANG_PORTUGUESE
-}
-
-/// The first locale variable set, as the C library reads them.
-#[cfg(target_os = "linux")]
-fn portuguese() -> bool {
-    ["LC_ALL", "LC_MESSAGES", "LANG"]
-        .iter()
-        .find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()))
-        .is_some_and(|l| l.starts_with("pt"))
-}
-
-/// The first of the user's preferred languages: apps opened from the Finder have no `LANG`.
-#[cfg(target_os = "macos")]
-fn portuguese() -> bool {
-    objc2_foundation::NSLocale::preferredLanguages().firstObject().is_some_and(|l| l.to_string().starts_with("pt"))
 }
 
 #[cfg(test)]
@@ -689,5 +695,12 @@ mod tests {
     fn fill_replaces_the_placeholder() {
         assert_eq!(fill(EN.player, 2), "Player 2");
         assert_eq!(fill(PT.wait_ms, 50), "Esperar 50 ms");
+    }
+
+    #[test]
+    fn the_language_is_kept_by_name() {
+        assert_eq!(serde_json::to_string(&Lang::Pt).unwrap(), r#""pt""#);
+        assert_eq!(serde_json::from_str::<Lang>(r#""en""#).unwrap(), Lang::En);
+        assert_eq!(Lang::default(), Lang::En);
     }
 }

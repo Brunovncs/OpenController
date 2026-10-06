@@ -1,11 +1,11 @@
 //! The building blocks every screen uses: text styles, cards, buttons, chips, the toggle switch,
-//! keycaps, the player indicator and the battery.
+//! a row of choices, keycaps, the player indicator and the battery.
 
 use crate::theme::{DISPLAY_FONT, FONT, Theme, radius, text};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    Div, ElementId, FontWeight, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, Styled, div, linear_color_stop,
-    linear_gradient, px,
+    Context, Div, ElementId, FontWeight, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement,
+    Styled, div, linear_color_stop, linear_gradient, px,
 };
 
 pub fn caption(s: impl Into<SharedString>, color: Hsla) -> Div {
@@ -143,6 +143,39 @@ pub fn switch(on: bool, label_on: &'static str, label_off: &'static str, t: &The
         .when(!on, |d| d.border_1().border_color(t.text2))
         .child(div().size(px(12.)).rounded(px(6.)).bg(if on { t.on_accent } else { t.text2 }));
     div().flex().flex_none().items_center().gap(px(12.)).child(body(if on { label_on } else { label_off }, t.text2)).child(track)
+}
+
+/// A row of choices, one of them picked.
+pub fn segmented<T: Copy + PartialEq + 'static, V: 'static>(
+    id: &'static str,
+    choices: Vec<(T, SharedString)>,
+    picked: T,
+    t: &Theme,
+    cx: &mut Context<V>,
+    on_pick: impl Fn(&mut V, T, &mut Context<V>) + 'static,
+) -> Div {
+    let on_pick = std::rc::Rc::new(on_pick);
+    let mut d = div().flex().flex_wrap().gap(px(4.)).p(px(3.)).rounded(px(radius::CONTROL)).bg(t.control);
+    for (i, (value, label)) in choices.into_iter().enumerate() {
+        let on = value == picked;
+        let on_pick = on_pick.clone();
+        d = d.child(
+            div()
+                .id((id, i))
+                .flex()
+                .items_center()
+                .justify_center()
+                .min_w(px(56.))
+                .h(px(30.))
+                .px(px(10.))
+                .rounded(px(radius::CHIP))
+                .cursor_pointer()
+                .when(on, |d| d.bg(t.layer).border_1().border_color(t.stroke_strong))
+                .child(caption(label, if on { t.text } else { t.text2 }))
+                .on_click(cx.listener(move |this, _, _, cx| on_pick(this, value, cx))),
+        );
+    }
+    d
 }
 
 pub fn keycap(s: impl Into<SharedString>, t: &Theme) -> Div {

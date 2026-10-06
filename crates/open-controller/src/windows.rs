@@ -69,15 +69,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let Ok(mut s) = cell.try_borrow_mut() else { return false };
             let Some(s) = s.as_mut() else { return true };
             match msg - WM_APP {
-                1 => {
-                    let n = s.control.engine.pad_count();
+                1 | 2 => {
+                    let (n, prefs) = (s.control.engine.pad_count(), s.control.prefs());
                     if let Some(t) = s.tray.as_mut() {
-                        t.set_count(i18n::text(), n);
-                    }
-                }
-                2 => {
-                    if let Some(t) = &s.tray {
-                        t.sync(s.control.prefs());
+                        t.sync(prefs);
+                        t.set_count(prefs.lang, n);
                     }
                 }
                 3 => open_window(),
@@ -109,7 +105,8 @@ pub fn prepare() -> (Waker, MainLoop) {
 }
 
 pub fn run(control: &Arc<Control>, _: MainLoop, args: &Args) {
-    let tray = Tray::install(i18n::text(), control.prefs(), control.clone());
+    let prefs = control.prefs();
+    let tray = Tray::install(i18n::text(prefs.lang), prefs, control.clone());
     foreground::watch();
     STATE.with_borrow_mut(|s| *s = Some(MainState { control: control.clone(), tray }));
     if !args.minimized {

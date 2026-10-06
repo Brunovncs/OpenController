@@ -19,6 +19,7 @@ mod win;
 #[cfg(windows)]
 mod windows;
 
+use open_controller_core::i18n::Lang;
 use open_controller_core::instance::{self, Instance};
 use open_controller_core::ipc::{Prefs, ToTray};
 use open_controller_core::profile::{Edit, Profiles};
@@ -59,8 +60,9 @@ impl Control {
     }
 
     pub fn prefs(&self) -> Prefs {
-        let (hide, updates) = self.settings.lock().map(|s| (s.hide_originals, s.check_updates)).unwrap_or((true, true));
-        Prefs { hide_originals: hide, autostart: autostart::enabled(), check_updates: updates }
+        let (hide, updates, lang) =
+            self.settings.lock().map(|s| (s.hide_originals, s.check_updates, s.language)).unwrap_or((true, true, Lang::En));
+        Prefs { hide_originals: hide, autostart: autostart::enabled(), check_updates: updates, lang }
     }
 
     /// Changes a controller's profiles, saves them and returns them.
@@ -91,6 +93,12 @@ impl Control {
             ToTray::SetCheckUpdates(on) => {
                 if let Ok(mut s) = self.settings.lock() {
                     s.check_updates = on;
+                    s.save(&self.data_dir);
+                }
+            }
+            ToTray::SetLanguage(lang) => {
+                if let Ok(mut s) = self.settings.lock() {
+                    s.language = lang;
                     s.save(&self.data_dir);
                 }
             }

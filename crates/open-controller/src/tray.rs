@@ -2,7 +2,7 @@
 //! from it and closed without stopping anything.
 
 use crate::{Control, Msg};
-use open_controller_core::i18n::Text;
+use open_controller_core::i18n::{self, Lang, Text};
 use open_controller_core::ipc::{Prefs, ToTray};
 use std::sync::Arc;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -12,9 +12,12 @@ pub struct Tray {
     icon: TrayIcon,
     /// Whether the icon drawn is the one for a light taskbar.
     light: bool,
+    open: MenuItem,
     hide: CheckMenuItem,
     autostart: CheckMenuItem,
-    count: Option<usize>,
+    quit: MenuItem,
+    /// The tooltip's count, and the language it is written in.
+    count: Option<(usize, Lang)>,
 }
 
 impl Tray {
@@ -56,7 +59,7 @@ impl Tray {
             .with_menu_on_left_click(false)
             .build()
             .ok()?;
-        Some(Tray { icon, light, hide, autostart, count: None })
+        Some(Tray { icon, light, open, hide, autostart, quit, count: None })
     }
 
     /// Follows the taskbar between light and dark: a white icon disappears on a light one.
@@ -70,16 +73,23 @@ impl Tray {
         }
     }
 
+    /// The menu as the preferences have it, in their language.
     pub fn sync(&self, prefs: Prefs) {
+        let text = i18n::text(prefs.lang);
+        self.open.set_text(text.open);
+        self.hide.set_text(text.hide_originals);
+        self.autostart.set_text(text.start_with_windows);
+        self.quit.set_text(text.quit);
         self.hide.set_checked(prefs.hide_originals);
         self.autostart.set_checked(prefs.autostart);
     }
 
-    pub fn set_count(&mut self, text: &Text, n: usize) {
-        if self.count == Some(n) {
+    pub fn set_count(&mut self, lang: Lang, n: usize) {
+        if self.count == Some((n, lang)) {
             return;
         }
-        self.count = Some(n);
+        self.count = Some((n, lang));
+        let text = i18n::text(lang);
         let what = if n == 1 { text.controllers_one.to_string() } else { format!("{n} {}", text.controllers_many) };
         let _ = self.icon.set_tooltip(Some(format!("OpenController · {what}")));
     }

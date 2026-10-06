@@ -1,5 +1,6 @@
 //! Preferences, kept in `settings.json` in the app data folder.
 
+use open_controller_core::i18n::Lang;
 use open_controller_core::profile::Profiles;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -14,13 +15,15 @@ pub struct Settings {
     pub hide_originals: bool,
     /// Ask GitHub for a newer version when the window opens.
     pub check_updates: bool,
+    /// The interface's language; English until another is picked.
+    pub language: Lang,
     /// Each controller's profiles, by where its settings are kept.
     pub controllers: BTreeMap<String, Profiles>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { hide_originals: true, check_updates: true, controllers: BTreeMap::new() }
+        Settings { hide_originals: true, check_updates: true, language: Lang::En, controllers: BTreeMap::new() }
     }
 }
 

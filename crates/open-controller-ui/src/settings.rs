@@ -4,11 +4,11 @@
 use crate::requirements;
 use crate::theme::icon as glyph;
 use crate::ui::MainView;
-use crate::widgets::{Kind, body, button, caption, display, group, icon_button, row, section, switch};
+use crate::widgets::{Kind, body, button, caption, display, group, icon_button, row, section, segmented, switch};
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, Window, div, px};
 use open_controller_core::Snapshot;
-use open_controller_core::i18n::Text;
+use open_controller_core::i18n::{self, Lang, Text};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::platform::VIRTUAL_PADS;
 
@@ -21,6 +21,16 @@ fn drivers_line(snap: &Snapshot) -> String {
 }
 
 impl MainView {
+    /// Switches the window at once and asks the resident process to keep the choice.
+    fn set_language(&mut self, lang: Lang, cx: &mut Context<Self>) {
+        self.model.update(cx, |m, cx| {
+            m.prefs.lang = lang;
+            m.text = i18n::text(lang);
+            cx.notify();
+        });
+        self.send(ToTray::SetLanguage(lang), cx);
+    }
+
     pub fn render_settings(&mut self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let model = self.model.read(cx);
@@ -48,7 +58,15 @@ impl MainView {
         let options = group()
             .when(VIRTUAL_PADS, |g| g.child(toggle("hide", text.hide_originals, hide_hint, prefs.hide_originals, ToTray::SetHiding, cx)))
             .child(toggle("autostart", start_label, start_hint, prefs.autostart, ToTray::SetAutostart, cx))
-            .child(toggle("updates", text.check_updates, text.check_updates_hint, prefs.check_updates, ToTray::SetCheckUpdates, cx));
+            .child(toggle("updates", text.check_updates, text.check_updates_hint, prefs.check_updates, ToTray::SetCheckUpdates, cx))
+            .child(row(&t).child(div().flex_1().child(body(text.language, t.text))).child(segmented(
+                "language",
+                Lang::ALL.iter().map(|&l| (l, l.name().into())).collect(),
+                prefs.lang,
+                &t,
+                cx,
+                |this, lang, cx| this.set_language(lang, cx),
+            )));
 
         let about = row(&t)
             .child(

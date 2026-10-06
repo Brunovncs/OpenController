@@ -2,9 +2,9 @@
 //! that drift. Both edit the chosen profile and apply as they are changed.
 
 use crate::detail::{place_name, printed_name};
-use crate::theme::{Theme, radius};
+use crate::theme::Theme;
 use crate::ui::MainView;
-use crate::widgets::{body, caption, card, row, strong, switch};
+use crate::widgets::{self, body, caption, card, row, strong, switch};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px,
@@ -14,7 +14,7 @@ use open_controller_core::i18n::Text;
 use open_controller_core::mapping::button;
 use open_controller_core::profile::{Edit, Gyro, GyroMode, Sticks};
 
-/// A row of choices, one of them picked.
+/// A row of choices that edits the controller's profile.
 fn segmented<T: Copy + PartialEq + 'static>(
     id: &'static str,
     choices: Vec<(T, SharedString)>,
@@ -24,28 +24,7 @@ fn segmented<T: Copy + PartialEq + 'static>(
     key: open_controller_core::PadKey,
     cx: &mut Context<MainView>,
 ) -> Div {
-    let on_pick = std::rc::Rc::new(on_pick);
-    let mut d = div().flex().flex_wrap().gap(px(4.)).p(px(3.)).rounded(px(radius::CONTROL)).bg(t.control);
-    for (i, (value, label)) in choices.into_iter().enumerate() {
-        let on = value == picked;
-        let on_pick = on_pick.clone();
-        d = d.child(
-            div()
-                .id((id, i))
-                .flex()
-                .items_center()
-                .justify_center()
-                .min_w(px(56.))
-                .h(px(30.))
-                .px(px(10.))
-                .rounded(px(radius::CHIP))
-                .cursor_pointer()
-                .when(on, |d| d.bg(t.layer).border_1().border_color(t.stroke_strong))
-                .child(caption(label, if on { t.text } else { t.text2 }))
-                .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, on_pick(value), cx))),
-        );
-    }
-    d
+    widgets::segmented(id, choices, picked, t, cx, move |this, v, cx| this.edit_now(key, on_pick(v), cx))
 }
 
 fn setting(label: &'static str, t: &Theme, control: Div) -> Div {
