@@ -25,6 +25,7 @@ pub enum ToWindow {
 pub enum ToTray {
     SetHiding(bool),
     SetAutostart(bool),
+    SetCheckUpdates(bool),
     Identify(PadKey),
     PowerOff(PadKey),
     /// Changes the profiles of the controllers whose settings are kept under `store`.
@@ -41,6 +42,8 @@ pub enum ToTray {
 pub struct Prefs {
     pub hide_originals: bool,
     pub autostart: bool,
+    /// Ask GitHub for a newer version when the window opens.
+    pub check_updates: bool,
 }
 
 #[cfg(test)]
@@ -56,7 +59,7 @@ mod tests {
         let server = std::thread::spawn(move || {
             let pipe = Pipe::create_at(&server_name).expect("create");
             pipe.accept().expect("accept");
-            pipe.send(&ToWindow::Prefs(Prefs { hide_originals: true, autostart: false })).unwrap();
+            pipe.send(&ToWindow::Prefs(Prefs { hide_originals: true, autostart: false, check_updates: true })).unwrap();
             // A large message, split across several reads.
             let big = Snapshot { sdl_error: Some("x".repeat(100_000)), ..Snapshot::default() };
             pipe.send(&ToWindow::Snapshot(big)).unwrap();
@@ -73,7 +76,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         };
         let mut r = client.reader();
-        assert_eq!(r.recv::<ToWindow>().unwrap(), ToWindow::Prefs(Prefs { hide_originals: true, autostart: false }));
+        assert_eq!(r.recv::<ToWindow>().unwrap(), ToWindow::Prefs(Prefs { hide_originals: true, autostart: false, check_updates: true }));
         match r.recv::<ToWindow>().unwrap() {
             ToWindow::Snapshot(s) => assert_eq!(s.sdl_error.map(|e| e.len()), Some(100_000)),
             other => panic!("{other:?}"),

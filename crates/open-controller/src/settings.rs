@@ -12,13 +12,15 @@ const FILE_NAME: &str = "settings.json";
 pub struct Settings {
     /// Hide the original controllers from games while Open Controller runs (needs HidHide).
     pub hide_originals: bool,
+    /// Ask GitHub for a newer version when the window opens.
+    pub check_updates: bool,
     /// Each controller's profiles, by where its settings are kept.
     pub controllers: BTreeMap<String, Profiles>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { hide_originals: true, controllers: BTreeMap::new() }
+        Settings { hide_originals: true, check_updates: true, controllers: BTreeMap::new() }
     }
 }
 

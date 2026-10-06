@@ -88,6 +88,8 @@ pub struct MainView {
     pub installs: HashMap<Component, Install>,
     /// What Programs and Features says is installed, read when the settings open.
     pub installed: HashMap<Component, Option<String>>,
+    /// Whether a newer version is out, and what is being done about it.
+    pub update: crate::updates::Update,
     /// Open programs offered for a profile to switch on with, while the list is shown.
     pub picker: Option<Vec<String>>,
     /// The app's icon, in its version drawn for small sizes, for the bar on top.
@@ -100,6 +102,7 @@ pub struct MainView {
 impl MainView {
     pub fn new(model: Entity<Model>, window: &mut Window, cx: &mut Context<Self>) -> MainView {
         let observe = cx.observe(&model, |this, _, cx| {
+            this.maybe_check_updates(cx);
             this.follow_snapshot(cx);
             cx.notify();
         });
@@ -121,6 +124,7 @@ impl MainView {
             renaming: None,
             installs: HashMap::new(),
             installed: HashMap::new(),
+            update: Default::default(),
             picker: None,
             brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
             held: 0,
@@ -426,6 +430,7 @@ impl Render for MainView {
             .text_color(t.text)
             .font_family(FONT)
             .child(self.top_bar(cx))
+            .children(self.update_bar(cx))
             .child(
                 div()
                     .id("scroll")

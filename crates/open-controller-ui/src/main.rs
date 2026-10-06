@@ -15,6 +15,7 @@ mod settings;
 mod theme;
 mod tuning;
 mod ui;
+mod updates;
 mod widgets;
 
 use gpui::{
@@ -32,6 +33,8 @@ use std::time::Duration;
 use ui::MainView;
 
 const APP_NAME: &str = "io.github.brunovncs.open-controller.ui";
+/// The resident process's instance name, to wait for it to quit before an update.
+pub const RESIDENT: &str = "io.github.brunovncs.open-controller";
 
 /// What the window shows, kept up to date from the pipe.
 pub struct Model {

@@ -46,7 +46,8 @@ impl MainView {
         // Where no controller is made, none is hidden either.
         let options = group()
             .when(VIRTUAL_PADS, |g| g.child(toggle("hide", text.hide_originals, hide_hint, prefs.hide_originals, ToTray::SetHiding, cx)))
-            .child(toggle("autostart", start_label, start_hint, prefs.autostart, ToTray::SetAutostart, cx));
+            .child(toggle("autostart", start_label, start_hint, prefs.autostart, ToTray::SetAutostart, cx))
+            .child(toggle("updates", text.check_updates, text.check_updates_hint, prefs.check_updates, ToTray::SetCheckUpdates, cx));
 
         let about = row(&t)
             .child(

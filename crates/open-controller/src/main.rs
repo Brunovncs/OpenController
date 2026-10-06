@@ -59,8 +59,8 @@ impl Control {
     }
 
     pub fn prefs(&self) -> Prefs {
-        let hide = self.settings.lock().map(|s| s.hide_originals).unwrap_or(true);
-        Prefs { hide_originals: hide, autostart: autostart::enabled() }
+        let (hide, updates) = self.settings.lock().map(|s| (s.hide_originals, s.check_updates)).unwrap_or((true, true));
+        Prefs { hide_originals: hide, autostart: autostart::enabled(), check_updates: updates }
     }
 
     /// Changes a controller's profiles, saves them and returns them.
@@ -87,6 +87,12 @@ impl Control {
             }
             ToTray::SetAutostart(on) => {
                 autostart::set(on);
+            }
+            ToTray::SetCheckUpdates(on) => {
+                if let Ok(mut s) = self.settings.lock() {
+                    s.check_updates = on;
+                    s.save(&self.data_dir);
+                }
             }
             ToTray::Identify(key) => return self.engine.send(Command::Identify(key)),
             ToTray::PowerOff(key) => return self.engine.send(Command::PowerOff(key)),

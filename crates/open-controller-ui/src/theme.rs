@@ -39,6 +39,7 @@ pub mod icon {
     pub const LIGHT: &str = "\u{E781}";
     pub const BUTTONS: &str = "\u{E765}";
     pub const CHECK: &str = "\u{E73E}";
+    pub const CLOSE: &str = "\u{E711}";
     pub const EDIT: &str = "\u{E70F}";
     pub const OPEN: &str = "\u{E8A7}";
     pub const MOTION: &str = "\u{E7AD}";

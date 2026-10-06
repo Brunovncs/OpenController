@@ -24,6 +24,7 @@ pub mod keyboard;
 pub mod platform;
 pub mod rt;
 pub mod sdl;
+pub mod update;
 
 #[cfg(windows)]
 pub mod bluetooth;
