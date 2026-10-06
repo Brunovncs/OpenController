@@ -3,8 +3,10 @@
 #   packaging/package.sh linux 0.2.0 target/release
 #   packaging/package.sh macos 0.2.0 target/aarch64-apple-darwin/release arm64
 set -eu
-os=$1 version=$2 build=$3 arch=${4:-x64}
+os=$1 version=$2 arch=${4:-x64}
 root=$(cd "$(dirname "$0")/.." && pwd)
+# Absolute, since the packaging happens inside dist/.
+build=$(cd "$3" && pwd)
 mkdir -p "$root/dist"
 cd "$root/dist"
 
