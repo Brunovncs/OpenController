@@ -3,8 +3,8 @@
 ; It installs for the current user, without administrator rights, into the folder install.ps1
 ; used too, so it updates an existing installation in place whichever way it got there. Running
 ; copies are asked to quit first, which unplugs their virtual controllers and shows the hidden
-; ones again. Settings stay in %APPDATA%\io.github.brunovncs.open-controller across updates and
-; uninstalls.
+; ones again. Settings stay in %APPDATA%\io.github.brunovncs.open-controller across updates, and
+; the uninstaller asks whether to delete them.
 
 #ifndef Version
   #error Pass the version: /DVersion=x.y.z
@@ -20,7 +20,7 @@ AppName=OpenController
 AppVersion={#Version}
 AppVerName=OpenController {#Version}
 AppPublisher=Brunovncs
-AppPublisherURL=https://open-controller-site.vercel.app
+AppPublisherURL=https://opencontroller.com.br
 AppSupportURL=https://github.com/Brunovncs/OpenController/issues
 AppUpdatesURL=https://github.com/Brunovncs/OpenController/releases/latest
 VersionInfoVersion={#Version}.0
@@ -47,6 +47,10 @@ LicenseFile={#Root}\LICENSE
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "pt"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+
+[CustomMessages]
+en.RemoveData=Do you also want to delete your OpenController settings and controller profiles?%n%nChoose No to keep them for a future installation.
+pt.RemoveData=Deseja também apagar suas configurações e os perfis de controle do OpenController?%n%nEscolha Não para mantê-los para uma instalação futura.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -93,4 +97,18 @@ begin
     Exec(Exe, '--quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM open-controller-ui.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Result := '';
+end;
+
+// The settings stay unless the user asks to delete them; a silent uninstall keeps them.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Data: String;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    Data := ExpandConstant('{userappdata}\io.github.brunovncs.open-controller');
+    if DirExists(Data) and not UninstallSilent and
+      (MsgBox(CustomMessage('RemoveData'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
+      DelTree(Data, True, True, True);
+  end;
 end;
