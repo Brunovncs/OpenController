@@ -178,7 +178,9 @@ fn main() {
                         m.prefs = p;
                         cx.notify();
                     }),
-                    // Open Controller quit from the tray: the window goes with it.
+                    // Open Controller quit from the tray: the window goes with it, unless it is the
+                    // update that asked, which still has the installer to start.
+                    Event::TrayGone if updates::installing() => {}
                     Event::TrayGone => cx.update(|cx| cx.quit()),
                     Event::Show => {
                         let _ = window.update(cx, |_, w, _| w.activate_window());

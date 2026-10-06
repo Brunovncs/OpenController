@@ -11,6 +11,15 @@ use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
 use open_controller_core::i18n::fill;
 use open_controller_core::update::{self, Release};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set while "Update now" has asked the resident process to quit and is about to start the
+/// installer, so the window does not close with it.
+static INSTALLING: AtomicBool = AtomicBool::new(false);
+
+pub fn installing() -> bool {
+    INSTALLING.load(Ordering::SeqCst)
+}
 
 #[derive(Clone, Default, PartialEq)]
 // Only Windows installs updates itself, so only it works on one or fails.
@@ -67,6 +76,7 @@ impl MainView {
                     return;
                 }
             };
+            INSTALLING.store(true, Ordering::SeqCst);
             let _ = this.update(cx, |this, cx| this.send(open_controller_core::ipc::ToTray::Quit, cx));
             let started = cx
                 .background_executor()
@@ -78,6 +88,7 @@ impl MainView {
             let _ = this.update(cx, |this, cx| match started {
                 Ok(()) => cx.quit(),
                 Err(e) => {
+                    INSTALLING.store(false, Ordering::SeqCst);
                     this.update = Update::Failed(r, e);
                     cx.notify();
                 }
