@@ -1,6 +1,7 @@
 //! One controller: a header with its profiles, and a rail of what can be set for it. Buttons,
-//! with the drawing and its extra buttons and what each does; Light, for controllers with a
-//! light bar SDL can colour; Information, what it is and what games see.
+//! with the drawing and its extra buttons and what each does; Motion and Sticks (in `tuning.rs`);
+//! Light, for controllers with a light bar SDL can colour; Information, what it is and what games
+//! see.
 
 use crate::art;
 use crate::home::{links, power, status};
@@ -14,7 +15,8 @@ use gpui::{
 };
 use open_controller_core::binding::{self, Action, Chord, Step, XboxButton};
 use open_controller_core::device::Power;
-use open_controller_core::extras::{self, Family, Hint};
+use open_controller_core::extras::{self, Family, HANDHELD, Hint};
+use open_controller_core::handheld;
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::keyboard;
@@ -55,8 +57,27 @@ pub fn place_name(text: &Text, family: Family, b: u8) -> String {
         extras::Kind::Mic => text.mic.into(),
         extras::Kind::Share => text.share.into(),
         extras::Kind::Assistant => text.assistant.into(),
+        extras::Kind::TouchLeft => text.touch_left.into(),
+        extras::Kind::TouchRight => text.touch_right.into(),
+        extras::Kind::TouchTwo => text.touch_two.into(),
+        extras::Kind::Extra(_) if family == Family::Handheld => text.handheld_button.into(),
         extras::Kind::Extra(n) => fill(text.extra_n, n),
     }
+}
+
+/// The name printed on the button: SDL's families from the table, a handheld's from its machine.
+pub fn printed_name(family: Family, b: u8) -> Option<&'static str> {
+    if family == Family::Handheld
+        && let Some(i) = HANDHELD.iter().position(|&h| h == b)
+    {
+        return handheld::this_machine().and_then(|m| m.buttons.get(i)).map(|x| x.label);
+    }
+    extras::printed_name(family, b)
+}
+
+/// Whether games read this controller directly, so its buttons can only become keys and macros.
+pub fn native(pad: &PadView) -> bool {
+    matches!(pad.role, Role::Native { .. })
 }
 
 fn hint_text(text: &Text, h: Hint) -> &'static str {
@@ -70,6 +91,10 @@ fn hint_text(text: &Text, h: Hint) -> &'static str {
         Hint::FlydigiThirdParty => text.hint_flydigi,
         Hint::Switch2Unsupported => text.hint_switch2,
     }
+}
+
+pub fn profile_label(text: &Text, pad: &PadView, i: usize) -> String {
+    profile_name(text, pad.profiles.list.get(i).map_or("", |p| p.name.as_str()), i)
 }
 
 fn profile_name(text: &Text, name: &str, i: usize) -> String {
@@ -112,7 +137,7 @@ impl MainView {
         self.bind_now(key, button, Some(Action::Macro(steps)), cx);
     }
 
-    fn edit_now(&mut self, key: PadKey, edit: Edit, cx: &mut Context<Self>) {
+    pub(crate) fn edit_now(&mut self, key: PadKey, edit: Edit, cx: &mut Context<Self>) {
         if let Some(pad) = self.pad(key, cx) {
             self.edit_profiles(&pad, edit, cx);
         }
@@ -159,6 +184,12 @@ impl MainView {
             });
 
         let mut sections = vec![(Section::Buttons, glyph::BUTTONS, text.nav_buttons)];
+        if pad.features.motion && assignable && !native(pad) {
+            sections.push((Section::Motion, glyph::MOTION, text.nav_motion));
+        }
+        if assignable && !native(pad) {
+            sections.push((Section::Sticks, glyph::STICKS, text.nav_sticks));
+        }
         if pad.features.light_bar && assignable {
             sections.push((Section::Light, glyph::LIGHT, text.nav_light));
         }
@@ -189,6 +220,8 @@ impl MainView {
         let content = match current {
             Section::Buttons => self.buttons_section(pad, text, cx),
             Section::Light => self.light_section(pad, text, cx),
+            Section::Motion => self.motion_section(pad, text, cx),
+            Section::Sticks => self.sticks_section(pad, text, cx),
             Section::Info => self.info_section(pad, text),
         };
 
@@ -197,6 +230,21 @@ impl MainView {
             .flex_col()
             .child(header)
             .when(self.profile_menu && assignable, |d| d.child(self.profile_menu(pad, text, cx)))
+            .when(pad.in_use != pad.profiles.active, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(10.))
+                        .mb(px(16.))
+                        .px(px(14.))
+                        .py(px(10.))
+                        .rounded(px(radius::CARD))
+                        .bg(t.accent_soft)
+                        .child(icon(glyph::INFO, 14., t.accent))
+                        .child(body(fill(text.in_use_auto, profile_label(text, pad, pad.in_use)), t.text)),
+                )
+            })
             .child(div().flex().items_start().gap(px(24.)).child(rail).child(div().flex_1().min_w(px(0.)).child(content)))
             .into_any_element()
     }
@@ -313,6 +361,91 @@ impl MainView {
                         })))
                     }),
             )
+            .child(self.programs(pad, text, cx))
+            .into_any_element()
+    }
+
+    /// The programs that switch the chosen profile on, and the way to add one that is open.
+    fn programs(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
+        let t = self.theme;
+        let key = pad.key;
+        let i = pad.profiles.active;
+        let programs = pad.profiles.active().programs.clone();
+        let mut chips = div().flex().flex_wrap().gap(px(6.));
+        for (n, p) in programs.iter().enumerate() {
+            let name = p.clone();
+            chips = chips.child(
+                div()
+                    .id(("program", n))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .h(px(28.))
+                    .pl(px(10.))
+                    .pr(px(4.))
+                    .rounded(px(radius::CHIP))
+                    .bg(t.control)
+                    .child(caption(p.clone(), t.text))
+                    .child(icon_button(("unprogram", n), glyph::DELETE, &t).size(px(22.)).on_click(cx.listener(move |this, _, _, cx| {
+                        this.edit_now(key, Edit::RemoveProgram(i, name.clone()), cx);
+                    }))),
+            );
+        }
+        let picker = self.picker.clone().map(|open| {
+            let mut list = div().flex().flex_wrap().gap(px(6.));
+            if open.is_empty() {
+                list = list.child(caption(text.no_open_programs, t.text3));
+            }
+            for (n, p) in open.into_iter().enumerate() {
+                let name = p.clone();
+                list = list.child(
+                    div()
+                        .id(("open-program", n))
+                        .flex()
+                        .items_center()
+                        .h(px(28.))
+                        .px(px(10.))
+                        .rounded(px(radius::CHIP))
+                        .border_1()
+                        .border_color(t.stroke_strong)
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(t.control))
+                        .child(caption(p, t.text))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.picker = None;
+                            this.edit_now(key, Edit::AddProgram(i, name.clone()), cx);
+                        })),
+                );
+            }
+            list
+        });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .mt(px(4.))
+            .px(px(6.))
+            .pt(px(12.))
+            .pb(px(6.))
+            .border_t_1()
+            .border_color(t.stroke)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(12.))
+                    .child(strong(format!("{} · {}", text.programs_title, profile_label(text, pad, i)), t.text))
+                    .child(button("add-program", text.add_program, Kind::Subtle, &t).text_color(t.accent).on_click(cx.listener(
+                        |this, _, _, cx| {
+                            this.picker = if this.picker.is_some() { None } else { Some(crate::programs::open()) };
+                            cx.notify();
+                        },
+                    ))),
+            )
+            .child(caption(text.programs_hint, t.text3))
+            .when(!programs.is_empty(), |d| d.child(chips))
+            .children(picker)
             .into_any_element()
     }
 
@@ -376,7 +509,7 @@ impl MainView {
                     .when(selected && !pressed, |d| d.border_color(t.accent))
                     .hover(move |s| s.bg(t.layer_hover))
                     .on_click(cx.listener(move |this, _, _, cx| this.edit(&pad_for_click, b, cx)))
-                    .children(extras::printed_name(pad.family, b).map(|n| {
+                    .children(printed_name(pad.family, b).map(|n| {
                         div()
                             .flex()
                             .flex_none()
@@ -396,14 +529,10 @@ impl MainView {
                         div()
                             .flex_1()
                             .min_w(px(0.))
-                            .when(extras::printed_name(pad.family, b).is_some(), |d| {
-                                d.child(caption(place_name(text, pad.family, b), t.text2))
-                            })
-                            .when(extras::printed_name(pad.family, b).is_none(), |d| {
-                                d.child(strong(place_name(text, pad.family, b), t.text))
-                            }),
+                            .when(printed_name(pad.family, b).is_some(), |d| d.child(caption(place_name(text, pad.family, b), t.text2)))
+                            .when(printed_name(pad.family, b).is_none(), |d| d.child(strong(place_name(text, pad.family, b), t.text))),
                     )
-                    .child(summary(pad.bindings().get(&b), text, t))
+                    .child(summary(pad.profiles.active().bindings.get(&b), text, t))
                     .child(icon(if selected { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT }, 12., t.text2)),
             );
             if selected {
@@ -411,7 +540,7 @@ impl MainView {
             }
         }
         col = col.child(g);
-        if !pad.bindings().is_empty() {
+        if !pad.profiles.active().bindings.is_empty() {
             let confirm = self.confirm_reset;
             let label = if confirm { text.reset_confirm } else { text.reset_extras };
             col = col.child(div().flex().pt(px(12.)).child(
@@ -583,6 +712,25 @@ impl MainView {
                                 .child(strong(text.brightness, t.text))
                                 .child(levels),
                         )
+                    })
+                    .child({
+                        let on = p.low_battery_flash;
+                        row(&t)
+                            .id("low-battery")
+                            .mt(px(16.))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(t.layer_hover))
+                            .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, Edit::LowBatteryFlash(!on), cx)))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .gap(px(2.))
+                                    .child(body(text.low_battery_flash, t.text))
+                                    .child(caption(text.low_battery_flash_desc, t.text2)),
+                            )
+                            .child(crate::widgets::switch(on, text.on, text.off, &t))
                     }),
             )
             .into_any_element()
@@ -667,7 +815,8 @@ impl MainView {
     fn editor_panel(&self, pad: &PadView, b: u8, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let Some(e) = &self.editor else { return div().into_any_element() };
         let key = pad.key;
-        let current = pad.bindings().get(&b).cloned();
+        let current = pad.profiles.active().bindings.get(&b).cloned();
+        let keys_only = native(pad);
 
         let tab = |id: &'static str, label: &'static str, which: Tab, cx: &mut Context<Self>| {
             let on = e.tab == which;
@@ -703,7 +852,7 @@ impl MainView {
             .p(px(3.))
             .rounded(px(radius::CONTROL))
             .bg(t.control)
-            .child(tab("tab-xbox", text.tab_xbox, Tab::Xbox, cx))
+            .when(!keys_only, |d| d.child(tab("tab-xbox", text.tab_xbox, Tab::Xbox, cx)))
             .child(tab("tab-key", text.tab_key, Tab::Key, cx))
             .child(tab("tab-macro", text.tab_macro, Tab::Macro, cx))
             .child(tab("tab-nothing", text.tab_nothing, Tab::Nothing, cx));

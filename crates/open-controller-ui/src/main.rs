@@ -9,8 +9,11 @@ mod demo;
 mod detail;
 mod home;
 mod keys;
+mod programs;
+mod requirements;
 mod settings;
 mod theme;
+mod tuning;
 mod ui;
 mod widgets;
 
@@ -42,11 +45,18 @@ pub struct Model {
     /// `--demo`: changes made in the window stay in it, so the example controllers never reach
     /// the settings file.
     demo_profiles: HashMap<String, Profiles>,
+    demo_swaps: Vec<(open_controller_core::PadKey, open_controller_core::PadKey)>,
     last_real: Snapshot,
 }
 
 impl Model {
     pub fn send(&mut self, req: ToTray, cx: &mut Context<Self>) {
+        if self.demo
+            && let ToTray::SwapPlayers(a, b) = req
+        {
+            self.demo_swaps.push((a, b));
+            return self.refresh_demo(cx);
+        }
         if self.demo
             && let ToTray::Edit { store, edit } = req
         {
@@ -60,7 +70,7 @@ impl Model {
     }
 
     fn refresh_demo(&mut self, cx: &mut Context<Self>) {
-        self.snapshot = demo::snapshot(&self.last_real, &self.demo_profiles);
+        self.snapshot = demo::snapshot(&self.last_real, &self.demo_profiles, &self.demo_swaps);
         cx.notify();
     }
 }
@@ -79,7 +89,7 @@ fn connect(may_start: bool) -> Option<Pipe> {
     if !may_start {
         return None;
     }
-    let exe = std::env::current_exe().ok()?.parent()?.join("open-controller.exe");
+    let exe = std::env::current_exe().ok()?.parent()?.join(format!("open-controller{}", std::env::consts::EXE_SUFFIX));
     std::process::Command::new(exe).arg("--minimized").spawn().ok()?;
     for _ in 0..50 {
         std::thread::sleep(Duration::from_millis(100));
@@ -130,10 +140,19 @@ fn main() {
         let mut snapshot = Snapshot::default();
         let last_real = snapshot.clone();
         if demo {
-            snapshot = demo::snapshot(&snapshot, &HashMap::new());
+            snapshot = demo::snapshot(&snapshot, &HashMap::new(), &[]);
         }
-        let model =
-            cx.new(|_| Model { snapshot, prefs: Prefs::default(), text, connected, pipe, demo, demo_profiles: HashMap::new(), last_real });
+        let model = cx.new(|_| Model {
+            snapshot,
+            prefs: Prefs::default(),
+            text,
+            connected,
+            pipe,
+            demo,
+            demo_profiles: HashMap::new(),
+            demo_swaps: Vec::new(),
+            last_real,
+        });
         let Some(window) = open_window(model.clone(), cx) else {
             eprintln!("open-controller-ui: could not open a window");
             std::process::exit(1);

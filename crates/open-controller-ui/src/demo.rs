@@ -5,7 +5,7 @@ use open_controller_core::binding::{Action, Chord, Step, XboxButton, modifier};
 use open_controller_core::device::{Brand, Link, Power};
 use open_controller_core::extras::{self, Family, Features, Hint};
 use open_controller_core::mapping::{PadState, axis, button};
-use open_controller_core::profile::{Edit, Light, Profiles};
+use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -34,6 +34,7 @@ fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor, product):
         hint: None,
         store: Some(format!("demo:{vendor:04x}:{product:04x}")),
         profiles: Profiles::default(),
+        in_use: 0,
     }
 }
 
@@ -58,7 +59,7 @@ fn eightbitdo_profiles() -> Profiles {
     p
 }
 
-pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>) -> Snapshot {
+pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(PadKey, PadKey)]) -> Snapshot {
     let mut eightbitdo = pad(PadKey::Slot(1), "8BitDo Ultimate 2 Wireless", Brand::EightBitDo, Family::EightBitDoFour, (0x2DC8, 0x6012));
     eightbitdo.links = vec![Link::Dongle];
     eightbitdo.power = Power::Battery(Some(80));
@@ -73,11 +74,21 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>) -> Snapshot 
     edge.power = Power::Charging(Some(45));
     edge.role = Role::Virtual { player: Some(1) };
     edge.input = input(&[button::DPAD_LEFT, button::RIGHT_SHOULDER], [0, 0, 16000, 12000, 12000, 0]);
-    edge.extras =
-        vec![extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::LEFT_PADDLE2, extras::RIGHT_PADDLE2, extras::MISC1, extras::TOUCHPAD];
+    edge.extras = vec![
+        extras::LEFT_PADDLE1,
+        extras::RIGHT_PADDLE1,
+        extras::LEFT_PADDLE2,
+        extras::RIGHT_PADDLE2,
+        extras::MISC1,
+        extras::TOUCHPAD,
+        extras::TOUCH_LEFT,
+        extras::TOUCH_RIGHT,
+        extras::TOUCH_TWO,
+    ];
     edge.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, player_lights: true, ..Features::default() };
     edge.can_power_off = true;
     edge.profiles.apply(Edit::Light(Light::Color([120, 0, 255])));
+    edge.profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 150, invert_y: false }));
 
     let mut switch = pad(PadKey::Slot(3), "Nintendo Switch Pro Controller", Brand::Nintendo, Family::SwitchPro, (0x057E, 0x2009));
     switch.links = vec![Link::Usb, Link::Bluetooth];
@@ -108,7 +119,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>) -> Snapshot 
     let mut ds4 = pad(PadKey::Slot(4), "PS4 Controller", Brand::PlayStation, Family::DualShock4, (0x054C, 0x09CC));
     ds4.links = vec![Link::Dongle];
     ds4.role = Role::Waiting { player: None, remaining: Duration::from_secs(9) };
-    ds4.extras = vec![extras::TOUCHPAD];
+    ds4.extras = vec![extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT, extras::TOUCH_TWO];
     ds4.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, ..Features::default() };
 
     let mut xinput =
@@ -124,7 +135,21 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>) -> Snapshot 
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
             p.profiles = edited.clone();
         }
+        p.in_use = p.profiles.active;
     }
+    // Players traded in the window, as the engine would.
+    for &(a, b) in swaps {
+        let (ia, ib) = (pads.iter().position(|p| p.key == a), pads.iter().position(|p| p.key == b));
+        if let (Some(ia), Some(ib)) = (ia, ib) {
+            let role = pads[ia].role.clone();
+            pads[ia].role = pads[ib].role.clone();
+            pads[ib].role = role;
+        }
+    }
+    pads.sort_by_key(|p| match p.role {
+        Role::Virtual { player: Some(n) } | Role::Waiting { player: Some(n), .. } => u32::from(n),
+        _ => 100,
+    });
     Snapshot {
         pads,
         vigem: Driver::Ready { version: Some("1.22.0".into()) },
@@ -133,5 +158,6 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>) -> Snapshot 
         sdl_version: real.sdl_version.clone(),
         sdl_error: None,
         running: real.running,
+        foreground: String::new(),
     }
 }

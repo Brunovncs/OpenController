@@ -1,38 +1,42 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! The resident process: the engine and the notification-area icon, a few megabytes. The
-//! window is a separate program (`open-controller-ui.exe`), started on demand and connected
-//! over a pipe, so the GPU-backed interface takes no memory while you play.
+//! The resident process: the engine, and on Windows the notification-area icon, a few megabytes.
+//! The window is a separate program (`open-controller-ui`), started on demand and connected over
+//! a pipe, so the GPU-backed interface takes no memory while you play. On Linux and macOS this
+//! process runs in the background with no icon of its own; the window is opened from the
+//! applications menu or the Dock.
 
 mod autostart;
+mod foreground;
 mod server;
 mod settings;
+#[cfg(windows)]
 mod tray;
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
 mod win;
+#[cfg(windows)]
+mod windows;
 
-use open_controller_core::i18n;
 use open_controller_core::instance::{self, Instance};
 use open_controller_core::ipc::{Prefs, ToTray};
 use open_controller_core::profile::{Edit, Profiles};
-use open_controller_core::{Command, Config, Engine, hidhide};
+use open_controller_core::{Command, Config, Engine};
 use server::Notify;
 use settings::Settings;
-use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tray::Tray;
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, PostMessageW, PostQuitMessage, RegisterClassW, TranslateMessage,
-    WM_APP, WM_ENDSESSION, WM_SETTINGCHANGE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_OVERLAPPED,
-};
+#[cfg(unix)]
+use unix as sys;
+#[cfg(windows)]
+use windows as sys;
 
 pub const APP_NAME: &str = "io.github.brunovncs.open-controller";
 
-/// Messages to the main thread, which owns the tray icon.
-#[derive(Clone, Copy)]
+/// Messages to the main thread, which owns the tray icon on Windows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Msg {
     Snapshot = 1,
     Prefs = 2,
@@ -46,18 +50,12 @@ pub struct Control {
     settings: Mutex<Settings>,
     data_dir: PathBuf,
     notify: Arc<Notify>,
-    /// The main thread's hidden window. Window messages, unlike thread messages, are not lost
-    /// while the tray menu runs its modal loop.
-    hwnd: HWND,
+    waker: sys::Waker,
 }
-
-// The window handle is only used to post messages, which any thread may do.
-unsafe impl Send for Control {}
-unsafe impl Sync for Control {}
 
 impl Control {
     pub fn post(&self, m: Msg) {
-        unsafe { PostMessageW(self.hwnd, WM_APP + m as u32, 0, 0) };
+        self.waker.post(m);
     }
 
     pub fn prefs(&self) -> Prefs {
@@ -92,6 +90,7 @@ impl Control {
             }
             ToTray::Identify(key) => return self.engine.send(Command::Identify(key)),
             ToTray::PowerOff(key) => return self.engine.send(Command::PowerOff(key)),
+            ToTray::SwapPlayers(a, b) => return self.engine.send(Command::SwapPlayers(a, b)),
             ToTray::Edit { store, edit } => {
                 let profiles = self.edit_profiles(&store, edit);
                 return self.engine.send(Command::SetProfiles(store, profiles));
@@ -103,16 +102,17 @@ impl Control {
     }
 }
 
-struct Args {
-    minimized: bool,
+pub struct Args {
+    pub minimized: bool,
     smoke: bool,
     restore: bool,
     quit: bool,
+    udev_rule: bool,
     data_dir: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
-    let mut args = Args { minimized: false, smoke: false, restore: false, quit: false, data_dir: None };
+    let mut args = Args { minimized: false, smoke: false, restore: false, quit: false, udev_rule: false, data_dir: None };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -120,6 +120,7 @@ fn parse_args() -> Args {
             "--smoke" => args.smoke = true,
             "--restore" => args.restore = true,
             "--quit" => args.quit = true,
+            "--udev-rule" => args.udev_rule = true,
             "--data-dir" => args.data_dir = it.next().map(PathBuf::from),
             _ => {}
         }
@@ -128,86 +129,16 @@ fn parse_args() -> Args {
 }
 
 /// Starts the window, which sits next to this executable.
-fn open_window() {
+pub fn open_window() {
     let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) else { return };
-    if let Err(e) = std::process::Command::new(dir.join("open-controller-ui.exe")).spawn() {
+    let exe = dir.join(format!("open-controller-ui{}", std::env::consts::EXE_SUFFIX));
+    if let Err(e) = std::process::Command::new(exe).spawn() {
         eprintln!("open-controller: could not start the window: {e}");
     }
 }
 
-struct MainState {
-    control: Arc<Control>,
-    tray: Option<Tray>,
-}
-
-thread_local! {
-    static STATE: RefCell<Option<MainState>> = const { RefCell::new(None) };
-}
-
-/// Reachable without borrowing `STATE`: the session-end message is sent, so it can arrive while
-/// a handler below is waiting on the shell and holds that borrow.
-static CONTROL: OnceLock<Arc<Control>> = OnceLock::new();
-
-unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if msg == WM_ENDSESSION && wparam != 0 {
-        // Signing out or shutting down: the process may be ended as soon as this returns.
-        if let Some(c) = CONTROL.get() {
-            c.engine.stop();
-        }
-        return 0;
-    }
-    if msg == WM_SETTINGCHANGE {
-        // The taskbar may have switched between light and dark.
-        STATE.with(|cell| {
-            if let Ok(mut s) = cell.try_borrow_mut()
-                && let Some(t) = s.as_mut().and_then(|s| s.tray.as_mut())
-            {
-                t.follow_theme();
-            }
-        });
-    }
-    if msg > WM_APP && msg <= WM_APP + Msg::Quit as u32 {
-        let handled = STATE.with(|cell| {
-            let Ok(mut s) = cell.try_borrow_mut() else { return false };
-            let Some(s) = s.as_mut() else { return true };
-            match msg - WM_APP {
-                1 => {
-                    let n = s.control.engine.pad_count();
-                    if let Some(t) = s.tray.as_mut() {
-                        t.set_count(i18n::text(), n);
-                    }
-                }
-                2 => {
-                    if let Some(t) = &s.tray {
-                        t.sync(s.control.prefs());
-                    }
-                }
-                3 => open_window(),
-                _ => unsafe { PostQuitMessage(0) },
-            }
-            true
-        });
-        if !handled {
-            // Arrived inside another handler (a nested message loop): handle it afterwards.
-            unsafe { PostMessageW(hwnd, msg, wparam, lparam) };
-        }
-        return 0;
-    }
-    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-}
-
-/// A hidden top-level window: it receives the session-end broadcast, which a message-only
-/// window would not.
-fn hidden_window() -> HWND {
-    unsafe {
-        let class = win::wide("OpenControllerTray");
-        let instance = GetModuleHandleW(std::ptr::null());
-        let wc = WNDCLASSW { lpfnWndProc: Some(wndproc), hInstance: instance, lpszClassName: class.as_ptr(), ..std::mem::zeroed() };
-        RegisterClassW(&wc);
-        let null = std::ptr::null_mut();
-        CreateWindowExW(WS_EX_TOOLWINDOW, class.as_ptr(), class.as_ptr(), WS_OVERLAPPED, 0, 0, 0, 0, null, null, instance, std::ptr::null())
-    }
-}
+/// Reachable from the window procedure and the foreground watcher without borrowing anything.
+pub static CONTROL: OnceLock<Arc<Control>> = OnceLock::new();
 
 /// `--smoke`: the engine must come up (SDL initialised; drivers may be missing, as on CI).
 fn smoke(engine: &Engine, data_dir: &std::path::Path) -> i32 {
@@ -241,29 +172,27 @@ fn main() {
         std::process::exit(if done { 0 } else { 1 });
     }
     if args.restore {
-        // For the uninstaller: show again anything a killed run left hidden, and unregister.
-        let code = match hidhide::restore(&data_dir.join(hidhide::JOURNAL_FILE)) {
-            Ok(()) => 0,
-            Err(e) => {
-                eprintln!("open-controller: {e}");
-                1
-            }
-        };
-        std::process::exit(code);
+        std::process::exit(sys::restore(&data_dir));
+    }
+    if args.udev_rule {
+        // For packagers and the install script: the udev rule the window would install.
+        #[cfg(target_os = "linux")]
+        print!("{}", open_controller_core::linux::setup::rule());
+        return;
     }
     let Instance::First { _mutex, show } = instance::claim(APP_NAME) else { return };
     let _ = std::fs::create_dir_all(&data_dir);
     let settings = Settings::load(&data_dir);
     autostart::refresh();
 
-    let hwnd = hidden_window();
+    let (waker, main_loop) = sys::prepare();
     let notify = Arc::new(Notify::default());
     let on_change = {
         let notify = notify.clone();
-        let hwnd = hwnd as usize;
+        let waker = waker.clone();
         move || {
             notify.snapshot();
-            unsafe { PostMessageW(hwnd as HWND, WM_APP + Msg::Snapshot as u32, 0, 0) };
+            waker.post(Msg::Snapshot);
         }
     };
     let config = Config {
@@ -277,7 +206,7 @@ fn main() {
         engine.stop();
         std::process::exit(code);
     }
-    let control = Arc::new(Control { engine, settings: Mutex::new(settings), data_dir, notify: notify.clone(), hwnd });
+    let control = Arc::new(Control { engine, settings: Mutex::new(settings), data_dir, notify: notify.clone(), waker });
     let _ = CONTROL.set(control.clone());
     server::start(control.clone(), notify);
     let c = control.clone();
@@ -287,20 +216,7 @@ fn main() {
         instance::on_signal(quit, move || c.post(Msg::Quit));
     }
 
-    let tray = Tray::install(i18n::text(), control.prefs(), control.clone());
-    STATE.with_borrow_mut(|s| *s = Some(MainState { control: control.clone(), tray }));
-    if !args.minimized {
-        open_window();
-    }
-
-    let mut msg: MSG = unsafe { std::mem::zeroed() };
-    while unsafe { GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) } > 0 {
-        unsafe {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-    }
-    STATE.with_borrow_mut(|s| *s = None);
+    sys::run(&control, main_loop, &args);
     // Unplugs the virtual controllers and shows the hidden ones again.
     control.engine.stop();
 }

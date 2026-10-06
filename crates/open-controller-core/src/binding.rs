@@ -171,7 +171,7 @@ pub fn store_key(identity: &Identity, vendor: u16, product: u16) -> String {
 }
 
 /// The XUSB buttons and triggers the held extra buttons add to a report.
-pub fn xbox_overlay(bindings: &Bindings, buttons: u32) -> (u16, bool, bool) {
+pub fn xbox_overlay(bindings: &Bindings, buttons: u64) -> (u16, bool, bool) {
     let mut bits = 0;
     let (mut lt, mut rt) = (false, false);
     for (&b, action) in bindings {

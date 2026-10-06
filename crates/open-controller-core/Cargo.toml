@@ -12,7 +12,8 @@ crossbeam-channel.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # SDL 3 is built from source and linked statically, with only the subsystems a gamepad needs:
-# joystick (and its HIDAPI drivers), haptics for rumble, sensors and power for battery.
+# joystick (and its HIDAPI drivers), haptics for rumble, sensors and power for battery. On Linux
+# it is a console build: no window system, so no X11 or Wayland libraries are needed to build it.
 sdl3-sys = { version = "0.7.2", default-features = false, features = [
     "build-from-source-static",
     "no-default-subsystems",
@@ -21,6 +22,7 @@ sdl3-sys = { version = "0.7.2", default-features = false, features = [
     "sdl-haptic",
     "sdl-sensor",
     "sdl-power",
+    "sdl-unix-console-build",
 ] }
 
 [target.'cfg(windows)'.dependencies]
@@ -44,7 +46,20 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Input_XboxController",
     "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The window in front and the open windows, for profiles that switch with the program, from the
+# X server (XWayland included), in pure Rust.
+x11rb = { version = "0.13", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSLocale", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSRunningApplication", "NSWorkspace"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Threading", "Win32_UI_Input_XboxController"] }

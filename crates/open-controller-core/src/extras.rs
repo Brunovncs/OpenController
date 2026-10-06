@@ -19,10 +19,39 @@ pub const MISC3: u8 = 22;
 pub const MISC4: u8 = 23;
 pub const MISC5: u8 = 24;
 pub const MISC6: u8 = 25;
+/// Buttons Open Controller makes out of the touchpad, past SDL's own: a click on its left or right
+/// half, and two fingers on it.
+pub const TOUCH_LEFT: u8 = 26;
+pub const TOUCH_RIGHT: u8 = 27;
+pub const TOUCH_TWO: u8 = 28;
+/// Buttons of a handheld's built-in controller that reach Windows as keys or through the maker's
+/// own HID interface rather than as gamepad buttons.
+pub const HANDHELD: [u8; 12] = [29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40];
 
 /// SDL button indices with no Xbox equivalent, in the order they are listed: back buttons
 /// first, then the rest.
-pub const ALL: [u8; 11] = [LEFT_PADDLE1, RIGHT_PADDLE1, LEFT_PADDLE2, RIGHT_PADDLE2, MISC1, TOUCHPAD, MISC2, MISC3, MISC4, MISC5, MISC6];
+pub const ALL: [u8; 14] = [
+    LEFT_PADDLE1,
+    RIGHT_PADDLE1,
+    LEFT_PADDLE2,
+    RIGHT_PADDLE2,
+    MISC1,
+    TOUCHPAD,
+    TOUCH_LEFT,
+    TOUCH_RIGHT,
+    TOUCH_TWO,
+    MISC2,
+    MISC3,
+    MISC4,
+    MISC5,
+    MISC6,
+];
+
+/// The extra buttons a controller has: those SDL reports, and the touchpad's halves and
+/// two-finger touch on a controller with a touchpad.
+pub fn available(features: &Features, sdl_has: impl Fn(u32) -> bool) -> Vec<u8> {
+    ALL.iter().copied().filter(|&b| if b >= TOUCH_LEFT { features.touchpad } else { sdl_has(u32::from(b)) }).collect()
+}
 
 /// Controllers whose extra buttons, drawing or advice differ from the rest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -62,6 +91,8 @@ pub enum Family {
     Luna,
     Stadia,
     Shield,
+    /// A handheld PC's built-in controller: ROG Ally, Legion Go, MSI Claw, AYANEO, GPD and others.
+    Handheld,
     Other,
 }
 
@@ -135,6 +166,9 @@ pub enum Kind {
     StickTouchRight,
     TriggerClickLeft,
     TriggerClickRight,
+    TouchLeft,
+    TouchRight,
+    TouchTwo,
     Capture,
     Mic,
     Share,
@@ -152,6 +186,9 @@ pub fn kind(family: Family, b: u8) -> Kind {
         (GameCube, MISC3) => Kind::TriggerClickLeft,
         (GameCube, MISC4) => Kind::TriggerClickRight,
         (Stadia, MISC2) => Kind::Assistant,
+        (_, TOUCH_LEFT) => Kind::TouchLeft,
+        (_, TOUCH_RIGHT) => Kind::TouchRight,
+        (_, TOUCH_TWO) => Kind::TouchTwo,
         (_, LEFT_PADDLE1) => Kind::BackLeft,
         (_, RIGHT_PADDLE1) => Kind::BackRight,
         (_, LEFT_PADDLE2) => Kind::BackLeft2,
@@ -188,6 +225,7 @@ pub fn art(family: Family, vendor: u16, product: u16) -> Art {
         DualShock3 | Ps2Adapter | EightBitDoPro2 => Art::Symmetric,
         JoyCons => Art::JoyCons,
         SteamDeck if product == 0x1205 => Art::Handheld,
+        Handheld => Art::Handheld,
         NintendoClassic if product != 0x2019 => Art::Retro,
         EightBitDoFour if product == 0x6009 || product == 0x3109 => Art::Symmetric,
         EightBitDo => match product {
@@ -272,7 +310,13 @@ mod tests {
     fn indices_are_sdls() {
         assert_eq!(button::MISC1, 15);
         assert_eq!(button::TOUCHPAD, 20);
-        assert!(ALL.iter().all(|&b| (b as u32) >= button::MISC1 && (b as u32) < button::COUNT));
+        assert!(ALL.iter().filter(|&&b| b < TOUCH_LEFT).all(|&b| (b as u32) >= button::MISC1 && (b as u32) < button::COUNT));
+        // Ours come after SDL's and fit the 64 bits of `PadState::buttons`.
+        assert!(TOUCH_LEFT as u32 >= button::COUNT);
+        assert!(HANDHELD.iter().all(|&b| b > TOUCH_TWO && b < 64));
+        let touch = Features { touchpad: true, ..Features::default() };
+        assert_eq!(available(&touch, |b| b == u32::from(TOUCHPAD)), [TOUCHPAD, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO]);
+        assert_eq!(available(&Features::default(), |_| false), Vec::<u8>::new());
     }
 
     #[test]

@@ -41,6 +41,8 @@ pub mod icon {
     pub const CHECK: &str = "\u{E73E}";
     pub const EDIT: &str = "\u{E70F}";
     pub const OPEN: &str = "\u{E8A7}";
+    pub const MOTION: &str = "\u{E7AD}";
+    pub const STICKS: &str = "\u{E7FC}";
 }
 
 #[derive(Clone, Copy)]
@@ -147,6 +149,12 @@ impl Theme {
 /// The Windows accent colour in the shade Windows itself uses on this background (a lighter one
 /// on dark, a darker one on light), or `None` when it is a grey that would not read as an
 /// accent: the toggles and highlights would disappear.
+#[cfg(not(windows))]
+fn windows_accent(_: bool) -> Option<Rgba> {
+    None
+}
+
+#[cfg(windows)]
 fn windows_accent(dark: bool) -> Option<Rgba> {
     let palette = registry_binary(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent", "AccentPalette")?;
     // Eight RGBA entries, lightest to darkest; the accent itself is the fourth.
@@ -157,6 +165,7 @@ fn windows_accent(dark: bool) -> Option<Rgba> {
     (chroma >= 48).then(|| rgb(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)))
 }
 
+#[cfg(windows)]
 fn registry_binary(key: &str, value: &str) -> Option<Vec<u8>> {
     use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_BINARY, RegGetValueW};
     let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();

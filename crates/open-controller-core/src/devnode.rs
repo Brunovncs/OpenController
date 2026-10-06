@@ -77,6 +77,16 @@ pub fn is_virtual(interface_path: &str) -> bool {
     instance_id(interface_path).is_some_and(|id| lineage(&id).iter().any(|(_, service)| service.eq_ignore_ascii_case("ViGEmBus")))
 }
 
+/// Bluetooth is told from the device path on Windows (`device::link`).
+pub fn is_bluetooth(_: &str) -> bool {
+    false
+}
+
+/// XInput controllers are told from their path on Windows (`device::is_xinput_path`).
+pub fn is_native(_: &str, _: bool) -> bool {
+    false
+}
+
 /// The version of the driver behind a device interface, as Device Manager shows it.
 pub fn driver_version(interface_path: &str) -> Option<String> {
     let node = locate(&instance_id(interface_path)?)?;

@@ -7,8 +7,9 @@
 //! that thread, and keeping all calls there avoids contention on its joystick lock.
 
 use crate::device::{PadType, Power, SdlConnection};
-use crate::extras::Features;
+use crate::extras::{Features, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO};
 use crate::mapping::{PadState, axis, button};
+use crate::motion::{Finger, touch_buttons};
 use sdl3_sys::everything::*;
 use std::ffi::{CStr, c_char};
 use std::marker::PhantomData;
@@ -213,7 +214,7 @@ impl Gamepad {
             let cap = |name| SDL_GetBooleanProperty(props, name, false);
             Features {
                 touchpad: SDL_GetNumGamepadTouchpads(self.gp) > 0,
-                motion: SDL_GamepadHasSensor(self.gp, SDL_SENSOR_GYRO) || SDL_GamepadHasSensor(self.gp, SDL_SENSOR_ACCEL),
+                motion: SDL_GamepadHasSensor(self.gp, SDL_SENSOR_GYRO),
                 rumble: cap(SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN),
                 trigger_rumble: cap(SDL_PROP_GAMEPAD_CAP_TRIGGER_RUMBLE_BOOLEAN),
                 light_bar: cap(SDL_PROP_GAMEPAD_CAP_RGB_LED_BOOLEAN),
@@ -224,16 +225,45 @@ impl Gamepad {
 
     /// Reads the current state into `out`. SDL keeps it cached, so this costs no I/O.
     pub fn read(&self, out: &mut PadState) {
-        let mut b = 0u32;
+        let mut b = 0u64;
         for i in 0..BUTTONS {
             if unsafe { SDL_GetGamepadButton(self.gp, SDL_GamepadButton(i as i32)) } {
                 b |= 1 << i;
             }
         }
+        b |= self.touch_buttons(b & 1 << button::TOUCHPAD != 0);
         out.buttons = b;
         for i in 0..axis::COUNT {
             out.axes[i] = unsafe { SDL_GetGamepadAxis(self.gp, SDL_GamepadAxis(i as i32)) };
         }
+    }
+
+    /// The touchpad's halves and two-finger touch, as the bits Open Controller gives them.
+    fn touch_buttons(&self, clicked: bool) -> u64 {
+        unsafe {
+            if SDL_GetNumGamepadTouchpads(self.gp) == 0 {
+                return 0;
+            }
+            let n = SDL_GetNumGamepadTouchpadFingers(self.gp, 0).clamp(0, 4);
+            let mut fingers = [Finger::default(); 4];
+            for (i, f) in fingers.iter_mut().enumerate().take(n as usize) {
+                let mut p = 0f32;
+                SDL_GetGamepadTouchpadFinger(self.gp, 0, i as i32, &mut f.down, &mut f.x, &mut f.y, &mut p);
+            }
+            let (left, right, two) = touch_buttons(clicked, &fingers[..n as usize]);
+            u64::from(left) << TOUCH_LEFT | u64::from(right) << TOUCH_RIGHT | u64::from(two) << TOUCH_TWO
+        }
+    }
+
+    /// Turns the gyro's reports on or off; they cost bandwidth, so only while it is used.
+    pub fn set_gyro(&self, on: bool) {
+        unsafe { SDL_SetGamepadSensorEnabled(self.gp, SDL_SENSOR_GYRO, on) };
+    }
+
+    /// The gyro's last reading in radians per second (pitch, yaw, roll), if it is on.
+    pub fn gyro(&self) -> Option<[f32; 3]> {
+        let mut v = [0f32; 3];
+        unsafe { SDL_GetGamepadSensorData(self.gp, SDL_SENSOR_GYRO, v.as_mut_ptr(), 3) }.then_some(v)
     }
 
     /// `low` drives the large (left) motor and `high` the small one. SDL stops the rumble after

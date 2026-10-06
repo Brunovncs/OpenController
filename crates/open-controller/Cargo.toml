@@ -1,6 +1,6 @@
 [package]
 name = "open-controller"
-description = "Open Controller's resident process: the engine and the notification-area icon"
+description = "Open Controller's resident process: the engine, and on Windows the notification-area icon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,14 +17,18 @@ crossbeam-channel.workspace = true
 dirs = "6"
 serde.workspace = true
 serde_json.workspace = true
-tray-icon = "0.26"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
+tray-icon = "0.26"
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_System_Threading",
+    "Win32_UI_Accessibility",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

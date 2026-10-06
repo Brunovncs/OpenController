@@ -6,10 +6,14 @@ use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::MainView;
 use crate::widgets::{Kind, battery, body, button, caption, chip, display, icon, player_mark, title};
 use gpui::prelude::FluentBuilder;
-use gpui::{AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, Window, div, px};
+use gpui::{
+    AnyElement, AppContext, Context, Div, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled,
+    Window, div, px,
+};
 use open_controller_core::device::{Link, Power};
 use open_controller_core::i18n::{Text, fill};
-use open_controller_core::{Driver, PadView, Role};
+use open_controller_core::ipc::ToTray;
+use open_controller_core::{PadKey, PadView, Role};
 
 const TILE_W: f32 = 248.;
 const TILE_H: f32 = 296.;
@@ -93,6 +97,34 @@ fn banner(message: String, action: Option<AnyElement>, t: &Theme) -> Div {
         .children(action)
 }
 
+/// A controller being dragged onto another, to trade players with it; also its drag image.
+#[derive(Clone)]
+pub struct DraggedPad {
+    key: PadKey,
+    name: String,
+    theme: Theme,
+}
+
+impl Render for DraggedPad {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let t = self.theme;
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .px(px(12.))
+            .h(px(36.))
+            .rounded(px(radius::CONTROL))
+            .bg(t.layer)
+            .border_1()
+            .border_color(t.accent)
+            .shadow_lg()
+            .text_color(t.text)
+            .child(icon(glyph::STICKS, 14., t.accent))
+            .child(caption(self.name.clone(), t.text))
+    }
+}
+
 impl MainView {
     fn tile(&self, i: usize, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
@@ -125,6 +157,9 @@ impl MainView {
                     .when_some(n, |d, n| d.child(player_mark(Some(n), &t)))
                     .child(caption(status(pad, text), if away { t.text3 } else { t.text2 })),
             );
+        // Controllers with a virtual controller can trade players by dragging one onto another.
+        let swappable = matches!(key, PadKey::Slot(_));
+        let dragged = DraggedPad { key, name: pad.name.clone(), theme: t };
         div()
             .id(("tile", i))
             .flex()
@@ -139,6 +174,15 @@ impl MainView {
             .cursor_pointer()
             .hover(move |s| s.bg(t.layer_hover).border_color(t.stroke_strong))
             .on_click(cx.listener(move |this, _, _, cx| this.open(key, cx)))
+            .when(swappable, |d| {
+                d.on_drag(dragged, |d, _, _, cx| cx.new(|_| d.clone()))
+                    .drag_over::<DraggedPad>(move |s, d, _, _| if d.key != key { s.border_color(t.accent).bg(t.accent_soft) } else { s })
+                    .on_drop(cx.listener(move |this, d: &DraggedPad, _, cx| {
+                        if d.key != key {
+                            this.send(ToTray::SwapPlayers(d.key, key), cx);
+                        }
+                    }))
+            })
             .child(stage)
             .child(
                 div()
@@ -210,12 +254,8 @@ impl MainView {
             Some(text.tray_off.to_string())
         } else if let Some(e) = &snap.sdl_error {
             Some(format!("SDL: {e}"))
-        } else if !matches!(snap.vigem, Driver::Ready { .. }) {
-            Some(text.vigem_missing.to_string())
-        } else if snap.hiding && !matches!(snap.hidhide, Driver::Ready { .. }) {
-            Some(text.hidhide_missing.to_string())
         } else {
-            None
+            crate::requirements::attention(&snap, text).map(str::to_string)
         };
         let banner = problem.map(|message| {
             let action = connected.then(|| {
@@ -251,6 +291,9 @@ impl MainView {
             )
             .children(banner)
             .when(snap.pads.is_empty(), |d| d.child(body(text.empty_body, t.text2).pb(px(16.))))
+            .when(snap.pads.iter().filter(|p| matches!(p.key, PadKey::Slot(_))).count() >= 2, |d| {
+                d.child(caption(text.swap_hint, t.text3).pb(px(12.)))
+            })
             .child(grid)
             .into_any_element()
     }

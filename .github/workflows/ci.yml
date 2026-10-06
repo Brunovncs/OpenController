@@ -49,3 +49,53 @@ jobs:
         if: always()
         shell: bash
         run: cat "$RUNNER_TEMP/smoke/smoke.log" 2>/dev/null || echo "no smoke log"
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev \
+            libfontconfig1-dev libfreetype6-dev libvulkan-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # Includes the uinput request numbers, the udev rule and a real Unix socket round trip.
+      - name: Tests
+        run: cargo test --workspace
+      - name: Build
+        run: cargo build --workspace --examples
+      - name: Smoke test, resident process
+        run: target/debug/open-controller --smoke --data-dir "$RUNNER_TEMP/smoke"
+      # The runner's kernel has uinput: the whole path, from SDL's virtual controller to the
+      # kernel's event node and the rumble back, is checked as root.
+      - name: Loopback through uinput
+        run: |
+          sudo modprobe uinput
+          sudo target/debug/examples/linux_loopback
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+      - name: Build
+        run: cargo build --workspace
+      - name: Smoke test, resident process
+        run: target/debug/open-controller --smoke --data-dir "$RUNNER_TEMP/smoke"

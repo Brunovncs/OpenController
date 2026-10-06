@@ -95,9 +95,10 @@ on Windows except as copies of other buttons.
 
 ## Known models
 
-`models.rs` names 334 controllers by USB id and puts each in a family, taken from SDL 3.4's own
+`models.rs` names 602 controllers by USB id and puts each in a family, taken from SDL 3.4's own
 lists (`controller_list.h`, `usb_ids.h`, its HIDAPI drivers and built-in Windows mappings) plus the
-8BitDo range. The family decides what the extra buttons are called, how the controller is drawn
+8BitDo range, and the ids Linux's xpad, hid-sony and hid-nintendo drivers know (facts only, no
+code). The family decides what the extra buttons are called, how the controller is drawn
 and what the window tells the user about it (switch an 8BitDo to D-input, close Steam, allow
 third-party apps in Flydigi's app). Which extra buttons a controller really has is always asked of
 SDL when it connects; the table only names them. Where SDL's driver reports buttons its mapping
@@ -114,6 +115,38 @@ hands the engine the whole list, and the engine uses the profile in use. A light
 colour only when the colour changes: the player's (SDL's own palette), a chosen one, the battery's
 or none. Once Open Controller sets a colour, SDL no longer changes it with the player number, so the
 player's colour is set the same way.
+
+## Playing together
+
+Swapping two players does not replug anything: the two slots trade virtual controllers, so each
+game keeps seeing the same four XInput controllers, and the rumble a game asked of one goes to
+its new hands. A profile can name programs; the resident process asks Windows to say when the
+foreground window changes (`SetWinEventHook`, no polling), and the engine uses the first profile
+that names it, or the chosen one. Only assignments, light, gyro and sticks follow; players never
+change behind anyone's back. Open Controller's own window and the Start menu do not count as a
+program coming to the front, so opening the window mid-game keeps the game's profile.
+
+## Gyro, sticks and touchpad
+
+The gyro is read only while a profile uses it (SDL turns the sensor's reports on and off), at the
+controller's own rate, on the input thread. Yaw and pitch, in radians per second, go through a
+one-euro filter (a low-pass whose cutoff rises with speed: a still hand is still, a flick is not
+delayed), a 0.03 rad/s deadzone and a 12 % anti-deadzone, so games with their own stick deadzone
+still react to a slow turn, and are added to the right stick. The stick deadzone is radial, so a
+diagonal is not cut short, and off by default. The touchpad's halves and two-finger touch are
+worked out from SDL's finger positions on every report and carried as buttons past SDL's own
+(26 to 28), which made `PadState::buttons` 64 bits wide; a handheld's own buttons take 29 to 40.
+
+## Handhelds
+
+A handheld PC is recognised by its firmware's manufacturer, product name and version (Lenovo puts
+"Legion Go" in the version), not by its pad's USB id, since many present a generic Xbox 360 pad.
+Buttons that arrive as function keys are caught with a low-level keyboard hook on a thread of its
+own, only for the keys of the recognised machine; keys Open Controller types itself pass through,
+and when the firmware held Windows with the key, an unassigned key is sent between so that
+letting go of Windows does not open the Start menu. Buttons that arrive as HID reports are read
+with SDL's own hidapi, read-only. Nothing is written to any controller: the ROG Ally's M1 and M2
+and the MSI Claw's mode would need configuration written to them, which vendor apps fight over.
 
 ## Drivers
 
@@ -188,6 +221,38 @@ configuration is global and shared with other programs:
 - Every change is read back and checked.
 - None of this requires administrator rights.
 - Inverse mode, where the program list means the opposite, is reported and left alone.
+
+## Linux and macOS
+
+The engine is the same program everywhere; what differs sits behind one set of names in
+`platform.rs` (the bus that makes virtual controllers, hiding, what the device tree says), with
+the keyboard, the pipe, single-instance and the resident process's main loop split the same way.
+The settings file, profiles and key assignments are identical: keys are stored as Windows
+virtual-key codes on every system and turned into each system's key positions when typed.
+
+On Linux, uinput is what Steam Input, InputPlumber and xboxdrv use, and a uinput device shaped
+exactly like `xpad`'s (ids 045e:028e, version 0x110, its button codes and axis ranges, Y flipped
+with `~y` as `xpad` does) is matched by SDL's and Wine's built-in Xbox 360 mappings, so no game
+needs to be told about it. Rumble needs answering the kernel's force-feedback upload and erase
+requests on the device's own handle; each virtual controller has a thread for that, which keeps
+the effects a game uploaded and passes on the one playing until it stops or its length runs out.
+Hiding on Linux has no HidHide: an exclusive grab (`EVIOCGRAB`) on the controller's event nodes
+takes them from every other reader, and Open Controller keeps reading through `hidraw`, which SDL
+prefers when it may open it. That is why the udev rule grants `hidraw` access for known
+controllers, generated from the model table rather than by maker, so no keyboard's raw reports
+become readable. What a grab cannot do is stop another program from opening the same `hidraw`
+node; a root helper that moves device nodes away, as InputPlumber does, would, and is left out on
+purpose. The uinput request numbers are computed from the structures' sizes and checked against
+the kernel headers.
+
+On macOS, creating a game controller needs `com.apple.developer.hid.virtual.device`, an
+entitlement Apple grants case by case, and the Game Controller framework already reads the common
+controllers natively. So every controller is left as it is (the engine treats them all as it
+treats an Xbox controller on Windows), and what remains is what games do not do: keys and macros
+for extra buttons through Quartz events, lights and battery. The resident process is a plain
+background process there and on Linux, without an icon of its own: a status icon needs a GTK or
+AppKit main loop, which would bring the window toolkit's weight back into the process kept small
+for that reason.
 
 ## The poll loop
 

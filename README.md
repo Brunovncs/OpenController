@@ -2,28 +2,35 @@
 
 <img src="assets/icon-256.png" width="96" align="right" alt="">
 
-A Windows app that makes any game controller work in any game. Every controller connected to the
-computer becomes an Xbox controller that games understand: a DualSense on Bluetooth, a Switch Pro
+An app for Windows and Linux that makes any game controller work in any game, with a smaller
+version for macOS. Every controller connected to the computer becomes an Xbox controller that games
+understand: a DualSense on Bluetooth, a Switch Pro
 Controller on a cable and a DualShock 4 on Sony's receiver, all at once, each as its own player.
 There is nothing to map. The buttons an Xbox controller lacks (back paddles, L4 and R4, Capture,
-the touchpad click) can press an Xbox button, hold a key or type a macro instead.
+the touchpad) can press an Xbox button, hold a key or type a macro instead, and a controller with a
+gyro can aim by turning it.
 
 It does what DS4Windows does for PlayStation controllers, for the several hundred controllers SDL
 knows, and keeps out of the way: a resident process of 3.2 MB that adds about 0.6 ms between the
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-Open Controller is open source (MIT) and in development, at version 0.1.0. The engine is tested
-end to end with a simulated controller on Windows 11, and on hardware with an 8BitDo Ultimate 2
-Wireless; every other controller below is SDL's support, not yet a test of Open Controller with
-it. Treat it as a beta, and please report what you plug in.
+Open Controller is open source (MIT) and in development, at version 0.2.0. The engine is tested
+end to end with a simulated controller on Windows 11 and, in CI, on Linux; on hardware only on
+Windows, with an 8BitDo Ultimate 2 Wireless. Every other controller below is SDL's support, and the
+Linux and macOS versions have not met a real controller yet. Treat it as a beta, and please report
+what you plug in.
 
 ![Open Controller with eight controllers as tiles, each drawn with its live input: an 8BitDo Ultimate 2 on its receiver, a DualSense Edge, a Switch Pro Controller, Joy-Cons, a DualShock 3, an Xbox controller, a DualShock 4 reconnecting and an 8BitDo in XInput mode](docs/window.png)
 
 ## Installing
 
-Download `open-controller-0.1.0-windows-x64.zip` from the
-[latest release](https://github.com/Brunovncs/OpenController/releases/latest), extract it anywhere
+Every download is on the [latest release](https://github.com/Brunovncs/OpenController/releases/latest),
+with its SHA-256 next to it.
+
+### Windows
+
+Download `open-controller-0.2.0-windows-x64.zip`, extract it anywhere
 and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
 on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
 administrator rights.
@@ -46,6 +53,31 @@ To build and install from source instead, with Windows 10 or 11 and [Rust](https
 Open Controller lives in the notification area: its icon opens the window and has "Start with
 Windows" and "Quit". Closing the window does not stop anything.
 
+### Linux
+
+Download `open-controller-0.2.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
+recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
+with an entry in your applications menu, and a udev rule, which asks for your password once. The
+rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
+reports of the controllers in the model table (their extra buttons, gyro and light), as Steam's
+own rules do; without it Open Controller can do neither. `./install.sh --no-rule` skips it, and
+Settings, Requirements in the window installs it later through polkit. `./uninstall.sh` removes
+everything again.
+
+The window needs `libxkbcommon-x11` and Vulkan or OpenGL drivers, which desktops have. The resident
+process runs in the background without an icon of its own: the window is opened from the
+applications menu, and "Start when you sign in" adds an XDG autostart entry.
+
+### macOS
+
+Download `open-controller-0.2.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
+move Open Controller to Applications. It is not notarised: the first time, open it with a
+right-click and Open. macOS lets no program create game controllers without an entitlement Apple
+grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
+directly, so on macOS Open Controller leaves controllers as they are and adds what games do not
+do: extra buttons as keys and macros, the light bar and its low-battery blink, battery levels and
+profiles. Typing keys for other apps needs the Accessibility permission, which the window asks for.
+
 ## What it does
 
 Every controller gets a player slot. Games see an Xbox 360 controller in that XInput slot, and the
@@ -54,6 +86,9 @@ the light bar colour on a DualShock 4 (blue, red, green, pink, as on a PlayStati
 their position, so the bottom face button is A whether it says Cross, B or A. Sticks and triggers
 pass through untouched, without a deadzone, as a real Xbox controller's do; the game applies its
 own. Rumble goes back the other way, from the game to the controller's motors.
+
+Players can be swapped by dragging one controller's tile onto another's. The two trade virtual
+controllers, so no game sees a controller leave; each one's lights follow its new number.
 
 A slot belongs to the controller, not to the connection. A DualShock 4 or DualSense gives the same
 Bluetooth address as its serial over Bluetooth and over USB, so plugging a cable into a DualSense
@@ -82,7 +117,7 @@ controller.
 Xbox controllers are listed but not duplicated: they are XInput controllers already, so they keep
 their own slot and add no latency. Controllers SDL reads through XInput, which gives no name, get
 the name Windows has for the device ("8BitDo Ultimate 2 Wireless Controller for PC" rather than
-"XInput Controller"), and generic names are replaced from a table of 334 known models. The
+"XInput Controller"), and generic names are replaced from a table of 602 known models. The
 interface follows Windows' light or dark mode and language, English or Brazilian Portuguese.
 
 ![A controller's page: the 8BitDo drawn with its live input, its profile, and its four extra buttons, one assigned to Xbox A, one to Ctrl+Shift+M and one to a macro](docs/controller.png)
@@ -104,24 +139,57 @@ Pressing an extra button on the controller picks it in the window. Changes apply
 and follow the controller across cables and pairings when it reports a serial (Bluetooth
 PlayStation, Switch and 8BitDo pads do); otherwise they belong to the model.
 
-Each controller has up to eight profiles, each with its own assignments and light. A new profile
-starts as a copy of the one in use, and switching applies at once, keys held by the old profile
-included.
+The touchpad gives three buttons of its own besides its click: a click on its left half, on its
+right half, and two fingers on it, so a DualShock 4 or DualSense has a few to assign even without
+back paddles.
+
+Each controller has up to eight profiles, each with its own assignments, light, gyro and stick
+settings. A new profile starts as a copy of the one in use, and switching applies at once, keys
+held by the old profile included. A profile can name programs: while one of them is the window in
+front, that profile is in use, and the chosen one again when it is not. Windows says when the
+program in front changes, so nothing is polled, and only the assignments change, never the
+players.
+
+### Gyro and sticks
+
+A controller with a gyro (DualShock 4, DualSense, Switch Pro, Joy-Cons, Steam Deck, 8BitDo pads in
+D-input mode) can aim by turning it: its rotation is added to the right stick, always, only while
+the left trigger is pulled (aiming down sights) or while a chosen button is held. A half turn a
+second is the stick all the way at 100 % sensitivity; a small deadzone keeps a still hand still, a
+filter smooths slow movement without delaying fast turns, and the stick keeps working. Each
+friend aims with their own controller, which a gyro mapped to the mouse would not allow.
+
+A worn stick that drifts can get a radial deadzone, and an anti-deadzone makes games react to the
+first movement past it. Both are off unless set: games apply their own.
 
 ### Light bar
 
 On a controller whose light bar SDL can colour (DualShock 4, DualSense, DualSense Edge and the
 licensed pads that report one), the Light section sets what it shows: the player's colour, as a
 PlayStation does, a colour of your choice, the battery (green when full to red when it needs
-charging) or nothing, with four steps of brightness. The section only appears on controllers that
-have such a light. The RGB lights of 8BitDo pads are set through 8BitDo's own protocol, which is
-not public, and are left alone.
+charging) or nothing, with four steps of brightness. Below 15 % on battery it blinks once a
+second, unless that is turned off. The section only appears on controllers that have such a
+light. The RGB lights of 8BitDo pads are set through 8BitDo's own protocol, which is not public,
+and are left alone.
+
+### Handheld PCs
+
+On a handheld, the built-in controller is an XInput pad that games read directly, and its extra
+buttons reach Windows as keys or through the maker's own HID interface. Open Controller recognises
+the machine by the name its firmware gives and reads them without writing anything to it: the
+function keys of AYANEO, ZOTAC Gaming Zone and OneXPlayer models, caught and swallowed so they do
+nothing else, and the HID reports of the Lenovo Legion Go, Go 2 and Go S (Y1 to Y3, M1 to M3, the
+Legion buttons and the wheel's click). They can become keys and macros; Xbox buttons need a
+virtual controller, which a built-in pad does not get. This comes from what other projects
+document about these machines and has not been tried on one yet.
 
 ## Supported controllers
 
 Controllers are read through [SDL 3](https://libsdl.org), which speaks each one's own protocol,
 plus the 869 Windows entries of the community
-[SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) for generic ones.
+[SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) for generic ones. A table of
+602 controllers (from SDL's lists, the 8BitDo range, and the ids Linux's drivers know) gives them
+their names, drawings and the advice the window shows.
 
 | | USB | Bluetooth | Receiver | Extra buttons |
 |---|---|---|---|---|
@@ -140,7 +208,8 @@ plus the 869 Windows entries of the community
 | Steam Deck, Steam Controller | yes | yes | yes | L4, R4, L5, R5, quick access, trackpad clicks; grips on the 2015 controller |
 | Flydigi Vader, Apex | yes | | yes | M1 to M4, C and Z or LM and RM |
 | Google Stadia, Amazon Luna, NVIDIA Shield | yes | yes | | Capture and Assistant, mic, share and volume |
-| Xbox 360, One, Series, Elite | yes | yes | Xbox Wireless Adapter | none: read by games directly, and Windows passes no paddles on |
+| Xbox 360, One, Series, Elite, and 220 pads made for them | yes | yes | Xbox Wireless Adapter | none: read by games directly, and Windows passes no paddles on |
+| AYANEO, Legion Go, Go 2, Go S, ZOTAC Zone, OneXPlayer built-in controllers | built in | | | their back and menu buttons, as keys and macros (untested) |
 | PowerA, Hori, Razer, Nacon and other licensed pads | yes | yes | yes | those SDL reports |
 | Generic USB and Bluetooth gamepads | yes | yes | yes | if SDL or the database maps them |
 | **Tested on hardware** | | | | **8BitDo Ultimate 2 Wireless on its receiver** |
@@ -168,11 +237,14 @@ gets the next player slot.
 
 ```
 crates/
-  open-controller-core/   the engine (SDL input, ViGEmBus client, HidHide, slots, extra buttons),
-                          the model table, profiles, driver setup, the pipe protocol and the texts
-  open-controller/        open-controller.exe: the resident process, a Win32 message loop and the
-                          notification-area icon
-  open-controller-ui/     open-controller-ui.exe: the window, in GPUI, started on demand
+  open-controller-core/   the engine (SDL input, slots, extra buttons, gyro and sticks), each
+                          system's side of it (ViGEmBus and HidHide on Windows, uinput and evdev
+                          grabs on Linux, Quartz keys on macOS), handheld buttons, the model table,
+                          profiles, driver setup, the pipe protocol and the texts
+  open-controller/        the resident process: on Windows a message loop and the notification-area
+                          icon, elsewhere a background process
+  open-controller-ui/     the window, in GPUI, started on demand
+packaging/                the Linux tarball (install script, udev rule, menu entry) and the macOS app
 ```
 
 The engine runs on one thread at multimedia "Games" priority, opted out of Windows 11's power
@@ -191,17 +263,28 @@ tree, and ignored. That slot is found where games look: ViGEmBus answers the que
 another XInput controller holds slot 0, so a new virtual controller shows a marker (four stick
 positions inside every game's deadzone) and XInput is read until one slot shows it.
 
-The window talks to the resident process over a named pipe private to the user and the session,
-with JSON messages: snapshots one way (60 per second while it is open, so the input view is live),
+On Linux each virtual controller is a uinput device shaped like the one the kernel's `xpad` driver
+makes for a real Xbox 360 controller (same ids, name, buttons and axis ranges), so SDL, Wine,
+Proton and native games take it for one; force-feedback effects a game uploads to it come back as
+rumble. Hiding takes an exclusive grab on the event nodes the kernel made for the physical
+controller, which Wine, Proton and most games read; Open Controller reads it through its `hidraw`
+node, which the grab leaves alone. Grabs end with the process, so a crash leaves nothing hidden.
+Keys and macros go through a uinput keyboard of Open Controller's own. Players are numbered in the
+order their virtual controllers were made, since Linux has no XInput slots to read back.
+
+The window talks to the resident process over a named pipe private to the user and the session
+(a Unix socket in the user's runtime directory on Linux and macOS), with JSON messages: snapshots one way (60 per second while it is open, so the input view is live),
 requests the other. While no window is connected, snapshots carry no live input and are only taken
 when something changes.
 
 ### Network
 
-Open Controller sends nothing anywhere and checks for no updates. The only connection it makes is
-the one you start in Settings, Requirements: clicking Install downloads that driver's installer
+Open Controller sends nothing anywhere and checks for no updates. It learns which program is in
+front, to switch profiles (from Windows, from the X server on Linux, XWayland included, and from
+the workspace on macOS), and keeps that to itself. The only connection it makes is the one you
+start in Settings, Requirements on Windows: clicking Install downloads that driver's installer
 from its GitHub release with Windows' own `curl`, and the installer runs only if its SHA-256
-matches the one recorded in this version.
+matches the one recorded in this version. The Linux rule is written by the program itself.
 
 [docs/design.md](docs/design.md) explains the decisions, including what was learned from DS4Windows
 and PadForge.
@@ -232,19 +315,27 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+On Linux the build needs CMake, a C compiler and the development files of libudev, xkbcommon
+(with its X11 part), Wayland, fontconfig and Vulkan; on Ubuntu, `libudev-dev libxkbcommon-dev
+libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libfontconfig1-dev libvulkan-dev`. SDL is built
+as a console library there, with no window system of its own. On macOS, Xcode's command line tools.
+`packaging/package.sh` makes the tarball and the app the way the release does.
+
 Release builds of GPUI precompile shaders with `fxc.exe` from the Windows SDK. Without the SDK,
 `cargo build --profile local` builds the same optimized programs and compiles the shaders at
 start-up. SDL is built from source and linked statically, which needs CMake and a C compiler.
 Without the Visual Studio build tools, the GNU toolchain works for this folder
 (`rustup override set stable-x86_64-pc-windows-gnu`) with a MinGW gcc on `PATH`.
 
-The 60 tests cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
+The 72 tests on Windows (64 on Linux and macOS, where the Windows drivers' do not apply) cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
 grace period, two connections of one controller), device identity and connection type, the
 ViGEmBus and HidHide request layouts and IOCTL codes, HidHide's list handling (other programs'
 entries survive) and its journal file, the bundled mappings, the table of known models and the
 extra buttons' names, families and drawings, the assignments (what an Xbox button adds to a
 report, macro limits, keys pressed and let go in order, extended keys, recorded keys), profiles
-(edits, limits, deleting the one in use) and light colours, the XInput slot markers, the pinned
+(edits, limits, deleting the one in use, programs that switch them) and light colours, the stick
+deadzone, the gyro's aim and filter, the touchpad's halves, the handhelds' firmware names and HID
+reports, the XInput slot markers, the pinned
 driver installers and version checks, the settings file and a real pipe round trip. These talk to
 the real drivers:
 
@@ -259,9 +350,20 @@ cargo test -p open-controller-core -- --ignored download        # downloads a dr
 `loopback` attaches an SDL virtual controller in the same process and checks, through XInput, that
 it gets a slot and its player number, that stick, Y axis and A arrive, that a back paddle assigned
 to Y presses Y and one assigned to a key (F24, which nothing uses) holds it while held, that
-switching to another profile applies at once and lets go of the old one's keys, that rumble set by
-a "game" reaches it, that disconnecting and reconnecting keeps the slot, and that stopping unplugs
-it. CI runs the tests and starts both programs on a runner without the drivers.
+switching to another profile applies at once and lets go of the old one's keys, that a click on
+the left half of its touchpad is a button of its own, that a profile naming the program in front
+takes over and gives way, that its gyro turns the right stick (always, or only with the left
+trigger pulled), that a stick deadzone centres a small movement, that a second controller and it
+trade players with input reaching each other's slot, that rumble set by a "game" reaches it, that
+disconnecting and reconnecting keeps the slot, and that stopping unplugs it.
+
+`linux_loopback` does the same on Linux through the kernel: input reaches the uinput Xbox 360
+controller's event node, a paddle presses Y and holds F24 on Open Controller's keyboard, a
+force-feedback effect played by a "game" comes back as rumble, and stopping removes the
+controller. It needs uinput and root (`sudo modprobe uinput && sudo
+target/debug/examples/linux_loopback`). The uinput request numbers are also checked against the
+kernel headers in the tests. CI runs the tests on Windows, Linux and macOS, starts the resident
+process on each, and runs `linux_loopback` on its Linux runner.
 `open-controller-ui --demo` fills the window with example controllers, for working on it without
 hardware; changes made there stay in it.
 
@@ -270,10 +372,16 @@ Edge into the `.ico` files.
 
 ## Limitations
 
-- Windows only. The engine's input side is SDL and would port; ViGEmBus and HidHide are Windows
-  drivers, and Linux would need uinput instead.
+- On Linux, hiding cannot reach a game that reads a controller's `hidraw` node itself, as SDL
+  games do when they may (Steam's rules allow it for PlayStation and Nintendo pads): such a game
+  sees the controller twice unless Steam Input or the game's own controller support is off. A
+  controller SDL reads through its event node, because its `hidraw` node is not readable, is not
+  hidden. Profiles switch with the program in front only for X programs (games under Wine and
+  Proton are), and handheld buttons are left to Handheld Daemon or InputPlumber.
+- On macOS there are no virtual controllers, player numbers, gyro aiming or hiding; see Installing.
 - Tested on hardware with one controller so far; every claim above about another controller is
-  SDL's support, not a test of Open Controller.
+  SDL's support, not a test of Open Controller. The handheld buttons and the gyro have only been
+  tested with SDL's simulated controller.
 - ViGEmBus is retired upstream. It is stable and still what DS4Windows uses, but it gets no new
   versions.
 - XInput games see at most four controllers. A fifth one gets a virtual controller that only
@@ -287,12 +395,16 @@ Edge into the `.ico` files.
 - When a new controller connects, the engine pauses about 17 ms to plug in its virtual controller.
 - Keys and macros from extra buttons do not reach a game running as administrator: Windows keeps
   a normal program's input out of elevated ones. Games with anti-cheat may also ignore them.
-- Extra buttons are only what SDL reports. Pads in XInput mode and Xbox Elite paddles send nothing
-  a program can read.
+- Extra buttons are only what SDL reports, plus the touchpad's halves and a handheld's own buttons.
+  Pads in XInput mode and Xbox Elite paddles send nothing a program can read.
+- On a handheld, the buttons that arrive as keys are taken from every program while Open Controller
+  runs, and the ROG Ally and MSI Claw are not covered: their extra buttons need configuration
+  written to the controller, which Open Controller does not do.
 - 8BitDo pads' RGB lights, on-board profiles and firmware settings are left to 8BitDo's app.
 - Switch 2 controllers and the official Wii U GameCube adapter need libusb, which this build of SDL
   leaves out.
-- The programs are not code-signed, so SmartScreen warns the first time they run.
+- The programs are not code-signed, so SmartScreen warns the first time they run, and the macOS app
+  is signed ad hoc only: its Accessibility permission has to be granted again after an update.
 
 ## Disclaimer
 

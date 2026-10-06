@@ -3,6 +3,7 @@
 
 use crate::Model;
 use crate::keys;
+use crate::requirements::{self, Component, Outcome};
 use crate::theme::{FONT, Theme, icon as glyph, radius};
 use crate::widgets::{icon_button, strong};
 use gpui::prelude::FluentBuilder;
@@ -11,10 +12,9 @@ use gpui::{
     ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowAppearance, div, img, px,
 };
 use open_controller_core::binding::{self, Action, Step};
-use open_controller_core::drivers::{self, Component, Outcome};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::profile::Edit;
-use open_controller_core::{Driver, PadKey, PadView};
+use open_controller_core::{PadKey, PadView};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -39,6 +39,8 @@ pub enum Screen {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Section {
     Buttons,
+    Motion,
+    Sticks,
     Light,
     Info,
 }
@@ -86,10 +88,12 @@ pub struct MainView {
     pub installs: HashMap<Component, Install>,
     /// What Programs and Features says is installed, read when the settings open.
     pub installed: HashMap<Component, Option<String>>,
+    /// Open programs offered for a profile to switch on with, while the list is shown.
+    pub picker: Option<Vec<String>>,
     /// The app's icon, in its version drawn for small sizes, for the bar on top.
     brand: Arc<Image>,
     /// Extra buttons held on the open controller in the last snapshot, to notice a new press.
-    held: u32,
+    held: u64,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -117,6 +121,7 @@ impl MainView {
             renaming: None,
             installs: HashMap::new(),
             installed: HashMap::new(),
+            picker: None,
             brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
             held: 0,
             _subscriptions: vec![observe, theme_change],
@@ -138,6 +143,7 @@ impl MainView {
         self.confirm_reset = false;
         self.profile_menu = false;
         self.renaming = None;
+        self.picker = None;
     }
 
     pub fn open(&mut self, key: PadKey, cx: &mut Context<Self>) {
@@ -168,9 +174,7 @@ impl MainView {
     }
 
     pub fn read_installed(&mut self) {
-        for p in &drivers::PACKAGES {
-            self.installed.insert(p.component, drivers::installed(p.component));
-        }
+        self.installed.extend(requirements::installed());
     }
 
     /// Whether something keeps controllers from working fully, for the dot on the settings
@@ -178,7 +182,7 @@ impl MainView {
     pub fn needs_attention(&self, cx: &Context<Self>) -> bool {
         let m = self.model.read(cx);
         let s = &m.snapshot;
-        !m.connected || !matches!(s.vigem, Driver::Ready { .. }) || (s.hiding && !matches!(s.hidhide, Driver::Ready { .. }))
+        !m.connected || requirements::attention(s, m.text).is_some()
     }
 
     /// Downloads and runs a driver's installer, away from the interface thread.
@@ -190,7 +194,7 @@ impl MainView {
         cx.notify();
         let dir = std::env::temp_dir().join("open-controller-setup");
         cx.spawn(async move |this, cx| {
-            let result = cx.background_executor().spawn(async move { drivers::install(c, &dir, silent) }).await;
+            let result = cx.background_executor().spawn(async move { requirements::install(c, &dir, silent) }).await;
             let _ = this.update(cx, |this, cx| {
                 this.installs.insert(
                     c,
@@ -218,8 +222,10 @@ impl MainView {
         if self.editor.as_ref().is_some_and(|e| e.button == button) {
             self.editor = None;
         } else {
-            let current = pad.bindings().get(&button);
+            let current = pad.profiles.active().bindings.get(&button);
+            let keys_only = crate::detail::native(pad);
             let tab = match current {
+                None if keys_only => Tab::Key,
                 Some(Action::Xbox(_)) | None => Tab::Xbox,
                 Some(Action::Keys(_)) => Tab::Key,
                 Some(Action::Macro(_)) => Tab::Macro,
@@ -392,8 +398,8 @@ impl MainView {
 }
 
 /// The extra buttons held on a controller, as bits.
-fn extras_held(pad: &PadView) -> u32 {
-    let mask = pad.extras.iter().fold(0u32, |m, &b| m | 1 << b);
+fn extras_held(pad: &PadView) -> u64 {
+    let mask = pad.extras.iter().fold(0u64, |m, &b| m | 1 << b);
     pad.input.buttons & mask
 }
 

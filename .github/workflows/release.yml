@@ -1,8 +1,9 @@
 name: Release
 
-# Push a tag like v0.1.0, matching the version in Cargo.toml, to build the Windows zip and publish
-# it as a release whose notes are that version's section of CHANGELOG.md. The programs are not
-# code-signed, so SmartScreen warns on first launch.
+# Push a tag like v0.2.0, matching the version in Cargo.toml, to build the Windows zip, the Linux
+# tarball and the macOS apps, and publish them as a release whose notes are that version's
+# section of CHANGELOG.md. Nothing is signed by a vendor: SmartScreen warns on first launch, and
+# macOS asks to open the app with a right-click the first time.
 on:
   push:
     tags: ["v*"]
@@ -11,46 +12,117 @@ permissions:
   contents: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the tag against Cargo.toml and CHANGELOG.md
+        id: check
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"; exit 1; }
+          grep -qx "## $version" CHANGELOG.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   windows:
+    needs: version
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
-      - name: Check the tag against Cargo.toml and CHANGELOG.md
-        id: version
-        shell: pwsh
-        run: |
-          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
-          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match version $version in Cargo.toml" }
-          $text = Get-Content CHANGELOG.md -Raw
-          $m = [regex]::Match($text, "(?ms)^## $([regex]::Escape($version))\s*\r?\n(.*?)(?=^## |\z)")
-          if (-not $m.Success) { throw "CHANGELOG.md has no section for $version" }
-          $m.Groups[1].Value.Trim() | Out-File -Encoding utf8 "$env:RUNNER_TEMP\notes.md"
-          "version=$version" >> $env:GITHUB_OUTPUT
-
       - name: Tests
         run: cargo test --workspace
       - name: Build
         run: cargo build --release --workspace
-
       - name: Package
         shell: pwsh
         run: |
-          $name = "open-controller-${{ steps.version.outputs.version }}-windows-x64"
+          $name = "open-controller-${{ needs.version.outputs.version }}-windows-x64"
           New-Item -ItemType Directory "dist\$name" | Out-Null
           Copy-Item target\release\open-controller.exe, target\release\open-controller-ui.exe, README.md, LICENSE, THIRD_PARTY_NOTICES.md, CHANGELOG.md "dist\$name"
           Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip"
           (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "dist\$name.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip*
 
+  linux:
+    needs: version
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev \
+            libfontconfig1-dev libfreetype6-dev libvulkan-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests
+        run: cargo test --workspace
+      - name: Build
+        run: cargo build --release --workspace
+      - name: Package
+        run: sh packaging/package.sh linux "${{ needs.version.outputs.version }}" target/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.tar.gz*
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 90
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Tests
+        if: matrix.arch == 'arm64'
+        run: cargo test --workspace
+      - name: Build
+        run: cargo build --release --workspace --target ${{ matrix.target }}
+      - name: Package
+        run: sh packaging/package.sh macos "${{ needs.version.outputs.version }}" target/${{ matrix.target }}/release ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: dist/*.zip*
+
+  publish:
+    needs: [version, windows, linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Release notes
+        run: |
+          awk -v v="## ${{ needs.version.outputs.version }}" '$0 == v {on=1; next} /^## / {on=0} on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
       - name: Publish the release
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" dist/*.zip dist/*.sha256 \
-            --title "Open Controller ${{ steps.version.outputs.version }}" \
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Open Controller ${{ needs.version.outputs.version }}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --verify-tag

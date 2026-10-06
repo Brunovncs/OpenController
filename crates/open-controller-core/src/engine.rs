@@ -1,30 +1,48 @@
-//! The input thread. It owns SDL, the virtual controllers and HidHide, and runs one loop:
+//! The input thread. It owns SDL, the virtual controllers and hiding, and runs one loop:
 //! read what the controllers sent, forward it to the virtual controllers, pass rumble back,
 //! sleep about a millisecond. The UI only sends commands and reads snapshots.
 
 use crate::binding::{self, Action, Bindings, Chord};
-use crate::bluetooth;
 use crate::device::{self, Brand, Identity, Link, Power};
-use crate::devnode;
 use crate::extras::{self, Art, Family, Features, Hint};
-use crate::hidhide::Cloak;
+use crate::handheld;
 use crate::keyboard::Keyboard;
 use crate::mapping::{self, PadState, XusbReport};
 use crate::models;
-use crate::profile::{self, Profiles};
+use crate::motion::{self, GyroAim};
+use crate::platform::{Bus, Cloak, CloakError, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, VIRTUAL_PADS, bluetooth, devnode};
+use crate::profile::{self, GyroMode, Profile, Profiles};
 use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
 use crate::sdl::{Event, Gamepad, Sdl};
-use crate::vigem::{Bus, Feedback};
-use crate::win::Overlapped;
+#[cfg(windows)]
 use crate::xinput;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+/// Without XInput's slots there is nothing to look for: players are numbered in order.
+#[cfg(not(windows))]
+mod xinput {
+    use crate::mapping::XusbReport;
+
+    pub fn marker(_: u32) -> XusbReport {
+        XusbReport::default()
+    }
+
+    pub fn find(_: &XusbReport) -> Option<u8> {
+        None
+    }
+
+    pub fn has_free_slot() -> bool {
+        false
+    }
+}
 
 /// How long a virtual controller waits for its physical controller to come back.
 pub const GRACE: Duration = Duration::from_secs(15);
@@ -45,18 +63,29 @@ const RUMBLE_RENEW: Duration = Duration::from_secs(10);
 const RETRY: Duration = Duration::from_secs(5);
 const VIEW_PERIOD: Duration = Duration::from_millis(16);
 /// The bits of the buttons with no Xbox equivalent in `PadState::buttons`.
-const EXTRA_BUTTONS: u32 = {
-    let mut m = 0;
+const EXTRA_BUTTONS: u64 = {
+    let mut m = 0u64;
     let mut i = 0;
     while i < extras::ALL.len() {
         m |= 1 << extras::ALL[i];
         i += 1;
     }
+    let mut i = 0;
+    while i < extras::HANDHELD.len() {
+        m |= 1 << extras::HANDHELD[i];
+        i += 1;
+    }
     m
 };
+/// The left trigger past halfway: aiming, for the gyro.
+const AIMING: i16 = 16384;
+/// Below this charge, a light bar set to blink does.
+const LOW_BATTERY: u8 = 15;
+/// Stops the handheld button readers when the engine stops.
+static HANDHELD_STOP: AtomicBool = AtomicBool::new(false);
 
 pub struct Config {
-    /// Where the HidHide journal is kept.
+    /// Where the HidHide journal is kept (Windows).
     pub data_dir: PathBuf,
     /// Hide the physical controllers that are turned into virtual ones from games.
     pub hide: bool,
@@ -80,6 +109,12 @@ pub enum Command {
     Watch(bool),
     /// Replaces the profiles of the controllers whose settings are kept under this key.
     SetProfiles(String, Profiles),
+    /// The program in front changed (its executable's name, lowercase): profiles that name it
+    /// take over.
+    Foreground(String),
+    /// Two controllers trade players: each takes the other's virtual controller, so no game
+    /// sees a controller leave.
+    SwapPlayers(PadKey, PadKey),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -122,20 +157,30 @@ pub struct PadView {
     /// (an XInput controller, which games read directly).
     pub store: Option<String>,
     pub profiles: Profiles,
+    /// The profile in use right now: the chosen one, or one that names the program in front.
+    pub in_use: usize,
 }
 
 impl PadView {
+    pub fn profile(&self) -> &Profile {
+        &self.profiles.list[self.in_use.min(self.profiles.list.len() - 1)]
+    }
+
     /// What its extra buttons do in the profile in use.
     pub fn bindings(&self) -> &Bindings {
-        &self.profiles.active().bindings
+        &self.profile().bindings
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Driver {
-    Ready { version: Option<String> },
+    Ready {
+        version: Option<String>,
+    },
     Missing,
     Failed(String),
+    /// This system has no such thing: macOS makes no virtual controllers and hides none.
+    Unsupported,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -147,6 +192,8 @@ pub struct Snapshot {
     pub sdl_version: String,
     pub sdl_error: Option<String>,
     pub running: bool,
+    /// The program in front, as profiles name programs.
+    pub foreground: String,
 }
 
 impl Default for Snapshot {
@@ -159,6 +206,7 @@ impl Default for Snapshot {
             sdl_version: String::new(),
             sdl_error: None,
             running: false,
+            foreground: String::new(),
         }
     }
 }
@@ -244,6 +292,12 @@ struct Phys {
     power: Power,
     /// The colour last given its light bar.
     led: Option<[u8; 3]>,
+    /// Whether its gyro reports are on, the gyro's push on the right stick and when it was last
+    /// read.
+    gyro_on: bool,
+    aim: GyroAim,
+    aim_out: (i16, i16),
+    aim_at: Option<Instant>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -257,6 +311,14 @@ enum Kind {
     /// An XInput device seen while a virtual controller's slot is still unknown; it cannot be
     /// told apart from that controller yet.
     Pending,
+}
+
+/// Who holds a key down: a slot (its virtual controller's controller), or an XInput controller
+/// of its own (a handheld's built-in one).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Owner {
+    Slot(SlotId),
+    Device(DeviceId),
 }
 
 /// A virtual controller.
@@ -287,7 +349,7 @@ struct Core {
     bus_version: Option<String>,
     bus_error: Option<String>,
     bus_retry: Instant,
-    io: Overlapped,
+    io: Io,
     cloak: Option<Cloak>,
     hidhide: Driver,
     hiding: bool,
@@ -309,8 +371,15 @@ struct Core {
     turning_off: Vec<DeviceId>,
     profiles: HashMap<String, Profiles>,
     keyboard: Keyboard,
-    /// Keys held down for extra buttons that are held down, by slot, to be let go with them.
-    held: Vec<(SlotId, u8, Chord)>,
+    /// Keys held down for extra buttons that are held down, to be let go with them.
+    held: Vec<(Owner, u8, Chord)>,
+    started: Instant,
+    /// The program in front, which can switch profiles.
+    foreground: String,
+    /// The handheld PC this is, if any, and what its built-in controller's own buttons hold.
+    handheld: Option<&'static handheld::Machine>,
+    handheld_rx: Receiver<handheld::Held>,
+    handheld_held: u64,
     updated: Vec<DeviceId>,
     changed: bool,
     input_changed: bool,
@@ -337,19 +406,23 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         }
     };
     let _ = std::fs::create_dir_all(&config.data_dir);
-    let (cloak, hidhide) = match Cloak::start(&config.data_dir.join(crate::hidhide::JOURNAL_FILE)) {
+    let (cloak, hidhide) = match Cloak::start(&config.data_dir.join(JOURNAL_FILE)) {
         Ok(c) => (Some(c), Driver::Ready { version: None }),
-        Err(crate::hidhide::CloakError::NotInstalled) => (None, Driver::Missing),
-
+        Err(_) if !VIRTUAL_PADS => (None, Driver::Unsupported),
+        Err(CloakError::NotInstalled) => (None, Driver::Missing),
+        #[allow(unreachable_patterns)]
         Err(e) => (None, Driver::Failed(e.to_string())),
     };
     let (feedback_tx, feedback_rx) = unbounded();
+    let (handheld_tx, handheld_rx) = unbounded();
+    HANDHELD_STOP.store(false, Ordering::Relaxed);
+    handheld::start(handheld_tx, &HANDHELD_STOP);
     let mut core = Core {
         bus: None,
         bus_version: None,
         bus_error: None,
         bus_retry: Instant::now(),
-        io: Overlapped::new(),
+        io: Io::new(),
         cloak,
         hidhide,
         hiding: config.hide,
@@ -367,6 +440,11 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         profiles: config.profiles,
         keyboard: Keyboard::start(),
         held: Vec::new(),
+        started: Instant::now(),
+        foreground: String::new(),
+        handheld: handheld::this_machine(),
+        handheld_rx,
+        handheld_held: 0,
         updated: Vec::with_capacity(16),
         changed: true,
         input_changed: false,
@@ -390,7 +468,8 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
             }
         }
         core.pump(now);
-        core.forward();
+        core.handheld_buttons();
+        core.forward(now);
         core.feedback(now);
         core.housekeeping(now);
 
@@ -410,6 +489,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         let period = if core.phys.is_empty() && core.targets.is_empty() { IDLE_PERIOD } else { ACTIVE_PERIOD };
         pacer.wait(period);
     }
+    HANDHELD_STOP.store(true, Ordering::Relaxed);
     core.shutdown();
     publish(Snapshot::default());
 }
@@ -463,9 +543,8 @@ impl Core {
             Command::Watch(_) => {}
             Command::SetProfiles(store, profiles) => {
                 let devices: Vec<DeviceId> = self.phys.iter().filter(|(_, p)| p.model.store == store).map(|(&id, _)| id).collect();
-                let slots: Vec<SlotId> = devices.iter().filter_map(|&d| self.roster.slot_of(d)).collect();
-                for &s in &slots {
-                    self.release_keys(s);
+                for &d in &devices {
+                    self.release_keys(self.owner_of(d));
                 }
                 let profiles = profiles.sanitised();
                 if profiles.is_default() {
@@ -473,12 +552,120 @@ impl Core {
                 } else {
                     self.profiles.insert(store, profiles);
                 }
-                for s in slots {
-                    self.resend(s);
+                self.profiles_changed(&devices);
+            }
+            Command::Foreground(program) => {
+                if program != self.foreground {
+                    let before: Vec<(DeviceId, usize)> = self.in_use_by_device();
+                    self.foreground = program;
+                    // Only controllers whose profile in use changed are touched.
+                    let devices: Vec<DeviceId> =
+                        self.in_use_by_device().into_iter().filter(|x| !before.contains(x)).map(|(d, _)| d).collect();
+                    for &d in &devices {
+                        self.release_keys(self.owner_of(d));
+                    }
+                    self.profiles_changed(&devices);
                 }
             }
+            Command::SwapPlayers(PadKey::Slot(a), PadKey::Slot(b)) if a != b => self.swap(SlotId(a), SlotId(b)),
+            Command::SwapPlayers(..) => {}
         }
         self.changed = true;
+    }
+
+    /// Each controller with settings, and which of its profiles is in use.
+    fn in_use_by_device(&self) -> Vec<(DeviceId, usize)> {
+        self.phys.iter().filter_map(|(&d, p)| self.profiles.get(&p.model.store).map(|pr| (d, pr.in_use(&self.foreground)))).collect()
+    }
+
+    /// After a profile change: the gyro is turned on or off to match, and the virtual
+    /// controllers get the new assignments at once.
+    fn profiles_changed(&mut self, devices: &[DeviceId]) {
+        self.sync_gyro();
+        let slots: Vec<SlotId> = devices.iter().filter_map(|&d| self.roster.slot_of(d)).collect();
+        for s in slots {
+            self.resend(s);
+        }
+    }
+
+    /// Two slots trade virtual controllers, and so players: games see the same controllers
+    /// with different hands on them.
+    fn swap(&mut self, a: SlotId, b: SlotId) {
+        if self.roster.get(a).is_none() || self.roster.get(b).is_none() {
+            return;
+        }
+        self.release_keys(Owner::Slot(a));
+        self.release_keys(Owner::Slot(b));
+        let ta = self.targets.remove(&a);
+        let tb = self.targets.remove(&b);
+        for (slot, target) in [(a, tb), (b, ta)] {
+            if let Some(mut t) = target {
+                // The rumble the game asked of this virtual controller moves to its new hands.
+                if let Some(p) = t.rumble_to.and_then(|d| self.phys.get(&d)) {
+                    p.pad.rumble(0, 0, 0);
+                }
+                t.rumble_to = None;
+                self.targets.insert(slot, t);
+            }
+        }
+        for s in [a, b] {
+            let player = self.targets.get(&s).and_then(|t| t.player);
+            for d in self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default() {
+                if let Some(p) = self.phys.get(&d) {
+                    p.pad.set_player(player.map_or(-1, i32::from));
+                }
+            }
+            self.resend(s);
+            self.apply_rumble(s);
+        }
+    }
+
+    fn owner_of(&self, d: DeviceId) -> Owner {
+        match self.phys.get(&d).map(|p| p.kind) {
+            Some(Kind::Slot(s)) => Owner::Slot(s),
+            _ => Owner::Device(d),
+        }
+    }
+
+    /// The profile in use for the controllers kept under `store`.
+    fn profile_of(&self, store: &str) -> Option<&Profile> {
+        self.profiles.get(store).map(|p| p.for_program(&self.foreground))
+    }
+
+    /// Turns each controller's gyro reports on while its profile uses them.
+    fn sync_gyro(&mut self) {
+        let ids: Vec<DeviceId> = self.phys.keys().copied().collect();
+        for id in ids {
+            let want = {
+                let p = &self.phys[&id];
+                matches!(p.kind, Kind::Slot(_))
+                    && p.model.features.motion
+                    && self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off)
+            };
+            let p = self.phys.get_mut(&id).unwrap();
+            if p.gyro_on != want {
+                p.pad.set_gyro(want);
+                p.gyro_on = want;
+                p.aim.reset();
+                p.aim_out = (0, 0);
+                p.aim_at = None;
+            }
+        }
+    }
+
+    /// What the handheld's own buttons hold, merged into its built-in controller's state.
+    fn handheld_buttons(&mut self) {
+        let mut changed = false;
+        while let Ok(held) = self.handheld_rx.try_recv() {
+            self.handheld_held = held;
+            changed = true;
+        }
+        if changed
+            && let Some((&id, _)) = self.phys.iter().find(|(_, p)| p.model.family == Family::Handheld && p.kind == Kind::Native)
+            && !self.updated.contains(&id)
+        {
+            self.updated.push(id);
+        }
     }
 
     fn device_for(&self, key: PadKey) -> Option<DeviceId> {
@@ -523,7 +710,10 @@ impl Core {
         self.unmapped.remove(&id);
         let Some(pad) = self.sdl.open(id) else { return };
         let (vendor, product, path) = (pad.vendor(), pad.product(), pad.path());
-        let link = device::link(vendor, product, &path, pad.connection());
+        let mut link = device::link(vendor, product, &path, pad.connection());
+        if devnode::is_bluetooth(&path) {
+            link = Link::Bluetooth;
+        }
         let mut identity = device::identity(vendor, product, pad.serial().as_deref(), &path);
         // One controller cannot be connected twice the same way. Two devices with one serial and
         // one kind of link are two controllers that share a serial, as some clones do.
@@ -545,19 +735,32 @@ impl Core {
         if let Some(fields) = extras::missing_mapping(vendor, product) {
             pad.extend_mapping(fields);
         }
-        let family = extras::family(vendor, product, pad.pad_type());
-        let model = Model {
+        let mut family = extras::family(vendor, product, pad.pad_type());
+        // On a handheld PC, its XInput pad is the built-in controller, whatever id it gives.
+        let built_in = self.handheld.filter(|_| device::is_xinput_path(&path) && !devnode::is_virtual(&path));
+        if let Some(m) = built_in {
+            family = Family::Handheld;
+            if models::is_generic_name(&name) || name.starts_with("Xbox 360") {
+                name = m.name.to_string();
+            }
+        }
+        let features = pad.features();
+        let mut model = Model {
             name,
             brand: device::brand(vendor, pad.pad_type()),
             vendor,
             product,
             family,
             art: extras::art(family, vendor, product),
-            extras: extras::ALL.iter().copied().filter(|&b| pad.has_button(b as u32)).collect(),
-            features: pad.features(),
+            extras: extras::available(&features, |b| pad.has_button(b)),
+            features,
             hint: extras::hint(vendor, product, family),
             store: binding::store_key(&identity, vendor, product),
         };
+        if let Some(m) = built_in {
+            model.extras = extras::HANDHELD[..m.buttons.len()].to_vec();
+            model.store = format!("handheld:{}", m.name);
+        }
         let mut p = Phys {
             model,
             link,
@@ -567,13 +770,20 @@ impl Core {
             state: PadState::default(),
             power: pad.power(),
             led: None,
+            gyro_on: false,
+            aim: GyroAim::default(),
+            aim_out: (0, 0),
+            aim_at: None,
             pad,
         };
         p.pad.read(&mut p.state);
+        let xbox = matches!(p.pad.pad_type(), device::PadType::Xbox360 | device::PadType::XboxOne);
         p.kind = if devnode::is_virtual(&path) {
             Kind::Own
         } else if device::is_xinput_path(&path) {
             self.classify_xinput(&path).unwrap_or(Kind::Pending)
+        } else if !VIRTUAL_PADS || devnode::is_native(&path, xbox) {
+            Kind::Native
         } else {
             match self.roster.attach(id, p.identity.clone()) {
                 Attached::New(s) | Attached::Rejoined(s) => Kind::Slot(s),
@@ -592,6 +802,7 @@ impl Core {
             self.resend(s);
             self.move_rumble(s);
         }
+        self.sync_gyro();
         self.changed = true;
     }
 
@@ -618,9 +829,7 @@ impl Core {
     }
 
     fn removed(&mut self, id: DeviceId, now: Instant) {
-        if let Some(s) = self.roster.slot_of(id) {
-            self.release_keys(s);
-        }
+        self.release_keys(self.owner_of(id));
         let Some(p) = self.phys.remove(&id) else { return };
         self.updated.retain(|&d| d != id);
         if let Kind::Slot(s) = p.kind {
@@ -672,8 +881,23 @@ impl Core {
     /// The Xbox report for a device's state, with the Xbox buttons its extra buttons stand for.
     fn report_of(&self, dev: DeviceId) -> XusbReport {
         let Some(p) = self.phys.get(&dev) else { return XusbReport::default() };
-        let mut r = mapping::to_xusb(&p.state);
-        if let Some(b) = self.bindings_of(&p.model.store) {
+        let profile = self.profile_of(&p.model.store);
+        let mut state = p.state;
+        if let Some(pr) = profile {
+            let (lx, ly) = motion::shape_stick(state.axes[mapping::axis::LEFT_X], state.axes[mapping::axis::LEFT_Y], pr.sticks);
+            let (rx, ry) = motion::shape_stick(state.axes[mapping::axis::RIGHT_X], state.axes[mapping::axis::RIGHT_Y], pr.sticks);
+            state.axes[mapping::axis::LEFT_X] = lx;
+            state.axes[mapping::axis::LEFT_Y] = ly;
+            state.axes[mapping::axis::RIGHT_X] = rx;
+            state.axes[mapping::axis::RIGHT_Y] = ry;
+        }
+        let mut r = mapping::to_xusb(&state);
+        // The gyro adds to the right stick, so the stick still turns and the gyro fine-tunes.
+        if p.aim_out != (0, 0) {
+            r.thumb_rx = (i32::from(r.thumb_rx) + i32::from(p.aim_out.0)).clamp(-32768, 32767) as i16;
+            r.thumb_ry = (i32::from(r.thumb_ry) + i32::from(p.aim_out.1)).clamp(-32768, 32767) as i16;
+        }
+        if let Some(b) = profile.map(|pr| &pr.bindings) {
             let (bits, lt, rt) = binding::xbox_overlay(b, p.state.buttons);
             r.buttons |= bits;
             if lt {
@@ -686,15 +910,16 @@ impl Core {
         r
     }
 
-    /// Brings the keys a slot holds in line with its source's extra buttons, and starts the
-    /// macros of the buttons just pressed. Held keys follow the buttons' state rather than
+    /// Brings the keys an owner holds in line with its controller's extra buttons, and starts
+    /// the macros of the buttons just pressed. Held keys follow the buttons' state rather than
     /// their release, which can come from another connection of the controller than the press.
-    fn type_keys(&mut self, s: SlotId, dev: DeviceId, before: u32, after: u32) {
-        let bindings = self.phys.get(&dev).and_then(|p| self.profiles.get(&p.model.store)).map(|p| &p.active().bindings);
+    fn type_keys(&mut self, s: Owner, dev: DeviceId, before: u64, after: u64) {
+        let program = self.foreground.as_str();
+        let bindings = self.phys.get(&dev).and_then(|p| self.profiles.get(&p.model.store)).map(|p| &p.for_program(program).bindings);
         let mut i = 0;
         while i < self.held.len() {
-            let (slot, button, chord) = self.held[i];
-            let still = slot != s
+            let (owner, button, chord) = self.held[i];
+            let still = owner != s
                 || (after & 1 << button != 0 && matches!(bindings.and_then(|b| b.get(&button)), Some(Action::Keys(c)) if *c == chord));
             if still {
                 i += 1;
@@ -719,26 +944,33 @@ impl Core {
         }
     }
 
-    fn bindings_of(&self, store: &str) -> Option<&Bindings> {
-        self.profiles.get(store).map(|p| &p.active().bindings)
-    }
-
     /// Gives each light bar the colour its profile asks for: the player's, a chosen one, the
-    /// battery's or none. Only a change is sent.
-    fn update_lights(&mut self) {
+    /// battery's or none, blinking once a second when the battery is nearly empty. Only a change
+    /// is sent.
+    fn update_lights(&mut self, now: Instant) {
+        // Half a second on, half off.
+        let blink_off = now.duration_since(self.started).as_millis() % 1000 >= 500;
         for p in self.phys.values_mut() {
-            let Kind::Slot(s) = p.kind else { continue };
+            // Where controllers stay as they are, their lights are still Open Controller's to set.
+            let player = match p.kind {
+                Kind::Slot(s) => self.targets.get(&s).and_then(|t| t.player),
+                Kind::Native if !VIRTUAL_PADS => None,
+                _ => continue,
+            };
             if !p.model.features.light_bar {
                 continue;
             }
-            let player = self.targets.get(&s).and_then(|t| t.player);
             let battery = match p.power {
                 Power::Battery(l) | Power::Charging(l) => l,
                 _ => None,
             };
-            let color = match self.profiles.get(&p.model.store) {
-                Some(pr) => profile::light_color(pr.active().light, pr.active().brightness, player, battery),
-                None => profile::light_color(profile::Light::Player, 100, player, battery),
+            let default = Profile::default();
+            let pr = self.profiles.get(&p.model.store).map(|x| x.for_program(&self.foreground)).unwrap_or(&default);
+            let low = matches!(p.power, Power::Battery(Some(l)) if l <= LOW_BATTERY);
+            let color = if pr.low_battery_flash && low && blink_off {
+                [0, 0, 0]
+            } else {
+                profile::light_color(pr.light, pr.brightness, player, battery)
             };
             if p.led != Some(color) {
                 p.pad.set_led(color);
@@ -747,8 +979,8 @@ impl Core {
         }
     }
 
-    /// Lets go of every key a slot holds down: its controller left, or its assignments changed.
-    fn release_keys(&mut self, s: SlotId) {
+    /// Lets go of every key an owner holds down: its controller left, or its assignments changed.
+    fn release_keys(&mut self, s: Owner) {
         let (mine, rest): (Vec<_>, Vec<_>) = self.held.drain(..).partition(|h| h.0 == s);
         self.held = rest;
         for (_, _, c) in mine {
@@ -767,17 +999,45 @@ impl Core {
     }
 
     /// Forwards every controller that sent a report since the last pass.
-    fn forward(&mut self) {
+    fn forward(&mut self, now: Instant) {
         let updated = std::mem::take(&mut self.updated);
         for &id in &updated {
             let Some(p) = self.phys.get_mut(&id) else { continue };
             let before = p.state;
+            let aim_before = p.aim_out;
             p.pad.read(&mut p.state);
-            if p.state == before {
+            if p.model.family == Family::Handheld && p.kind == Kind::Native {
+                p.state.buttons |= self.handheld_held;
+            }
+            if p.gyro_on {
+                let gyro = self.profiles.get(&p.model.store).map(|x| x.for_program(&self.foreground).gyro).unwrap_or_default();
+                let active = match gyro.mode {
+                    GyroMode::Off => false,
+                    GyroMode::Always => true,
+                    GyroMode::Aiming => p.state.axes[mapping::axis::LEFT_TRIGGER] > AIMING,
+                    GyroMode::Holding(b) => p.state.pressed(u32::from(b)),
+                };
+                match (active, p.pad.gyro()) {
+                    (true, Some(rate)) => {
+                        let dt = p.aim_at.map_or(0.004, |t| now.duration_since(t).as_secs_f32());
+                        p.aim_out = p.aim.update(rate, dt, gyro);
+                        p.aim_at = Some(now);
+                    }
+                    _ => {
+                        p.aim.reset();
+                        p.aim_out = (0, 0);
+                        p.aim_at = None;
+                    }
+                }
+            }
+            if p.state == before && p.aim_out == aim_before {
                 continue;
             }
             self.input_changed = true;
             let (kind, state) = (p.kind, p.state);
+            if kind == Kind::Native && (before.buttons ^ state.buttons) & EXTRA_BUTTONS != 0 {
+                self.type_keys(Owner::Device(id), id, before.buttons, state.buttons);
+            }
             if let Kind::Slot(s) = kind {
                 // Stick noise on the idle connection of a controller connected twice must not
                 // pull the slot over to it.
@@ -788,7 +1048,7 @@ impl Core {
                 if self.roster.get(s).and_then(|x| x.source) == Some(id) {
                     self.resend(s);
                     if (before.buttons ^ state.buttons) & EXTRA_BUTTONS != 0 || !self.held.is_empty() {
-                        self.type_keys(s, id, before.buttons, state.buttons);
+                        self.type_keys(Owner::Slot(s), id, before.buttons, state.buttons);
                     }
                 }
             }
@@ -851,7 +1111,7 @@ impl Core {
         }
         self.plug_missing(now);
         self.find_player_slots(now);
-        self.update_lights();
+        self.update_lights(now);
         let unsent: Vec<SlotId> = self
             .targets
             .iter()
@@ -899,12 +1159,13 @@ impl Core {
                 Ok(serial) => {
                     self.failed.remove(&s);
                     let listener = Some(bus.listen(serial, self.feedback_tx.clone()));
+                    let player = if PLAYER_SLOTS { None } else { self.free_player() };
                     self.targets.insert(
                         s,
                         Target {
                             serial,
-                            player: None,
-                            search: Some((xinput::marker(serial), now + SLOT_WAIT)),
+                            player,
+                            search: PLAYER_SLOTS.then(|| (xinput::marker(serial), now + SLOT_WAIT)),
                             next_search: now,
                             backoff: Duration::from_secs(1),
                             want: XusbReport::default(),
@@ -916,8 +1177,11 @@ impl Core {
                         },
                     );
                     let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
-                    for d in devices {
+                    for &d in &devices {
                         self.hide(d);
+                        if let (Some(i), Some(p)) = (player, self.phys.get(&d)) {
+                            p.pad.set_player(i32::from(i));
+                        }
                     }
                     self.resend(s);
                 }
@@ -944,6 +1208,9 @@ impl Core {
     /// Finds which XInput slot each new virtual controller got, by looking for its marker
     /// where games look, and lights that player number on the physical controller.
     fn find_player_slots(&mut self, now: Instant) {
+        if !PLAYER_SLOTS {
+            return self.number_players();
+        }
         let mut lit = Vec::new();
         let mut free = None;
         for (&s, t) in self.targets.iter_mut() {
@@ -981,6 +1248,30 @@ impl Core {
             for p in self.phys.values_mut() {
                 if p.kind == Kind::Native && device::xinput_slot(&p.pad.path()) == Some(player) {
                     p.kind = Kind::Own;
+                }
+            }
+            self.changed = true;
+        }
+    }
+
+    /// The lowest player number no virtual controller has.
+    fn free_player(&self) -> Option<u8> {
+        (0..4).find(|&i| !self.targets.values().any(|t| t.player == Some(i)))
+    }
+
+    /// Without XInput, a virtual controller that came fifth takes a number when one frees up.
+    fn number_players(&mut self) {
+        let mut waiting: Vec<(u32, SlotId)> =
+            self.targets.iter().filter(|(_, t)| t.player.is_none()).map(|(&s, t)| (t.serial, s)).collect();
+        waiting.sort();
+        for (_, s) in waiting {
+            let Some(i) = self.free_player() else { return };
+            if let Some(t) = self.targets.get_mut(&s) {
+                t.player = Some(i);
+            }
+            for d in self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default() {
+                if let Some(p) = self.phys.get(&d) {
+                    p.pad.set_player(i32::from(i));
                 }
             }
             self.changed = true;
@@ -1036,10 +1327,14 @@ impl Core {
         let mut native: Vec<(&DeviceId, &Phys)> = self.phys.iter().filter(|(_, p)| p.kind == Kind::Native).collect();
         native.sort_by_key(|(_, p)| p.pad.player().unwrap_or(u8::MAX));
         for (&id, p) in native {
-            let mut view = self.view(PadKey::Device(id), Some(&p.model), false);
+            // A handheld's built-in controller keeps its own buttons' assignments, and so does
+            // every controller where games read them directly anyway (outside Windows).
+            let assignable = p.model.family == Family::Handheld || !cfg!(windows);
+            let mut view = self.view(PadKey::Device(id), Some(&p.model), assignable);
             view.links = vec![p.link];
             view.power = p.power;
-            view.role = Role::Native { player: device::xinput_slot(&p.pad.path()) };
+            let player = device::xinput_slot(&p.pad.path()).or_else(|| if VIRTUAL_PADS { None } else { p.pad.player() });
+            view.role = Role::Native { player };
             view.input = p.state;
             pads.push(view);
         }
@@ -1051,6 +1346,7 @@ impl Core {
             pads.push(view);
         }
         let vigem = match (&self.bus, &self.bus_error) {
+            _ if !VIRTUAL_PADS => Driver::Unsupported,
             (Some(_), _) => Driver::Ready { version: self.bus_version.clone() },
             (None, Some(e)) if e.contains("not installed") => Driver::Missing,
             (None, Some(e)) => Driver::Failed(e.clone()),
@@ -1064,6 +1360,7 @@ impl Core {
             sdl_version: crate::sdl::version(),
             sdl_error: None,
             running: true,
+            foreground: self.foreground.clone(),
         }
     }
 
@@ -1088,6 +1385,7 @@ impl Core {
             features: model.map(|m| m.features).unwrap_or_default(),
             hint: model.and_then(|m| m.hint),
             profiles: store.as_ref().and_then(|p| self.profiles.get(p)).cloned().unwrap_or_default(),
+            in_use: store.as_ref().and_then(|p| self.profiles.get(p)).map_or(0, |p| p.in_use(&self.foreground)),
             store,
         }
     }

@@ -1,16 +1,19 @@
 //! Keys pressed on the user's behalf for extra buttons, and key names for the interface.
 //!
-//! Keys go out through `SendInput` from a thread of their own, so a macro's waits never hold up
-//! the input thread. Each key carries its scan code as well as its virtual-key code: games that
-//! read Raw Input or DirectInput look at the scan code.
+//! Keys go out from a thread of their own, so a macro's waits never hold up the input thread.
+//! Chords are Windows virtual-key codes on every system, so settings carry over between them;
+//! each system's module turns them into its own key codes.
 
 use crate::binding::{Chord, Step, modifier};
 use crossbeam_channel::{Sender, unbounded};
 use std::time::Duration;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyNameTextW, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC_EX,
-    MapVirtualKeyW, SendInput, VK_CONTROL, VK_LWIN, VK_MENU, VK_SHIFT, VkKeyScanW,
-};
+
+#[cfg_attr(windows, path = "keyboard/windows.rs")]
+#[cfg_attr(target_os = "linux", path = "keyboard/linux.rs")]
+#[cfg_attr(target_os = "macos", path = "keyboard/macos.rs")]
+mod sys;
+
+pub use sys::{key_name, vk_for_char};
 
 enum Out {
     Down(Chord),
@@ -29,11 +32,14 @@ impl Keyboard {
         std::thread::Builder::new()
             .name("open-controller-keys".into())
             .spawn(move || {
+                // Without a way to type (Linux without the device rule), keys are dropped.
+                let sink = sys::Sink::open();
                 while let Ok(out) = rx.recv() {
+                    let Some(sink) = sink.as_ref() else { continue };
                     match out {
-                        Out::Down(c) => send(&down(c)),
-                        Out::Up(c) => send(&up(c)),
-                        Out::Play(steps) => play(&steps),
+                        Out::Down(c) => sink.down(c),
+                        Out::Up(c) => sink.up(c),
+                        Out::Play(steps) => play(sink, &steps),
                     }
                 }
             })
@@ -54,19 +60,16 @@ impl Keyboard {
     }
 }
 
-const MODIFIERS: [(u8, u16); 4] =
-    [(modifier::CTRL, VK_CONTROL), (modifier::SHIFT, VK_SHIFT), (modifier::ALT, VK_MENU), (modifier::WIN, VK_LWIN)];
-
 /// Gap between the keys of a macro step, so programs that poll the keyboard see each one.
 const TAP: Duration = Duration::from_millis(15);
 
-fn play(steps: &[Step]) {
+fn play(sink: &sys::Sink, steps: &[Step]) {
     for s in steps {
         match *s {
             Step::Keys(c) => {
-                send(&down(c));
+                sink.down(c);
                 std::thread::sleep(TAP);
-                send(&up(c));
+                sink.up(c);
                 std::thread::sleep(TAP);
             }
             Step::Wait(ms) => std::thread::sleep(Duration::from_millis(ms as u64)),
@@ -74,88 +77,10 @@ fn play(steps: &[Step]) {
     }
 }
 
-fn down(c: Chord) -> Vec<INPUT> {
-    let mut v: Vec<INPUT> = MODIFIERS.iter().filter(|(m, _)| c.mods & m != 0).map(|&(_, vk)| key(vk, false)).collect();
-    if c.key != 0 {
-        v.push(key(c.key, false));
-    }
-    v
-}
-
-fn up(c: Chord) -> Vec<INPUT> {
-    let mut v = Vec::new();
-    if c.key != 0 {
-        v.push(key(c.key, true));
-    }
-    v.extend(MODIFIERS.iter().rev().filter(|(m, _)| c.mods & m != 0).map(|&(_, vk)| key(vk, true)));
-    v
-}
-
-fn key(vk: u16, release: bool) -> INPUT {
-    let scan = unsafe { MapVirtualKeyW(vk as u32, MAPVK_VK_TO_VSC_EX) };
-    let mut flags = if release { KEYEVENTF_KEYUP } else { 0 };
-    if is_extended(vk, scan) {
-        flags |= KEYEVENTF_EXTENDEDKEY;
-    }
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: vk, wScan: (scan & 0xFF) as u16, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
-    }
-}
-
-/// Keys that share a scan code with a number pad key and are told apart by the extended flag:
-/// without it, the arrow keys arrive as the number pad's. Windows marks some of them with 0xE0
-/// in the scan code it maps to, but not reliably, so they are listed too.
-fn is_extended(vk: u16, scan: u32) -> bool {
-    scan & 0xFF00 == 0xE000 || matches!(vk, 0x21..=0x28 | 0x2C..=0x2E | 0x5B..=0x5D | 0x6F | 0x90 | 0xA3 | 0xA5 | 0xA6..=0xB7)
-}
-
-fn send(inputs: &[INPUT]) {
-    if !inputs.is_empty() {
-        unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), size_of::<INPUT>() as i32) };
-    }
-}
-
-/// The virtual-key code that types `ch` on the current keyboard layout, ignoring the modifiers
-/// it needs. On a Brazilian ABNT2 keyboard `ç` is a key of its own, for one.
-pub fn vk_for_char(ch: char) -> Option<u16> {
-    let mut buf = [0u16; 2];
-    let units = ch.encode_utf16(&mut buf);
-    if units.len() != 1 {
-        return None;
-    }
-    let r = unsafe { VkKeyScanW(units[0]) };
-    (r != -1).then_some((r & 0xFF) as u16)
-}
-
-/// The key's name on the current layout, as Windows writes it ("Ctrl", "F5", "Ç").
-pub fn key_name(vk: u16) -> String {
-    if let Some(n) = fixed_name(vk) {
-        return n.to_string();
-    }
-    let scan = unsafe { MapVirtualKeyW(vk as u32, MAPVK_VK_TO_VSC_EX) };
-    let mut lparam = ((scan & 0xFF) as i32) << 16;
-    if is_extended(vk, scan) {
-        lparam |= 1 << 24;
-    }
-    let mut buf = [0u16; 64];
-    let n = unsafe { GetKeyNameTextW(lparam, buf.as_mut_ptr(), buf.len() as i32) };
-    if n > 0 {
-        let s = String::from_utf16_lossy(&buf[..n as usize]);
-        // Windows names letters in capitals and named keys in whatever case the layout has.
-        let mut c = s.chars();
-        return match c.next() {
-            Some(f) if s.chars().count() > 1 => f.to_uppercase().chain(c.flat_map(|x| x.to_lowercase())).collect(),
-            _ => s,
-        };
-    }
-    format!("0x{vk:02X}")
-}
-
-/// Keys whose Windows name is missing or unhelpful.
+/// Keys whose system name is missing or unhelpful.
 fn fixed_name(vk: u16) -> Option<&'static str> {
     Some(match vk {
-        0x5B | 0x5C => "Win",
+        0x5B | 0x5C => sys::META,
         0xAD => "Mute",
         0xAE => "Volume −",
         0xAF => "Volume +",
@@ -170,10 +95,83 @@ fn fixed_name(vk: u16) -> Option<&'static str> {
 
 const F_KEYS: [&str; 12] = ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"];
 
+/// A key's name where the system gives none: what a US keyboard prints on it.
+#[cfg_attr(windows, allow(dead_code))]
+fn plain_name(vk: u16) -> String {
+    if let Some(n) = fixed_name(vk) {
+        return n.to_string();
+    }
+    let named = match vk {
+        0x08 => "Backspace",
+        0x09 => "Tab",
+        0x0D => "Enter",
+        0x10 | 0xA0 | 0xA1 => "Shift",
+        0x11 | 0xA2 | 0xA3 => "Ctrl",
+        0x12 | 0xA4 | 0xA5 => "Alt",
+        0x13 => "Pause",
+        0x14 => "Caps Lock",
+        0x1B => "Esc",
+        0x20 => "Space",
+        0x21 => "Page Up",
+        0x22 => "Page Down",
+        0x23 => "End",
+        0x24 => "Home",
+        0x25 => "Left",
+        0x26 => "Up",
+        0x27 => "Right",
+        0x28 => "Down",
+        0x2D => "Insert",
+        0x2E => "Delete",
+        0x5D => "Menu",
+        0x6A => "Num *",
+        0x6B => "Num +",
+        0x6D => "Num -",
+        0x6E => "Num .",
+        0x6F => "Num /",
+        0x90 => "Num Lock",
+        0x91 => "Scroll Lock",
+        _ => "",
+    };
+    if !named.is_empty() {
+        return named.into();
+    }
+    match vk {
+        0x30..=0x39 | 0x41..=0x5A => char::from(vk as u8).to_string(),
+        0x60..=0x69 => format!("Num {}", vk - 0x60),
+        0x70..=0x7B => format!("F{}", vk - 0x6F),
+        _ => US_PUNCTUATION.iter().find(|&&(_, v)| v == vk).map_or_else(|| format!("0x{vk:02X}"), |(c, _)| c.to_string()),
+    }
+}
+
+/// The punctuation keys of a US keyboard and their virtual-key codes.
+const US_PUNCTUATION: [(char, u16); 11] = [
+    (';', 0xBA),
+    ('=', 0xBB),
+    (',', 0xBC),
+    ('-', 0xBD),
+    ('.', 0xBE),
+    ('/', 0xBF),
+    ('`', 0xC0),
+    ('[', 0xDB),
+    ('\\', 0xDC),
+    (']', 0xDD),
+    ('\'', 0xDE),
+];
+
+/// The virtual-key code of the US key that types `ch`, for systems without a layout lookup.
+#[cfg_attr(windows, allow(dead_code))]
+fn us_vk_for_char(ch: char) -> Option<u16> {
+    let up = ch.to_ascii_uppercase();
+    match up {
+        'A'..='Z' | '0'..='9' => Some(up as u16),
+        _ => US_PUNCTUATION.iter().find(|(c, _)| *c == ch).map(|&(_, v)| v),
+    }
+}
+
 /// The chord as keycaps, modifiers first.
 pub fn chord_names(c: Chord) -> Vec<String> {
     let mut v: Vec<String> = Vec::new();
-    for (m, name) in [(modifier::CTRL, "Ctrl"), (modifier::SHIFT, "Shift"), (modifier::ALT, "Alt"), (modifier::WIN, "Win")] {
+    for (m, name) in [(modifier::CTRL, "Ctrl"), (modifier::SHIFT, "Shift"), (modifier::ALT, sys::ALT), (modifier::WIN, sys::META)] {
         if c.mods & m != 0 {
             v.push(name.into());
         }
@@ -189,27 +187,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chords_press_modifiers_first_and_release_them_last() {
-        let c = Chord { mods: modifier::CTRL | modifier::SHIFT, key: 0x41 };
-        let vks = |v: Vec<INPUT>| {
-            v.iter().map(|i| unsafe { (i.Anonymous.ki.wVk, i.Anonymous.ki.dwFlags & KEYEVENTF_KEYUP != 0) }).collect::<Vec<_>>()
-        };
-        assert_eq!(vks(down(c)), [(VK_CONTROL, false), (VK_SHIFT, false), (0x41, false)]);
-        assert_eq!(vks(up(c)), [(0x41, true), (VK_SHIFT, true), (VK_CONTROL, true)]);
-    }
-
-    #[test]
-    fn arrows_are_extended_keys() {
-        let k = key(0x25, false);
-        assert_ne!(unsafe { k.Anonymous.ki.dwFlags } & KEYEVENTF_EXTENDEDKEY, 0);
-        let k = key(0x41, false);
-        assert_eq!(unsafe { k.Anonymous.ki.dwFlags } & KEYEVENTF_EXTENDEDKEY, 0);
-    }
-
-    #[test]
-    fn names() {
-        assert_eq!(key_name(0x7C), "F13");
-        assert_eq!(chord_names(Chord { mods: modifier::CTRL, key: 0x70 }), ["Ctrl", "F1"]);
-        assert_eq!(vk_for_char('a'), Some(0x41));
+    fn plain_names() {
+        assert_eq!(plain_name(0x41), "A");
+        assert_eq!(plain_name(0x74), "F5");
+        assert_eq!(plain_name(0x7C), "F13");
+        assert_eq!(plain_name(0x25), "Left");
+        assert_eq!(plain_name(0xBF), "/");
+        assert_eq!(us_vk_for_char('a'), Some(0x41));
+        assert_eq!(us_vk_for_char('7'), Some(0x37));
+        assert_eq!(us_vk_for_char('['), Some(0xDB));
+        assert_eq!(us_vk_for_char('ç'), None);
     }
 }
