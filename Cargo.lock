@@ -4258,7 +4258,7 @@ dependencies = [
 
 [[package]]
 name = "open-controller"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "crossbeam-channel",
  "dirs 6.0.0",
@@ -4273,7 +4273,7 @@ dependencies = [
 
 [[package]]
 name = "open-controller-core"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "crossbeam-channel",
  "libc",
@@ -4289,7 +4289,7 @@ dependencies = [
 
 [[package]]
 name = "open-controller-ui"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "async-channel",
  "embed-resource",

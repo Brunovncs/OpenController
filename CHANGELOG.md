@@ -3,6 +3,19 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.7.0
+
+A controller on its receiver no longer shows up three times. Windows sometimes lists an Xbox-style
+controller a second way while it connects, and those copies appeared as extra controllers with no
+button layout. Receivers that only say the controller is plugged in no longer show it as charging
+at 100%. The window has a new layout: everything is centered, the controllers fill the width of
+the window, players are listed in order, the battery reads 80% with a bolt while charging, and
+connecting a controller is a button at the top. Settings that a newer version wrote can no longer
+wipe your profiles when you go back to an older one; what can be read is kept, and the original
+file is saved next to it as settings.json.bad. Connecting a controller in the middle of a game no
+longer makes the others freeze for a moment: creating its Xbox controller and hiding the original
+now happen apart from everyone's input. Settings carry over.
+
 ## 0.6.1
 
 Updating or uninstalling right after OpenController opens works every time. A copy that was
