@@ -1,7 +1,7 @@
 //! The building blocks every screen uses: text styles, cards, buttons, chips, the toggle switch,
 //! keycaps, the player indicator and the battery.
 
-use crate::theme::{DISPLAY_FONT, FONT, ICONS, Theme, radius, text};
+use crate::theme::{DISPLAY_FONT, FONT, Theme, radius, text};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     Div, ElementId, FontWeight, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, Styled, div, linear_color_stop,
@@ -34,8 +34,8 @@ pub fn display(s: impl Into<SharedString>, color: Hsla) -> Div {
         .child(s.into())
 }
 
-pub fn icon(glyph: &'static str, size: f32, color: Hsla) -> Div {
-    div().flex_none().font_family(ICONS).text_size(px(size)).line_height(px(size)).text_color(color).child(glyph)
+pub fn icon(name: &'static str, size: f32, color: Hsla) -> Div {
+    div().flex_none().size(px(size)).child(gpui::img(crate::icons::image(name, color)).size(px(size)))
 }
 
 /// A section title above a group of cards.

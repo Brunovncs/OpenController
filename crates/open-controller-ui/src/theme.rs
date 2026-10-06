@@ -7,7 +7,6 @@ use gpui::{Hsla, Rgba, WindowAppearance, rgb, rgba};
 
 pub const FONT: &str = "Segoe UI Variable Text";
 pub const DISPLAY_FONT: &str = "Segoe UI Variable Display";
-pub const ICONS: &str = "Segoe Fluent Icons";
 
 /// Type ramp, as (size, line height) in pixels.
 pub mod text {
@@ -25,25 +24,25 @@ pub mod radius {
     pub const CHIP: f32 = 6.;
 }
 
-/// Segoe Fluent Icons code points.
+/// The icons, by name (see `crate::icons`).
 pub mod icon {
-    pub const BACK: &str = "\u{E72B}";
-    pub const CHEVRON_RIGHT: &str = "\u{E76C}";
-    pub const CHEVRON_DOWN: &str = "\u{E70D}";
-    pub const WARNING: &str = "\u{E7BA}";
-    pub const DELETE: &str = "\u{E74D}";
-    pub const CLOCK: &str = "\u{E823}";
-    pub const INFO: &str = "\u{E946}";
-    pub const SETTINGS: &str = "\u{E713}";
-    pub const ADD: &str = "\u{E710}";
-    pub const LIGHT: &str = "\u{E781}";
-    pub const BUTTONS: &str = "\u{E765}";
-    pub const CHECK: &str = "\u{E73E}";
-    pub const CLOSE: &str = "\u{E711}";
-    pub const EDIT: &str = "\u{E70F}";
-    pub const OPEN: &str = "\u{E8A7}";
-    pub const MOTION: &str = "\u{E7AD}";
-    pub const STICKS: &str = "\u{E7FC}";
+    pub const BACK: &str = "back";
+    pub const CHEVRON_RIGHT: &str = "chevron-right";
+    pub const CHEVRON_DOWN: &str = "chevron-down";
+    pub const WARNING: &str = "warning";
+    pub const DELETE: &str = "delete";
+    pub const CLOCK: &str = "clock";
+    pub const INFO: &str = "info";
+    pub const SETTINGS: &str = "settings";
+    pub const ADD: &str = "add";
+    pub const LIGHT: &str = "light";
+    pub const BUTTONS: &str = "buttons";
+    pub const CHECK: &str = "check";
+    pub const CLOSE: &str = "close";
+    pub const EDIT: &str = "edit";
+    pub const OPEN: &str = "open";
+    pub const MOTION: &str = "motion";
+    pub const STICKS: &str = "sticks";
 }
 
 #[derive(Clone, Copy)]

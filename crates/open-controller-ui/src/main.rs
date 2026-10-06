@@ -8,6 +8,7 @@ mod art;
 mod demo;
 mod detail;
 mod home;
+mod icons;
 mod keys;
 mod programs;
 mod requirements;
