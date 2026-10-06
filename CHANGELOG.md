@@ -1,7 +1,13 @@
 # Changelog
 
 Each release's section here is its release notes on GitHub. It says what changed for someone who
-plays with Open Controller, and whether settings carry over.
+plays with OpenController, and whether settings carry over.
+
+## 0.5.0
+
+The name is now written as one word, OpenController, in the window, the installer and the
+shortcuts. The old Start menu shortcut is replaced and "Start with Windows" keeps working. The
+window shows its version at the top, and the settings have a back button. Settings carry over.
 
 ## 0.4.1
 
