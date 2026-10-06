@@ -238,7 +238,12 @@ impl Profiles {
             p.sticks = clean_sticks(p.sticks);
             p.programs =
                 std::mem::take(&mut p.programs).iter().map(|x| program_name(x)).filter(|x| !x.is_empty()).take(MAX_PROGRAMS).collect();
-            p.bindings = std::mem::take(&mut p.bindings).into_iter().filter_map(|(b, a)| a.sanitised().map(|a| (b, a))).collect();
+            // Buttons are bits of a u64: a larger number from a damaged file would overflow.
+            p.bindings = std::mem::take(&mut p.bindings)
+                .into_iter()
+                .filter(|&(b, _)| b < 64)
+                .filter_map(|(b, a)| a.sanitised().map(|a| (b, a)))
+                .collect();
         }
         self.active = self.active.min(self.list.len() - 1);
         self
@@ -256,7 +261,11 @@ pub fn program_name(path: &str) -> String {
 }
 
 fn clean_gyro(g: Gyro) -> Gyro {
-    Gyro { sensitivity: g.sensitivity.clamp(25, 400), ..g }
+    let mode = match g.mode {
+        GyroMode::Holding(b) if b >= 64 => GyroMode::Off,
+        m => m,
+    };
+    Gyro { sensitivity: g.sensitivity.clamp(25, 400), mode, ..g }
 }
 
 fn clean_sticks(s: Sticks) -> Sticks {
@@ -368,5 +377,16 @@ mod tests {
         assert_eq!(light_color(Light::Battery, 100, None, Some(10)), [255, 0, 0]);
         assert_eq!(light_color(Light::Battery, 100, None, Some(100)), [0, 255, 0]);
         assert_eq!(light_color(Light::Off, 100, Some(0), Some(50)), [0, 0, 0]);
+    }
+
+    #[test]
+    fn out_of_range_buttons_from_a_file_are_dropped() {
+        let p: Profiles = serde_json::from_str(
+            r#"{"list": [{"bindings": {"70": {"Xbox": "A"}, "17": {"Xbox": "B"}}, "gyro": {"mode": {"Holding": 99}}}]}"#,
+        )
+        .unwrap();
+        let p = p.sanitised();
+        assert_eq!(p.list[0].bindings.keys().copied().collect::<Vec<_>>(), vec![17]);
+        assert_eq!(p.list[0].gyro.mode, GyroMode::Off);
     }
 }

@@ -137,3 +137,11 @@ jobs:
             --title "OpenController ${{ needs.version.outputs.version }}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --verify-tag
+      # The site caches the latest release for an hour; this makes it link the new one at once.
+      # Skipped until SITE_REVALIDATE_SECRET is set (the same value as REVALIDATE_SECRET on Vercel).
+      - name: Refresh the website
+        env:
+          SECRET: ${{ secrets.SITE_REVALIDATE_SECRET }}
+        run: |
+          [ -n "$SECRET" ] || { echo "SITE_REVALIDATE_SECRET is not set; the site updates within two hours"; exit 0; }
+          curl -fsS --location-trusted -X POST -H "Authorization: Bearer $SECRET" https://opencontroller.com.br/api/revalidate

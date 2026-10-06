@@ -100,15 +100,10 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     let mut joycons = pad(PadKey::Slot(5), "Joy-Con (L/R)", Brand::Nintendo, Family::JoyCons, (0x057E, 0x2008));
     joycons.links = vec![Link::Bluetooth];
     joycons.power = Power::Battery(Some(60));
-    joycons.role = Role::Virtual { player: Some(3) };
+    // XInput has four slots, all taken: the Joy-Con are a fifth controller.
+    joycons.role = Role::Virtual { player: None };
     joycons.extras = vec![extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::LEFT_PADDLE2, extras::RIGHT_PADDLE2, extras::MISC1];
     joycons.features = Features { motion: true, rumble: true, player_lights: true, ..Features::default() };
-
-    let mut sn30 = pad(PadKey::Slot(6), "8BitDo SN30 Pro", Brand::EightBitDo, Family::EightBitDo, (0x2DC8, 0x6001));
-    sn30.links = vec![Link::Bluetooth];
-    sn30.power = Power::Battery(Some(70));
-    sn30.role = Role::Virtual { player: None };
-    sn30.features = Features { motion: true, rumble: true, ..Features::default() };
 
     let mut xbox = pad(PadKey::Device(7), "Xbox Series X Controller", Brand::Xbox, Family::Xbox, (0x045E, 0x0B13));
     xbox.links = vec![Link::Wireless];
@@ -124,14 +119,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     ds4.extras = vec![extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT, extras::TOUCH_TWO];
     ds4.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, ..Features::default() };
 
-    let mut pro = pad(PadKey::Slot(8), "DualSense Edge Wireless Controller", Brand::PlayStation, Family::DualSenseEdge, (0x054C, 0x0DF2));
-    pro.links = vec![Link::Usb];
-    pro.power = Power::Charged;
-    pro.role = Role::Virtual { player: None };
-    pro.extras = vec![extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT];
-    pro.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, player_lights: true, ..Features::default() };
-
-    let mut pads = vec![eightbitdo, edge, switch, joycons, sn30, xbox, ds4, pro];
+    let mut pads = vec![eightbitdo, edge, switch, joycons, xbox, ds4];
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
             p.profiles = edited.clone();
@@ -148,7 +136,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
         }
     }
     pads.sort_by_key(|p| match p.role {
-        Role::Virtual { player: Some(n) } | Role::Waiting { player: Some(n), .. } => u32::from(n),
+        Role::Virtual { player: Some(n) } | Role::Waiting { player: Some(n), .. } | Role::Native { player: Some(n) } => u32::from(n),
         _ => 100,
     });
     Snapshot {

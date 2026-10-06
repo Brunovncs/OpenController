@@ -65,6 +65,10 @@ impl Control {
         Prefs { hide_originals: hide, autostart: autostart::enabled(), check_updates: updates, lang }
     }
 
+    pub fn lang(&self) -> Lang {
+        self.settings.lock().map(|s| s.language).unwrap_or(Lang::En)
+    }
+
     /// Changes a controller's profiles, saves them and returns them.
     fn edit_profiles(&self, store: &str, edit: Edit) -> Profiles {
         let Ok(mut s) = self.settings.lock() else { return Profiles::default() };

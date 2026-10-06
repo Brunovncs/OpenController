@@ -6,11 +6,13 @@ use crate::binding::{self, Action, Bindings, Chord};
 use crate::device::{self, Brand, Identity, Link, Power};
 use crate::extras::{self, Art, Family, Features, Hint};
 use crate::handheld;
+use crate::hiding::Hider;
 use crate::keyboard::Keyboard;
 use crate::mapping::{self, PadState, XusbReport};
 use crate::models;
 use crate::motion::{self, GyroAim};
-use crate::platform::{Bus, Cloak, CloakError, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, VIRTUAL_PADS, bluetooth, devnode};
+use crate::platform::{Bus, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, VIRTUAL_PADS, bluetooth, devnode};
+use crate::plug::Plugger;
 use crate::profile::{self, GyroMode, Profile, Profiles};
 use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
@@ -57,6 +59,11 @@ const SLOT_WAIT: Duration = Duration::from_secs(5);
 /// at growing intervals up to `SEARCH_BACKOFF_MAX`.
 const RESEARCH: Duration = Duration::from_millis(100);
 const SEARCH_BACKOFF_MAX: Duration = Duration::from_secs(30);
+/// How often a controller without a slot checks whether one has freed up.
+const FREE_SLOT_POLL: Duration = Duration::from_millis(500);
+/// How long a request to turn a controller off is waited on; past it, the controller leaving
+/// is taken as any other disconnect, with the grace period.
+const TURN_OFF_WAIT: Duration = Duration::from_secs(10);
 /// SDL stops a rumble after at most 65.5 s; a steady one is renewed well before.
 const RUMBLE_MS: u32 = 20_000;
 const RUMBLE_RENEW: Duration = Duration::from_secs(10);
@@ -285,6 +292,8 @@ struct Phys {
     model: Model,
     link: Link,
     identity: Identity,
+    /// SDL's device path, read once: it never changes while the device is connected.
+    path: String,
     /// Device instance id, for HidHide.
     instance: Option<String>,
     kind: Kind,
@@ -311,6 +320,13 @@ enum Kind {
     /// An XInput device seen while a virtual controller's slot is still unknown; it cannot be
     /// told apart from that controller yet.
     Pending,
+}
+
+/// A joystick SDL has no button layout for.
+struct Unmapped {
+    name: String,
+    vendor: u16,
+    product: u16,
 }
 
 /// Who holds a key down: a slot (its virtual controller's controller), or an XInput controller
@@ -350,12 +366,14 @@ struct Core {
     bus_error: Option<String>,
     bus_retry: Instant,
     io: Io,
-    cloak: Option<Cloak>,
-    hidhide: Driver,
+    /// Plugs virtual controllers in away from this thread; there once the bus is.
+    plugger: Option<Plugger>,
+    /// HidHide, on a thread of its own.
+    hider: Hider,
     hiding: bool,
     roster: Roster,
     phys: HashMap<DeviceId, Phys>,
-    unmapped: HashMap<DeviceId, String>,
+    unmapped: HashMap<DeviceId, Unmapped>,
     targets: HashMap<SlotId, Target>,
     failed: HashMap<SlotId, Instant>,
     feedback_tx: Sender<Feedback>,
@@ -368,7 +386,7 @@ struct Core {
     names: HashMap<(u16, u16), Option<String>>,
     /// Devices turned off from here: when one leaves and its slot is empty, the virtual
     /// controller is unplugged at once, without the grace period.
-    turning_off: Vec<DeviceId>,
+    turning_off: Vec<(DeviceId, Instant)>,
     profiles: HashMap<String, Profiles>,
     keyboard: Keyboard,
     /// Keys held down for extra buttons that are held down, to be let go with them.
@@ -406,13 +424,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         }
     };
     let _ = std::fs::create_dir_all(&config.data_dir);
-    let (cloak, hidhide) = match Cloak::start(&config.data_dir.join(JOURNAL_FILE)) {
-        Ok(c) => (Some(c), Driver::Ready { version: None }),
-        Err(_) if !VIRTUAL_PADS => (None, Driver::Unsupported),
-        Err(CloakError::NotInstalled) => (None, Driver::Missing),
-        #[allow(unreachable_patterns)]
-        Err(e) => (None, Driver::Failed(e.to_string())),
-    };
+    let hider = Hider::start(config.data_dir.join(JOURNAL_FILE));
     let (feedback_tx, feedback_rx) = unbounded();
     let (handheld_tx, handheld_rx) = unbounded();
     HANDHELD_STOP.store(false, Ordering::Relaxed);
@@ -423,8 +435,8 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         bus_error: None,
         bus_retry: Instant::now(),
         io: Io::new(),
-        cloak,
-        hidhide,
+        plugger: None,
+        hider,
         hiding: config.hide,
         roster: Roster::new(GRACE),
         phys: HashMap::new(),
@@ -499,7 +511,9 @@ impl Core {
         match Bus::connect() {
             Ok(b) => {
                 self.bus_version = devnode::driver_version(&b.path);
-                self.bus = Some(Arc::new(b));
+                let bus = Arc::new(b);
+                self.plugger = Some(Plugger::start(bus.clone()));
+                self.bus = Some(bus);
                 self.bus_error = None;
             }
             Err(e) => self.bus_error = Some(e.to_string()),
@@ -517,10 +531,8 @@ impl Core {
                     for id in ids {
                         self.hide(id);
                     }
-                } else if let Some(c) = self.cloak.as_mut()
-                    && let Err(e) = c.reveal_all()
-                {
-                    self.hidhide = Driver::Failed(e.to_string());
+                } else {
+                    self.hider.reveal_all();
                 }
             }
             Command::Identify(key) => {
@@ -535,7 +547,7 @@ impl Core {
                 let dev = self.device_for(key);
                 let addr = dev.and_then(|d| self.phys.get(&d)).and_then(|p| device::bluetooth_address(&p.identity));
                 if let (Some(dev), Some(a)) = (dev, addr) {
-                    self.turning_off.push(dev);
+                    self.turning_off.push((dev, now));
                     // A blocking request to each radio: kept off the input thread.
                     std::thread::spawn(move || bluetooth::disconnect(a));
                 }
@@ -687,14 +699,14 @@ impl Core {
                 }
                 Event::Battery(id) => {
                     if let Some(p) = self.phys.get_mut(&id) {
-                        p.power = p.pad.power();
+                        p.power = device::power(p.pad.power(), device::is_xinput_path(&p.path));
                         self.changed = true;
                     }
                 }
                 Event::JoystickAdded(id) => {
                     if !self.sdl.is_gamepad(id) {
-                        let (name, _, _) = self.sdl.joystick_info(id);
-                        self.unmapped.insert(id, name);
+                        let (name, vendor, product) = self.sdl.joystick_info(id);
+                        self.unmapped.insert(id, Unmapped { name, vendor, product });
                         self.changed = true;
                     }
                 }
@@ -766,9 +778,10 @@ impl Core {
             link,
             identity,
             instance: devnode::instance_id(&path),
+            power: device::power(pad.power(), device::is_xinput_path(&path)),
+            path,
             kind: Kind::Pending,
             state: PadState::default(),
-            power: pad.power(),
             led: None,
             gyro_on: false,
             aim: GyroAim::default(),
@@ -778,11 +791,11 @@ impl Core {
         };
         p.pad.read(&mut p.state);
         let xbox = matches!(p.pad.pad_type(), device::PadType::Xbox360 | device::PadType::XboxOne);
-        p.kind = if devnode::is_virtual(&path) {
+        p.kind = if devnode::is_virtual(&p.path) {
             Kind::Own
-        } else if device::is_xinput_path(&path) {
-            self.classify_xinput(&path).unwrap_or(Kind::Pending)
-        } else if !VIRTUAL_PADS || devnode::is_native(&path, xbox) {
+        } else if device::is_xinput_path(&p.path) {
+            self.classify_xinput(&p.path).unwrap_or(Kind::Pending)
+        } else if !VIRTUAL_PADS || devnode::is_native(&p.path, xbox) {
             Kind::Native
         } else {
             match self.roster.attach(id, p.identity.clone()) {
@@ -835,8 +848,8 @@ impl Core {
         if let Kind::Slot(s) = p.kind {
             self.roster.detach(id, now);
             let empty = self.roster.get(s).is_some_and(|slot| slot.devices.is_empty());
-            let turned_off = self.turning_off.contains(&id);
-            self.turning_off.retain(|&x| x != id);
+            let turned_off = self.turning_off.iter().any(|&(x, at)| x == id && now.duration_since(at) < TURN_OFF_WAIT);
+            self.turning_off.retain(|&(x, at)| x != id && now.duration_since(at) < TURN_OFF_WAIT);
             if empty && turned_off {
                 // Turned off on purpose: no point waiting for it to come back.
                 self.roster.remove(s);
@@ -855,17 +868,28 @@ impl Core {
         if !self.hiding {
             return;
         }
-        let (Some(cloak), Some(p)) = (self.cloak.as_mut(), self.phys.get(&id)) else { return };
+        let Some(p) = self.phys.get(&id) else { return };
         // Only a controller games can see as an Xbox controller is hidden; hiding one whose
         // virtual controller does not exist would take it away from games altogether.
         let Kind::Slot(s) = p.kind else { return };
         if !self.targets.contains_key(&s) {
             return;
         }
-        if let Some(instance) = p.instance.clone()
-            && let Err(e) = cloak.hide(&[instance])
-        {
-            self.hidhide = Driver::Failed(e.to_string());
+        if let Some(instance) = p.instance.clone() {
+            self.hider.hide(vec![instance]);
+        }
+    }
+
+    /// What the hiding thread did: its state for the settings, and, once HidHide opens after
+    /// failing to (another program held it, as at sign-in), the controllers hidden after all.
+    fn follow_hider(&mut self) {
+        let (changed, opened) = self.hider.poll();
+        self.changed |= changed;
+        if opened {
+            let ids: Vec<DeviceId> = self.phys.keys().copied().collect();
+            for id in ids {
+                self.hide(id);
+            }
         }
     }
 
@@ -1003,6 +1027,10 @@ impl Core {
         let updated = std::mem::take(&mut self.updated);
         for &id in &updated {
             let Some(p) = self.phys.get_mut(&id) else { continue };
+            // One of our own virtual controllers, reporting back what was just sent to it.
+            if p.kind == Kind::Own {
+                continue;
+            }
             let before = p.state;
             let aim_before = p.aim_out;
             p.pad.read(&mut p.state);
@@ -1109,6 +1137,7 @@ impl Core {
         if self.bus.is_none() && now >= self.bus_retry {
             self.connect_bus();
         }
+        self.follow_hider();
         self.plug_missing(now);
         self.find_player_slots(now);
         self.update_lights(now);
@@ -1123,8 +1152,7 @@ impl Core {
         }
         let pending: Vec<DeviceId> = self.phys.iter().filter(|(_, p)| p.kind == Kind::Pending).map(|(&id, _)| id).collect();
         for id in pending {
-            let path = self.phys[&id].pad.path();
-            if let Some(k) = self.classify_xinput(&path) {
+            if let Some(k) = self.classify_xinput(&self.phys[&id].path) {
                 self.phys.get_mut(&id).unwrap().kind = k;
                 self.changed = true;
             }
@@ -1143,66 +1171,75 @@ impl Core {
         }
     }
 
-    /// Plugs a virtual controller for every slot that has a controller and none yet.
+    /// Asks for a virtual controller for every slot that has a controller and none yet, and
+    /// sets up the ones that are ready.
     fn plug_missing(&mut self, now: Instant) {
-        let Some(bus) = self.bus.clone() else { return };
+        let Some(plugger) = self.plugger.as_mut() else { return };
         let wanting: Vec<SlotId> = self
             .roster
             .slots()
             .iter()
-            .filter(|s| s.lost_since.is_none() && !self.targets.contains_key(&s.id))
+            .filter(|s| s.lost_since.is_none() && !self.targets.contains_key(&s.id) && !plugger.is_pending(s.id))
             .filter(|s| self.failed.get(&s.id).is_none_or(|&t| now.duration_since(t) >= RETRY))
             .map(|s| s.id)
             .collect();
         for s in wanting {
-            match bus.plug_x360(&mut self.io) {
-                Ok(serial) => {
-                    self.failed.remove(&s);
-                    let listener = Some(bus.listen(serial, self.feedback_tx.clone()));
-                    let player = if PLAYER_SLOTS { None } else { self.free_player() };
-                    self.targets.insert(
-                        s,
-                        Target {
-                            serial,
-                            player,
-                            search: PLAYER_SLOTS.then(|| (xinput::marker(serial), now + SLOT_WAIT)),
-                            next_search: now,
-                            backoff: Duration::from_secs(1),
-                            want: XusbReport::default(),
-                            last: None,
-                            rumble: (0, 0),
-                            rumble_sent: now,
-                            rumble_to: None,
-                            listener,
-                        },
-                    );
-                    let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
-                    for &d in &devices {
-                        self.hide(d);
-                        if let (Some(i), Some(p)) = (player, self.phys.get(&d)) {
-                            p.pad.set_player(i32::from(i));
-                        }
-                    }
-                    self.resend(s);
-                }
+            plugger.request(s);
+        }
+        for (s, result) in plugger.finished() {
+            match result {
+                Ok(serial) => self.plugged(s, serial, now),
                 Err(e) => {
                     self.failed.insert(s, now);
-                    self.bus_error = Some(e.to_string());
+                    self.bus_error = Some(e);
                     // Hidden by an earlier run of this slot: games must at least see the original.
                     let ids: Vec<String> = self
                         .roster
                         .get(s)
                         .map(|x| x.devices.iter().filter_map(|d| self.phys.get(d).and_then(|p| p.instance.clone())).collect())
                         .unwrap_or_default();
-                    if let Some(c) = self.cloak.as_mut()
-                        && let Err(e) = c.reveal(&ids)
-                    {
-                        self.hidhide = Driver::Failed(e.to_string());
-                    }
+                    self.hider.reveal(ids);
                 }
             }
             self.changed = true;
         }
+    }
+
+    /// A virtual controller for `s` is ready: it gets the slot's input, rumble and player.
+    fn plugged(&mut self, s: SlotId, serial: u32, now: Instant) {
+        let Some(bus) = self.bus.clone() else { return };
+        // The controller was turned off or stayed away while it was being plugged in.
+        if self.roster.get(s).is_none() || self.targets.contains_key(&s) {
+            let _ = bus.unplug(&mut self.io, serial);
+            return;
+        }
+        self.failed.remove(&s);
+        let listener = Some(bus.listen(serial, self.feedback_tx.clone()));
+        let player = if PLAYER_SLOTS { None } else { self.free_player() };
+        self.targets.insert(
+            s,
+            Target {
+                serial,
+                player,
+                search: PLAYER_SLOTS.then(|| (xinput::marker(serial), now + SLOT_WAIT)),
+                next_search: now,
+                backoff: Duration::from_secs(1),
+                want: XusbReport::default(),
+                last: None,
+                rumble: (0, 0),
+                rumble_sent: now,
+                rumble_to: None,
+                listener,
+            },
+        );
+        let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
+        for &d in &devices {
+            self.hide(d);
+            if let (Some(i), Some(p)) = (player, self.phys.get(&d)) {
+                p.pad.set_player(i32::from(i));
+            }
+        }
+        self.resend(s);
     }
 
     /// Finds which XInput slot each new virtual controller got, by looking for its marker
@@ -1231,8 +1268,13 @@ impl Core {
                         self.changed = true;
                     }
                 }
-                None if now >= t.next_search && *free.get_or_insert_with(xinput::has_free_slot) => {
-                    t.search = Some((xinput::marker(t.serial), now + RESEARCH));
+                None if now >= t.next_search => {
+                    if *free.get_or_insert_with(xinput::has_free_slot) {
+                        t.search = Some((xinput::marker(t.serial), now + RESEARCH));
+                    } else {
+                        // All four taken: look again later, not on every pass.
+                        t.next_search = now + FREE_SLOT_POLL;
+                    }
                 }
                 None => {}
             }
@@ -1246,7 +1288,7 @@ impl Core {
             // An XInput device in that slot, taken for an Xbox controller while the slot was
             // unknown, was this virtual controller all along.
             for p in self.phys.values_mut() {
-                if p.kind == Kind::Native && device::xinput_slot(&p.pad.path()) == Some(player) {
+                if p.kind == Kind::Native && device::xinput_slot(&p.path) == Some(player) {
                     p.kind = Kind::Own;
                 }
             }
@@ -1320,10 +1362,6 @@ impl Core {
             view.can_power_off = source.is_some_and(|p| p.link == Link::Bluetooth && device::bluetooth_address(&p.identity).is_some());
             pads.push(view);
         }
-        pads.sort_by_key(|p| match &p.role {
-            Role::Virtual { player: Some(i) } | Role::Waiting { player: Some(i), .. } => *i as u32,
-            _ => 100,
-        });
         let mut native: Vec<(&DeviceId, &Phys)> = self.phys.iter().filter(|(_, p)| p.kind == Kind::Native).collect();
         native.sort_by_key(|(_, p)| p.pad.player().unwrap_or(u8::MAX));
         for (&id, p) in native {
@@ -1333,16 +1371,27 @@ impl Core {
             let mut view = self.view(PadKey::Device(id), Some(&p.model), assignable);
             view.links = vec![p.link];
             view.power = p.power;
-            let player = device::xinput_slot(&p.pad.path()).or_else(|| if VIRTUAL_PADS { None } else { p.pad.player() });
+            let player = device::xinput_slot(&p.path).or_else(|| if VIRTUAL_PADS { None } else { p.pad.player() });
             view.role = Role::Native { player };
             view.input = p.state;
             pads.push(view);
         }
-        let mut unmapped: Vec<(&DeviceId, &String)> = self.unmapped.iter().collect();
-        unmapped.sort();
-        for (&id, name) in unmapped {
+        // In player order, whoever holds the slot: games number them that way. The sort is
+        // stable, so controllers without a number keep the order they came in.
+        pads.sort_by_key(|p| match &p.role {
+            Role::Virtual { player: Some(i) } | Role::Waiting { player: Some(i), .. } | Role::Native { player: Some(i) } => u32::from(*i),
+            _ => 100,
+        });
+        // DirectInput's second view of a controller already listed is left out.
+        let known: Vec<(&str, u16, u16)> = self.phys.values().map(|p| (p.model.name.as_str(), p.model.vendor, p.model.product)).collect();
+        let mut unmapped: Vec<(&DeviceId, &Unmapped)> =
+            self.unmapped.iter().filter(|(_, u)| !device::is_twin(&u.name, u.vendor, u.product, &known)).collect();
+        unmapped.sort_by_key(|&(&id, _)| id);
+        for (&id, u) in unmapped {
             let mut view = self.view(PadKey::Device(id), None, false);
-            view.name = name.clone();
+            view.name = u.name.clone();
+            view.vendor = u.vendor;
+            view.product = u.product;
             pads.push(view);
         }
         let vigem = match (&self.bus, &self.bus_error) {
@@ -1355,7 +1404,7 @@ impl Core {
         Snapshot {
             pads,
             vigem,
-            hidhide: self.hidhide.clone(),
+            hidhide: self.hider.state().clone(),
             hiding: self.hiding,
             sdl_version: crate::sdl::version(),
             sdl_error: None,
@@ -1391,8 +1440,8 @@ impl Core {
     }
 
     fn is_hidden(&self, id: DeviceId) -> bool {
-        let (Some(cloak), Some(p)) = (self.cloak.as_ref(), self.phys.get(&id)) else { return false };
-        p.instance.as_deref().is_some_and(|i| cloak.is_hidden(i))
+        let Some(p) = self.phys.get(&id) else { return false };
+        p.instance.as_deref().is_some_and(|i| self.hider.is_hidden(i))
     }
 
     fn shutdown(&mut self) {
@@ -1406,15 +1455,14 @@ impl Core {
         for s in slots {
             self.unplug(s);
         }
+        // A plug under way finishes and is undone.
+        if let Some(mut p) = self.plugger.take() {
+            p.stop();
+        }
         if let Some(bus) = self.bus.take() {
             bus.cancel_all();
         }
-        if let Some(mut c) = self.cloak.take()
-            && let Err(e) = c.reveal_all()
-        {
-            // The journal stays; the next start shows them again.
-            eprintln!("open-controller: could not show the hidden controllers again: {e}");
-        }
+        self.hider.stop();
         self.phys.clear();
     }
 }

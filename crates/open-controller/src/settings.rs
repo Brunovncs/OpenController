@@ -2,8 +2,11 @@
 
 use open_controller_core::i18n::Lang;
 use open_controller_core::profile::Profiles;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const FILE_NAME: &str = "settings.json";
@@ -29,17 +32,53 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load(dir: &Path) -> Settings {
-        let mut s: Settings = std::fs::read(dir.join(FILE_NAME)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        let path = dir.join(FILE_NAME);
+        let Ok(bytes) = std::fs::read(&path) else { return Settings::default() };
+        let mut s = serde_json::from_slice::<Settings>(&bytes).unwrap_or_else(|_| {
+            // A value this version does not know (written by a newer one, or edited by hand)
+            // must not take every assignment with it on the next save: the file is kept as it
+            // was, and whatever can be read of it is.
+            let _ = std::fs::copy(&path, dir.join(format!("{FILE_NAME}.bad")));
+            Settings::salvage(&bytes)
+        });
         s.controllers = std::mem::take(&mut s.controllers).into_iter().map(|(k, v)| (k, v.sanitised())).collect();
         s
     }
 
-    /// Written to a temporary file first, so a crash mid-write cannot lose the assignments.
+    /// Each field on its own, and each controller's profiles on their own.
+    fn salvage(bytes: &[u8]) -> Settings {
+        let mut s = Settings::default();
+        let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(bytes) else { return s };
+        fn field<T: DeserializeOwned>(map: &Map<String, Value>, key: &str) -> Option<T> {
+            map.get(key).and_then(|v| T::deserialize(v).ok())
+        }
+        if let Some(v) = field(&map, "hide_originals") {
+            s.hide_originals = v;
+        }
+        if let Some(v) = field(&map, "check_updates") {
+            s.check_updates = v;
+        }
+        if let Some(v) = field(&map, "language") {
+            s.language = v;
+        }
+        if let Some(Value::Object(c)) = map.get("controllers") {
+            s.controllers = c.iter().filter_map(|(k, v)| Some((k.clone(), Profiles::deserialize(v).ok()?))).collect();
+        }
+        s
+    }
+
+    /// Written to a temporary file first and flushed to the disk before it replaces the old
+    /// one, so neither a crash nor a power cut mid-write can lose the assignments.
     pub fn save(&self, dir: &Path) {
         let Ok(text) = serde_json::to_vec_pretty(self) else { return };
         let tmp = dir.join(format!("{FILE_NAME}.tmp"));
-        if std::fs::write(&tmp, text).is_ok() {
-            let _ = std::fs::rename(&tmp, dir.join(FILE_NAME));
+        let written = std::fs::File::create(&tmp).and_then(|mut f| {
+            f.write_all(&text)?;
+            f.sync_all()
+        });
+        match written.and_then(|()| std::fs::rename(&tmp, dir.join(FILE_NAME))) {
+            Ok(()) => {}
+            Err(e) => eprintln!("open-controller: could not save the settings: {e}"),
         }
     }
 }
@@ -58,6 +97,22 @@ mod tests {
         assert_eq!(s, Settings::default());
         let s: Settings = serde_json::from_str(r#"{"hide_originals": false}"#).unwrap();
         assert!(!s.hide_originals);
+    }
+
+    #[test]
+    fn a_file_this_version_cannot_read_keeps_what_it_can() {
+        let dir = std::env::temp_dir().join(format!("oc-settings-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = r#"{"hide_originals": false, "language": "Klingon",
+            "controllers": {"serial:a": {"list": [{"name": "Racing"}], "active": 0}, "serial:b": {"list": "broken"}}}"#;
+        std::fs::write(dir.join(FILE_NAME), text).unwrap();
+        let s = Settings::load(&dir);
+        assert!(!s.hide_originals);
+        assert_eq!(s.language, Lang::En);
+        assert!(s.controllers.contains_key("serial:a"), "{:?}", s.controllers.keys());
+        assert!(!s.controllers.contains_key("serial:b"));
+        assert_eq!(std::fs::read_to_string(dir.join("settings.json.bad")).unwrap(), text, "the original is kept");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

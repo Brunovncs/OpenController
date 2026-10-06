@@ -85,7 +85,6 @@ impl MainView {
         div()
             .flex()
             .flex_col()
-            .max_w(px(860.))
             .child(
                 div()
                     .flex()

@@ -113,11 +113,12 @@ pub struct Finger {
 /// The touchpad's own buttons: clicking its left or right half, and touching it with two
 /// fingers. Returned as (left, right, two).
 pub fn touch_buttons(clicked: bool, fingers: &[Finger]) -> (bool, bool, bool) {
-    let down: Vec<&Finger> = fingers.iter().filter(|f| f.down).collect();
-    let two = down.len() >= 2;
+    let mut down = fingers.iter().filter(|f| f.down);
+    let first = down.next();
+    let two = down.next().is_some();
     // A click with one finger is on the side that finger is on; with none (a click without a
     // finger SDL saw), it counts as neither half.
-    let side = down.first().map(|f| f.x < 0.5);
+    let side = first.map(|f| f.x < 0.5);
     let left = clicked && !two && side == Some(true);
     let right = clicked && !two && side == Some(false);
     (left, right, two)

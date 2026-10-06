@@ -155,6 +155,30 @@ pub fn xinput_slot(path: &str) -> Option<u8> {
     path.strip_prefix("XInput#")?.parse().ok()
 }
 
+/// What SDL says about the battery, corrected for XInput. XInput has no charging state: SDL
+/// turns its "wired" battery type into charging at full, and third-party receivers (8BitDo,
+/// most clones) report that type for the receiver itself, whatever the pad's battery holds.
+pub fn power(sdl: Power, xinput: bool) -> Power {
+    match sdl {
+        Power::Charging(_) if xinput => Power::Wired,
+        p => p,
+    }
+}
+
+/// A joystick SDL has no layout for that is a second view of a controller it does read.
+/// DirectInput lists XInput pads again as "Controller (<name>)"; SDL drops the leading word and
+/// normally skips them, but not when the pad connects before Windows has told it that the
+/// device is an XInput one. Matching the name, or the USB ids when there are any, finds them.
+pub fn is_twin(name: &str, vendor: u16, product: u16, known: &[(&str, u16, u16)]) -> bool {
+    let bare = |n: &str| {
+        let n = n.trim();
+        let n = n.strip_prefix("Controller").map(str::trim_start).unwrap_or(n);
+        n.trim_start_matches('(').trim_end_matches(')').trim().to_lowercase()
+    };
+    let name = bare(name);
+    known.iter().any(|&(n, v, p)| (vendor != 0 && (vendor, product) == (v, p)) || (!name.is_empty() && bare(n) == name))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,5 +228,23 @@ mod tests {
         assert!(!is_xinput_path(USB_DS4));
         assert_eq!(xinput_slot("XInput#3"), Some(3));
         assert_eq!(xinput_slot(USB_DS4), None);
+    }
+
+    #[test]
+    fn xinput_never_charges() {
+        assert_eq!(power(Power::Charging(Some(100)), true), Power::Wired);
+        assert_eq!(power(Power::Charging(Some(40)), false), Power::Charging(Some(40)));
+        assert_eq!(power(Power::Battery(Some(60)), true), Power::Battery(Some(60)));
+    }
+
+    #[test]
+    fn directinput_twins_of_a_read_controller() {
+        let known = [("8BitDo Ultimate 2 Wireless Controller for PC", 0x2DC8, 0x310B)];
+        assert!(is_twin("(8BitDo Ultimate 2 Wireless Controller for PC)", 0, 0, &known));
+        assert!(is_twin("Controller (8BitDo Ultimate 2 Wireless Controller for PC)", 0, 0, &known));
+        assert!(is_twin("Something else", 0x2DC8, 0x310B, &known));
+        assert!(!is_twin("Thrustmaster T.16000M", 0x044F, 0xB10A, &known));
+        assert!(!is_twin("", 0, 0, &known));
+        assert!(!is_twin("(8BitDo Ultimate 2 Wireless Controller for PC)", 0, 0, &[]));
     }
 }

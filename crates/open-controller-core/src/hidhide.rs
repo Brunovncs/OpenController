@@ -227,8 +227,13 @@ fn write_journal(path: &Path, journal: &Journal) -> std::io::Result<()> {
             _ => Ok(()),
         };
     }
+    use std::io::Write;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(journal).map_err(std::io::Error::other)?)?;
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(&serde_json::to_vec_pretty(journal).map_err(std::io::Error::other)?)?;
+    // On disk before it replaces the old one, or a power cut could leave an empty journal.
+    f.sync_all()?;
+    drop(f);
     std::fs::rename(&tmp, path)
 }
 

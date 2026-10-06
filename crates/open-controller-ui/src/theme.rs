@@ -16,6 +16,13 @@ pub mod text {
     pub const DISPLAY: (f32, f32) = (28., 36.);
 }
 
+/// How wide the content may grow, and the gutter around it. The bar on top lines up with it.
+pub mod layout {
+    pub const MAX_W: f32 = 1180.;
+    pub const SETTINGS_W: f32 = 820.;
+    pub const GUTTER: f32 = 28.;
+}
+
 /// Corner radii: the larger the surface, the rounder.
 pub mod radius {
     pub const TILE: f32 = 16.;
@@ -38,6 +45,7 @@ pub mod icon {
     pub const LIGHT: &str = "light";
     pub const BUTTONS: &str = "buttons";
     pub const CHECK: &str = "check";
+    pub const BOLT: &str = "bolt";
     pub const CLOSE: &str = "close";
     pub const EDIT: &str = "edit";
     pub const OPEN: &str = "open";

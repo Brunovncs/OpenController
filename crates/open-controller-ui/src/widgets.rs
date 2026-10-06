@@ -71,6 +71,22 @@ pub enum Kind {
 }
 
 pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, kind: Kind, t: &Theme) -> Stateful<Div> {
+    button_base(id, kind, t).child(label.into())
+}
+
+/// A button with an icon before its label.
+pub fn icon_label_button(
+    id: impl Into<ElementId>,
+    glyph: &'static str,
+    label: impl Into<SharedString>,
+    kind: Kind,
+    t: &Theme,
+) -> Stateful<Div> {
+    let fg = if kind == Kind::Primary { t.on_accent } else { t.text };
+    button_base(id, kind, t).pl(px(12.)).child(icon(glyph, 14., fg)).child(label.into())
+}
+
+fn button_base(id: impl Into<ElementId>, kind: Kind, t: &Theme) -> Stateful<Div> {
     let (bg, hover, fg, border) = match kind {
         Kind::Primary => (t.accent, t.accent.opacity(0.88), t.on_accent, t.accent),
         Kind::Standard => (t.control, t.control_hover, t.text, t.stroke),
@@ -95,7 +111,6 @@ pub fn button(id: impl Into<ElementId>, label: impl Into<SharedString>, kind: Ki
         .font_family(FONT)
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
-        .child(label.into())
 }
 
 /// A button holding only an icon.

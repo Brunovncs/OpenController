@@ -281,6 +281,10 @@ fn hid_reader(m: &'static Machine, iface: Interface, tx: Sender<Held>, stop: &At
                 }
             }
         }
+        // Whatever was held is let go: the engine keeps the last state it was sent.
+        if last != 0 {
+            let _ = tx.send(0);
+        }
         SDL_hid_close(dev);
         SDL_hid_exit();
     }

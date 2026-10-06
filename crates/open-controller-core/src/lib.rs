@@ -18,10 +18,12 @@ pub mod roster;
 
 mod engine;
 pub mod handheld;
+mod hiding;
 pub mod instance;
 pub mod ipc;
 pub mod keyboard;
 pub mod platform;
+mod plug;
 pub mod rt;
 pub mod sdl;
 pub mod update;

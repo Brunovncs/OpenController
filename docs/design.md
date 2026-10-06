@@ -34,7 +34,9 @@ user-mode HID driver; writing and signing a driver is out of scope here.
 The client speaks ViGEmBus's IOCTLs directly. Plugging a target waits for "device ready", which
 the driver gives up on after 1 s; the first virtual controller on a machine can take longer while
 Windows installs the Xbox 360 driver, so that timeout is treated as success and the controller is
-kept. Right after plugging, the bus refuses a report or two (error 259) until the Xbox 360 driver
+kept. That wait happens on a thread of its own (`plug.rs`): the input thread asks for a controller
+and takes it once it is ready, so the other players' input never stops while someone connects. A
+controller that leaves before its virtual one is ready gets it unplugged again. Right after plugging, the bus refuses a report or two (error 259) until the Xbox 360 driver
 has opened the controller, so a refused report is sent again on the next pass instead of being
 dropped: otherwise a button let go at that moment would stay pressed in the game.
 
@@ -67,6 +69,14 @@ SDL names the controllers it reads through XInput "XInput Controller", since XIn
 name. Windows still knows the USB product string of the device behind it, which XInput's vendor
 and product ids lead to: an 8BitDo receiver becomes "8BitDo Ultimate 2 Wireless Controller for PC".
 The lookup takes about a millisecond and is cached per model.
+
+DirectInput lists every XInput pad a second time, as "Controller (<name>)". SDL drops the leading
+word and normally skips these, but when a receiver connects it can ask before Windows has marked
+the device as an XInput one, and the copies come through as joysticks without a gamepad layout.
+A joystick without a layout whose name or USB ids match a controller that is being read is left
+out of the list (`device::is_twin`). XInput itself has no charging state: SDL turns its "wired"
+battery type into charging at full, and third-party receivers report that type for themselves, so
+on XInput it is read as "powered, battery unknown" (`device::power`).
 
 ## Extra buttons and what they do
 
@@ -212,6 +222,10 @@ configuration is global and shared with other programs:
 - HidHide's control device admits one handle at a time. Each change keeps one handle open from the
   read to the write, which makes it a lock: no other program can change the list in between. While
   another program holds the device, opening is retried briefly, and for up to 5 s when quitting.
+- All of it runs on a thread of its own (`hiding.rs`), which the input thread only sends requests
+  to: a change can take seconds while another program holds the device, and the players must not
+  notice. If HidHide cannot be opened at start (another program held it, as at sign-in), that
+  thread tries again every 5 s, and the controllers are hidden once it can.
 - What it is about to hide is written to a journal before the driver is touched, through a
   temporary file and a rename so a crash never leaves half a journal; if the journal cannot be
   written, nothing is hidden. A run that is killed leaves the journal behind, and the next start

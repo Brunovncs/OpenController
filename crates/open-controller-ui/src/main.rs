@@ -24,7 +24,7 @@ use gpui::{
     size,
 };
 use open_controller_core::Snapshot;
-use open_controller_core::i18n::{self, Text};
+use open_controller_core::i18n::{self, Lang, Text};
 use open_controller_core::instance::{self, Instance};
 use open_controller_core::ipc::{Pipe, Prefs, ToTray, ToWindow};
 use open_controller_core::profile::Profiles;
@@ -39,7 +39,8 @@ pub const RESIDENT: &str = "io.github.brunovncs.open-controller";
 
 /// What the window shows, kept up to date from the pipe.
 pub struct Model {
-    pub snapshot: Snapshot,
+    /// Shared, so drawing a frame never copies it.
+    pub snapshot: Arc<Snapshot>,
     pub prefs: Prefs,
     pub text: &'static Text,
     /// False when the resident process could not be reached.
@@ -74,7 +75,7 @@ impl Model {
     }
 
     fn refresh_demo(&mut self, cx: &mut Context<Self>) {
-        self.snapshot = demo::snapshot(&self.last_real, &self.demo_profiles, &self.demo_swaps);
+        self.snapshot = Arc::new(demo::snapshot(&self.last_real, &self.demo_profiles, &self.demo_swaps));
         cx.notify();
     }
 }
@@ -146,16 +147,15 @@ fn main() {
     });
 
     // So the window opens in the language picked, not in English first.
-    let prefs = first_prefs_rx.recv_timeout(Duration::from_millis(500)).unwrap_or_default();
+    let mut prefs = first_prefs_rx.recv_timeout(Duration::from_millis(500)).unwrap_or_default();
+    let forced_lang = forced_lang();
+    prefs.lang = forced_lang.unwrap_or(prefs.lang);
 
     gpui_platform::application().run(move |cx: &mut App| {
         let text = i18n::text(prefs.lang);
         let connected = pipe.is_some();
-        let mut snapshot = Snapshot::default();
-        let last_real = snapshot.clone();
-        if demo {
-            snapshot = demo::snapshot(&snapshot, &HashMap::new(), &[]);
-        }
+        let last_real = Snapshot::default();
+        let snapshot = Arc::new(if demo { demo::snapshot(&last_real, &HashMap::new(), &[]) } else { Snapshot::default() });
         let model = cx.new(|_| Model {
             snapshot,
             prefs,
@@ -180,11 +180,12 @@ fn main() {
                             m.last_real = s;
                             m.refresh_demo(cx);
                         } else {
-                            m.snapshot = s;
+                            m.snapshot = Arc::new(s);
                             cx.notify();
                         }
                     }),
-                    Event::FromTray(ToWindow::Prefs(p)) => model.update(cx, |m, cx| {
+                    Event::FromTray(ToWindow::Prefs(mut p)) => model.update(cx, |m, cx| {
+                        p.lang = forced_lang.unwrap_or(p.lang);
                         m.prefs = p;
                         m.text = i18n::text(p.lang);
                         cx.notify();
@@ -212,6 +213,16 @@ fn main() {
         }
         cx.activate(true);
     });
+}
+
+/// `OPEN_CONTROLLER_LANG=en` or `pt` shows the window in that language whatever was picked, for
+/// screenshots.
+fn forced_lang() -> Option<Lang> {
+    match std::env::var("OPEN_CONTROLLER_LANG").ok()?.as_str() {
+        "en" => Some(Lang::En),
+        "pt" => Some(Lang::Pt),
+        _ => None,
+    }
 }
 
 fn open_window(model: Entity<Model>, cx: &mut App) -> Option<WindowHandle<MainView>> {

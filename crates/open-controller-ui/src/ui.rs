@@ -4,7 +4,7 @@
 use crate::Model;
 use crate::keys;
 use crate::requirements::{self, Component, Outcome};
-use crate::theme::{FONT, Theme, icon as glyph, radius};
+use crate::theme::{FONT, Theme, icon as glyph, layout, radius};
 use crate::widgets::{caption, icon_button, strong};
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -390,14 +390,22 @@ impl MainView {
         div()
             .flex()
             .flex_none()
-            .items_center()
-            .justify_between()
+            .justify_center()
             .h(px(56.))
-            .px(px(18.))
             .border_b_1()
             .border_color(t.stroke)
-            .child(home)
-            .child(gear)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .w_full()
+                    .max_w(px(layout::MAX_W))
+                    // The brand's own padding and the gear's hit area sit in the gutter.
+                    .px(px(layout::GUTTER - 6.))
+                    .child(home)
+                    .child(gear),
+            )
             .into_any_element()
     }
 }
@@ -411,6 +419,7 @@ fn extras_held(pad: &PadView) -> u64 {
 impl Render for MainView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        let max_w = if self.screen == Screen::Settings { layout::SETTINGS_W } else { layout::MAX_W };
         let content: AnyElement = match self.screen {
             Screen::Home => self.render_home(window, cx),
             Screen::Settings => self.render_settings(window, cx),
@@ -433,12 +442,13 @@ impl Render for MainView {
             .child(self.top_bar(cx))
             .children(self.update_bar(cx))
             .child(
-                div()
-                    .id("scroll")
-                    .flex_1()
-                    .min_h(px(0.))
-                    .overflow_y_scroll()
-                    .child(div().w_full().max_w(px(1120.)).px(px(28.)).pt(px(24.)).pb(px(32.)).child(content)),
+                div().id("scroll").flex_1().min_h(px(0.)).overflow_y_scroll().child(
+                    div()
+                        .flex()
+                        .justify_center()
+                        .w_full()
+                        .child(div().w_full().max_w(px(max_w)).px(px(layout::GUTTER)).pt(px(28.)).pb(px(40.)).child(content)),
+                ),
             )
     }
 }

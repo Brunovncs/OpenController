@@ -69,7 +69,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let Ok(mut s) = cell.try_borrow_mut() else { return false };
             let Some(s) = s.as_mut() else { return true };
             match msg - WM_APP {
-                1 | 2 => {
+                // A snapshot changes only the count; the preferences (a registry read and the
+                // whole menu) only when they change.
+                1 => {
+                    let n = s.control.engine.pad_count();
+                    let lang = s.control.lang();
+                    if let Some(t) = s.tray.as_mut() {
+                        t.set_count(lang, n);
+                    }
+                }
+                2 => {
                     let (n, prefs) = (s.control.engine.pad_count(), s.control.prefs());
                     if let Some(t) = s.tray.as_mut() {
                         t.sync(prefs);

@@ -1,3 +1,6 @@
 /target/
 __pycache__/
 /dist/
+
+# Notes for AI assistants, kept on this machine only
+CLAUDE.local.md

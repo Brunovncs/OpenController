@@ -46,12 +46,21 @@ pub fn start(control: Arc<Control>, notify: Arc<Notify>) {
     std::thread::Builder::new()
         .name("window-server".into())
         .spawn(move || {
-            let pipe = match Pipe::create() {
-                Ok(p) => p,
-                Err(e) => return eprintln!("open-controller: no pipe for the window: {e}"),
+            // A previous instance's pipe can take a moment to close.
+            let pipe = loop {
+                match Pipe::create() {
+                    Ok(p) => break p,
+                    Err(e) => {
+                        eprintln!("open-controller: no pipe for the window yet: {e}");
+                        std::thread::sleep(Duration::from_secs(1));
+                    }
+                }
             };
             loop {
                 if pipe.accept().is_err() {
+                    // A client that came and went before the accept leaves the pipe closing;
+                    // it takes new ones again only once disconnected.
+                    pipe.disconnect();
                     std::thread::sleep(Duration::from_millis(200));
                     continue;
                 }
