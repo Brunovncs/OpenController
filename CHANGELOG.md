@@ -3,13 +3,20 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with Open Controller, and whether settings carry over.
 
+## 0.4.1
+
+"Update now" works. Until now the window closed before it could start the installer, so the
+update was downloaded but never installed. From 0.3.0 or 0.4.0, download this version from the
+website or this page once; from here on the button installs the next one by itself. Settings
+carry over.
+
 ## 0.4.0
 
 Controllers look like themselves. The window draws each one in its own shape, with its controls
 where the real one has them: the DualSense with its touchpad and light strips, the DualShock 4,
 the Xbox and Switch Pro controllers, Joy-Cons, the 8BitDo Ultimate with its star and the 8BitDo
 SN30 Pro, among others. The icons are drawn instead of taken from a Windows font, so they show
-on Linux and macOS too. Settings from 0.3.0 carry over, and 0.3.0 offers this update by itself.
+on Linux and macOS too. Settings from 0.3.0 carry over.
 
 ## 0.3.0
 

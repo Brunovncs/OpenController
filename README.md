@@ -15,7 +15,7 @@ knows, and keeps out of the way: a resident process of 3.2 MB that adds about 0.
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-Open Controller is open source (MIT) and in development, at version 0.4.0. The engine is tested
+Open Controller is open source (MIT) and in development, at version 0.4.1. The engine is tested
 end to end with a simulated controller on Windows 11 and, in CI, on Linux; on hardware only on
 Windows, with an 8BitDo Ultimate 2 Wireless. Every other controller below is SDL's support, and the
 Linux and macOS versions have not met a real controller yet. Treat it as a beta, and please report
@@ -30,14 +30,14 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.4.0-windows-x64-setup.exe` and run it. It installs for your user only,
+Download `open-controller-0.4.1-windows-x64-setup.exe` and run it. It installs for your user only,
 without administrator rights, adds Open Controller to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
 `%APPDATA%\io.github.brunovncs.open-controller`, stay. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.4.0-windows-x64.zip`, extract it anywhere
+To run it without installing, download `open-controller-0.4.1-windows-x64.zip`, extract it anywhere
 and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
 on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
 administrator rights.
@@ -62,7 +62,7 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.4.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
+Download `open-controller-0.4.1-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
 recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
 with an entry in your applications menu, and a udev rule, which asks for your password once. The
 rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
@@ -77,7 +77,7 @@ applications menu, and "Start when you sign in" adds an XDG autostart entry.
 
 ### macOS
 
-Download `open-controller-0.4.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
+Download `open-controller-0.4.1-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
 move Open Controller to Applications. It is not notarised: the first time, open it with a
 right-click and Open. macOS lets no program create game controllers without an entitlement Apple
 grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
