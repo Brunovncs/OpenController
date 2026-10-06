@@ -49,6 +49,32 @@ jobs:
         if: always()
         shell: bash
         run: cat "$RUNNER_TEMP/smoke/smoke.log" 2>/dev/null || echo "no smoke log"
+      # The installer: a new install, an update over it, and an uninstall that removes it.
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          & $iscc /Qp /DVersion=0.0.0 /DBuild=target\debug packaging\windows\open-controller.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install, update and uninstall
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist\*-setup.exe | Select-Object -First 1).FullName
+          $app = "$env:LOCALAPPDATA\Programs\open-controller"
+          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          if (-not (Test-Path "$app\open-controller.exe")) { throw "the installer did not install" }
+          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          if (-not (Test-Path "$app\unins000.exe")) { throw "the update lost the uninstaller" }
+          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path "$app\open-controller.exe") -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
+          if (Test-Path "$app\open-controller.exe") { throw "the uninstaller left the program behind" }
+          Get-Process open-controller* -ErrorAction SilentlyContinue | Stop-Process -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: dist/*-setup.exe
 
   linux:
     runs-on: ubuntu-22.04
