@@ -15,7 +15,7 @@ knows, and keeps out of the way: a resident process of 3.2 MB that adds about 0.
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-Open Controller is open source (MIT) and in development, at version 0.2.0. The engine is tested
+Open Controller is open source (MIT) and in development, at version 0.3.0. The engine is tested
 end to end with a simulated controller on Windows 11 and, in CI, on Linux; on hardware only on
 Windows, with an 8BitDo Ultimate 2 Wireless. Every other controller below is SDL's support, and the
 Linux and macOS versions have not met a real controller yet. Treat it as a beta, and please report
@@ -30,7 +30,14 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.2.0-windows-x64.zip`, extract it anywhere
+Download `open-controller-0.3.0-windows-x64-setup.exe` and run it. It installs for your user only,
+without administrator rights, adds Open Controller to the Start menu and to Apps in Settings
+(where it uninstalls), and starts it. Run it again over an existing installation, or let the app
+do it, and it updates in place: the running copy quits first, and your settings, kept in
+`%APPDATA%\io.github.brunovncs.open-controller`, stay. The installer is not code-signed, so
+SmartScreen warns the first time ("More info", then "Run anyway").
+
+To run it without installing, download `open-controller-0.3.0-windows-x64.zip`, extract it anywhere
 and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
 on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
 administrator rights.
@@ -55,7 +62,7 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.2.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
+Download `open-controller-0.3.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
 recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
 with an entry in your applications menu, and a udev rule, which asks for your password once. The
 rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
@@ -70,7 +77,7 @@ applications menu, and "Start when you sign in" adds an XDG autostart entry.
 
 ### macOS
 
-Download `open-controller-0.2.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
+Download `open-controller-0.3.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
 move Open Controller to Applications. It is not notarised: the first time, open it with a
 right-click and Open. macOS lets no program create game controllers without an entitlement Apple
 grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
@@ -279,10 +286,13 @@ when something changes.
 
 ### Network
 
-Open Controller sends nothing anywhere and checks for no updates. It learns which program is in
-front, to switch profiles (from Windows, from the X server on Linux, XWayland included, and from
-the workspace on macOS), and keeps that to itself. The only connection it makes is the one you
-start in Settings, Requirements on Windows: clicking Install downloads that driver's installer
+Open Controller sends nothing about you anywhere. It learns which program is in front, to switch
+profiles (from Windows, from the X server on Linux, XWayland included, and from the workspace on
+macOS), and keeps that to itself. When its window opens it asks GitHub's API for the latest
+release, to say when a newer version is out; the request carries nothing but the app's name, and
+"Check for updates" in Settings turns it off. Updating on Windows downloads that release's
+installer, checks it against the SHA-256 published with it and runs it. The other connection it
+makes is the one you start in Settings, Requirements on Windows: clicking Install downloads that driver's installer
 from its GitHub release with Windows' own `curl`, and the installer runs only if its SHA-256
 matches the one recorded in this version. The Linux rule is written by the program itself.
 
@@ -327,7 +337,7 @@ start-up. SDL is built from source and linked statically, which needs CMake and 
 Without the Visual Studio build tools, the GNU toolchain works for this folder
 (`rustup override set stable-x86_64-pc-windows-gnu`) with a MinGW gcc on `PATH`.
 
-The 72 tests on Windows (64 on Linux and macOS, where the Windows drivers' do not apply) cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
+The 74 tests on Windows (66 on Linux and macOS, where the Windows drivers' do not apply) cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
 grace period, two connections of one controller), device identity and connection type, the
 ViGEmBus and HidHide request layouts and IOCTL codes, HidHide's list handling (other programs'
 entries survive) and its journal file, the bundled mappings, the table of known models and the
@@ -336,7 +346,8 @@ report, macro limits, keys pressed and let go in order, extended keys, recorded 
 (edits, limits, deleting the one in use, programs that switch them) and light colours, the stick
 deadzone, the gyro's aim and filter, the touchpad's halves, the handhelds' firmware names and HID
 reports, the XInput slot markers, the pinned
-driver installers and version checks, the settings file and a real pipe round trip. These talk to
+driver installers and version checks, the update check (versions and release parsing), the
+settings file and a real pipe round trip. These talk to
 the real drivers:
 
 ```powershell

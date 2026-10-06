@@ -3,6 +3,16 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with Open Controller, and whether settings carry over.
 
+## 0.3.0
+
+A Windows installer, and updates. `open-controller-0.3.0-windows-x64-setup.exe` installs for your
+user without administrator rights, appears in the Start menu and in Apps, where it uninstalls, and
+updates an existing installation in place (including one made with `install.ps1`), keeping your
+settings. When a newer version is out, the window says so in a bar at the top: on Windows "Update
+now" downloads the installer, checks it and runs it; on Linux and macOS it opens the download page.
+The check asks GitHub once when the window opens and can be turned off in Settings. The zip stays
+for running without installing. Settings from 0.2.0 carry over.
+
 ## 0.2.0
 
 Linux and macOS. On Linux every controller becomes an Xbox 360 controller through the kernel's
