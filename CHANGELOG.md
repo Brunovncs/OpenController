@@ -3,6 +3,12 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.6.1
+
+Updating or uninstalling right after OpenController opens works every time. A copy that was
+still starting could miss the request to quit, so the uninstaller left the program behind and an
+update could fail to replace it. Settings carry over.
+
 ## 0.6.0
 
 Pick the language in Settings, English or Portuguese. OpenController starts in English and keeps
