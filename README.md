@@ -10,16 +10,18 @@ There is nothing to map. The buttons an Xbox controller lacks (back paddles, L4 
 the touchpad) can press an Xbox button, hold a key or type a macro instead, and a controller with a
 gyro can aim by turning it.
 
-It does what DS4Windows does for PlayStation controllers, for the several hundred controllers SDL
-knows, and keeps out of the way: a resident process of 3.2 MB that adds about 0.6 ms between the
+It works with the several hundred controllers SDL knows and keeps out of the way: a resident process of 3.2 MB that adds about 0.6 ms between the
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-OpenController is open source (MIT) and in development, at version 0.5.0. The engine is tested
-end to end with a simulated controller on Windows 11 and, in CI, on Linux; on hardware only on
-Windows, with an 8BitDo Ultimate 2 Wireless. Every other controller below is SDL's support, and the
-Linux and macOS versions have not met a real controller yet. Treat it as a beta, and please report
-what you plug in.
+OpenController is open source (MIT) and in beta, at version 0.6.0. With so many controllers out
+there, some will not work as they should yet and some features are still missing, so every report
+helps. If your controller is not recognised, a button does nothing or anything else goes wrong,
+feel free to [open an issue](https://github.com/Brunovncs/OpenController/issues); see
+[Reporting a problem](#reporting-a-problem) for what to include.
+
+The official website is [opencontroller.com.br](https://opencontroller.com.br). It is the only one:
+OpenController has no other site, and its downloads come only from there or from this repository.
 
 ![OpenController with eight controllers as tiles, each drawn as it looks and with its live input: an 8BitDo Ultimate 2 on its receiver, a DualSense, a Switch Pro Controller, Joy-Cons, an 8BitDo SN30 Pro, an Xbox controller, a DualShock 4 reconnecting and a DualSense Edge](docs/window.png)
 
@@ -30,19 +32,20 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.5.0-windows-x64-setup.exe` and run it. It installs for your user only,
+Download `open-controller-0.6.0-windows-x64-setup.exe` and run it. It installs for your user only,
 without administrator rights, adds OpenController to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
-`%APPDATA%\io.github.brunovncs.open-controller`, stay. The installer is not code-signed, so
+`%APPDATA%\io.github.brunovncs.open-controller`, stay. Uninstalling asks whether to delete them
+too. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.5.0-windows-x64.zip`, extract it anywhere
+To run it without installing, download `open-controller-0.6.0-windows-x64.zip`, extract it anywhere
 and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
 on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
 administrator rights.
 
-OpenController needs two free drivers by Nefarius, the same ones DS4Windows uses:
+OpenController needs two free drivers by Nefarius:
 [ViGEmBus](https://github.com/nefarius/ViGEmBus), which creates the virtual Xbox controllers games
 see, and [HidHide](https://github.com/nefarius/HidHide), which hides the original controllers from
 games so a game that also understands a DualSense does not see it twice. ViGEmBus is required and
@@ -62,14 +65,14 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.5.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
+Download `open-controller-0.6.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
 recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
 with an entry in your applications menu, and a udev rule, which asks for your password once. The
 rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
 reports of the controllers in the model table (their extra buttons, gyro and light), as Steam's
 own rules do; without it OpenController can do neither. `./install.sh --no-rule` skips it, and
 Settings, Requirements in the window installs it later through polkit. `./uninstall.sh` removes
-everything again.
+it again and asks whether to delete your settings too.
 
 The window needs `libxkbcommon-x11` and Vulkan or OpenGL drivers, which desktops have. The resident
 process runs in the background without an icon of its own: the window is opened from the
@@ -77,7 +80,7 @@ applications menu, and "Start when you sign in" adds an XDG autostart entry.
 
 ### macOS
 
-Download `open-controller-0.5.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
+Download `open-controller-0.6.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
 move OpenController to Applications. It is not notarised: the first time, open it with a
 right-click and Open. macOS lets no program create game controllers without an entitlement Apple
 grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
@@ -117,7 +120,7 @@ the Xbox and Switch Pro controllers, Joy-Cons, the 8BitDo Ultimate and SN30 Pro 
 Nintendo style pads, handhelds and a generic pad, each with its outline, its controls where the
 real one has them and details such as the DualSense's light strips or the Ultimate's star. Sticks,
 triggers and buttons light up as they are pressed, next to the player, connection and battery.
-The same drawings are on the website. Icons are drawn too, so the window looks the same on
+The same drawings are on the [website](https://opencontroller.com.br). Icons are drawn too, so the window looks the same on
 Windows, Linux and macOS. A controller's page has its profiles at the top and three
 sections: Buttons, with the drawing and the extra buttons; Light, for controllers whose light bar
 can be coloured; and Information, with the model, its USB id, what games see and what it can do.
@@ -128,7 +131,8 @@ Xbox controllers are listed but not duplicated: they are XInput controllers alre
 their own slot and add no latency. Controllers SDL reads through XInput, which gives no name, get
 the name Windows has for the device ("8BitDo Ultimate 2 Wireless Controller for PC" rather than
 "XInput Controller"), and generic names are replaced from a table of 602 known models. The
-interface follows Windows' light or dark mode and language, English or Brazilian Portuguese.
+interface follows Windows' light or dark mode, and is in English or Brazilian Portuguese, picked in
+Settings (English until you pick).
 
 ![A controller's page: the 8BitDo drawn with its live input, its profile, and its four extra buttons, one assigned to Xbox A, one to Ctrl+Shift+M and one to a macro](docs/controller.png)
 
@@ -144,6 +148,10 @@ Mic), can be:
 - a **macro**: keys typed once per press, recorded with the gaps you left between them, which can
   be edited afterwards;
 - nothing, which is where every button starts.
+
+Some games, online ones with anti-cheat above all, do not allow macros or automated input. Check a
+game's rules before using macros or shortcuts in it; what happens to an account for using them is
+the player's responsibility.
 
 Pressing an extra button on the controller picks it in the window. Changes apply as they are made
 and follow the controller across cables and pairings when it reports a serial (Bluetooth
@@ -222,7 +230,6 @@ their names, drawings and the advice the window shows.
 | AYANEO, Legion Go, Go 2, Go S, ZOTAC Zone, OneXPlayer built-in controllers | built in | | | their back and menu buttons, as keys and macros (untested) |
 | PowerA, Hori, Razer, Nacon and other licensed pads | yes | yes | yes | those SDL reports |
 | Generic USB and Bluetooth gamepads | yes | yes | yes | if SDL or the database maps them |
-| **Tested on hardware** | | | | **8BitDo Ultimate 2 Wireless on its receiver** |
 
 Light bars and player lights show the player number. Windows has no driver for the DualShock 3:
 with Nefarius' DsHidMini set to its SXS mode, OpenController reads it over USB, and BthPS3 adds
@@ -238,10 +245,6 @@ while holding B, it is in D-input mode, on the receiver or over Bluetooth, where
 buttons and the gyro work; put it on its dock right after, or it goes back to XInput mode the next
 time it is turned on. A Pro 2 has a mode switch on its back instead, whose D position is D-input.
 The window says which applies.
-
-On hardware so far: an 8BitDo Ultimate 2 Wireless on its receiver in XInput mode is recognised,
-named and left to games as the Xbox controller it is, while a virtual controller added next to it
-gets the next player slot.
 
 ## How it works
 
@@ -299,8 +302,7 @@ makes is the one you start in Settings, Requirements on Windows: clicking Instal
 from its GitHub release with Windows' own `curl`, and the installer runs only if its SHA-256
 matches the one recorded in this version. The Linux rule is written by the program itself.
 
-[docs/design.md](docs/design.md) explains the decisions, including what was learned from DS4Windows
-and PadForge.
+[docs/design.md](docs/design.md) explains the decisions.
 
 ## Measurements
 
@@ -393,11 +395,7 @@ Edge into the `.ico` files.
   hidden. Profiles switch with the program in front only for X programs (games under Wine and
   Proton are), and handheld buttons are left to Handheld Daemon or InputPlumber.
 - On macOS there are no virtual controllers, player numbers, gyro aiming or hiding; see Installing.
-- Tested on hardware with one controller so far; every claim above about another controller is
-  SDL's support, not a test of OpenController. The handheld buttons and the gyro have only been
-  tested with SDL's simulated controller.
-- ViGEmBus is retired upstream. It is stable and still what DS4Windows uses, but it gets no new
-  versions.
+- ViGEmBus is retired upstream: it is stable, but it gets no new versions.
 - XInput games see at most four controllers. A fifth one gets a virtual controller that only
   DirectInput, Windows.Gaming.Input and GameInput games can see; the window says so.
 - Everything is an Xbox 360 controller. Games that show PlayStation button prompts for a DualSense
@@ -420,12 +418,26 @@ Edge into the `.ico` files.
 - The programs are not code-signed, so SmartScreen warns the first time they run, and the macOS app
   is signed ad hoc only: its Accessibility permission has to be granted again after an update.
 
+## Reporting a problem
+
+Problems, controllers that do not work and ideas are all welcome as
+[issues](https://github.com/Brunovncs/OpenController/issues), or by email to
+brunoviniciusrp.contato@gmail.com. What helps most to find a problem:
+
+- your system and its version (Windows 11, Ubuntu 24.04, macOS 15);
+- the exact controller model, and how it is connected (cable, Bluetooth or its receiver);
+- the OpenController version, shown at the top of its window;
+- what you did, what you expected and what happened instead, with a screenshot if you can.
+
 ## Disclaimer
 
 OpenController is not affiliated with Sony, Microsoft, Nintendo, Valve, 8BitDo or any other
 controller maker; their names identify compatible hardware only. ViGEmBus, HidHide, DsHidMini and
-BthPS3 are by Nefarius Software Solutions and are downloaded from their releases, not bundled. No
-code from DS4Windows or PadForge is included. Use it at your own risk.
+BthPS3 are by Nefarius Software Solutions and are downloaded from their releases, not bundled.
+
+OpenController is provided as is, and you use it at your own risk. Its authors are not responsible
+for bans, suspensions or other penalties a game or service applies because of how it is used, such
+as macros in games that forbid them.
 
 ## License
 
