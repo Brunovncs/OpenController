@@ -1,4 +1,4 @@
-//! The notification-area icon and its menu. Open Controller lives here; the window is opened
+//! The notification-area icon and its menu. OpenController lives here; the window is opened
 //! from it and closed without stopping anything.
 
 use crate::{Control, Msg};
@@ -51,7 +51,7 @@ impl Tray {
         let light = light_taskbar();
         let icon = TrayIconBuilder::new()
             .with_icon(tray_icon(light)?)
-            .with_tooltip("Open Controller")
+            .with_tooltip("OpenController")
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .build()
@@ -81,7 +81,7 @@ impl Tray {
         }
         self.count = Some(n);
         let what = if n == 1 { text.controllers_one.to_string() } else { format!("{n} {}", text.controllers_many) };
-        let _ = self.icon.set_tooltip(Some(format!("Open Controller · {what}")));
+        let _ = self.icon.set_tooltip(Some(format!("OpenController · {what}")));
     }
 }
 

@@ -1,5 +1,5 @@
 //! Lists what SDL sees, then plugs in one virtual Xbox 360 controller, moves its left stick and
-//! checks that it is recognised as Open Controller's own and not read back as a new controller.
+//! checks that it is recognised as OpenController's own and not read back as a new controller.
 //! Changes nothing permanent: the virtual controller is gone when the program ends.
 //!
 //!     cargo run -p open-controller-core --example diagnose

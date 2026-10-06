@@ -61,7 +61,7 @@ pub mod xusb {
 /// growing downwards, triggers in 0..=32767.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PadState {
-    /// A bit per button: SDL's gamepad buttons (0 to 25), then the ones Open Controller adds
+    /// A bit per button: SDL's gamepad buttons (0 to 25), then the ones OpenController adds
     /// (`extras::TOUCH_LEFT` and up).
     pub buttons: u64,
     pub axes: [i16; axis::COUNT],

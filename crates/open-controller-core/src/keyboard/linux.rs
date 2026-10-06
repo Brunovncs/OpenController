@@ -1,4 +1,4 @@
-//! Linux: keys go out through a uinput keyboard of Open Controller's own, which the desktop and
+//! Linux: keys go out through a uinput keyboard of OpenController's own, which the desktop and
 //! games take for one more keyboard. Key codes are positions, so a virtual-key code becomes the
 //! key in its place on a US keyboard.
 
@@ -33,7 +33,7 @@ impl Sink {
             }
             let mut setup: libc::uinput_setup = std::mem::zeroed();
             setup.id = libc::input_id { bustype: BUS_VIRTUAL, vendor: 0, product: 0, version: 1 };
-            for (dst, &src) in setup.name.iter_mut().zip(b"Open Controller keyboard") {
+            for (dst, &src) in setup.name.iter_mut().zip(b"OpenController keyboard") {
                 *dst = src as libc::c_char;
             }
             if libc::ioctl(fd, UI_DEV_SETUP, &setup) < 0 || libc::ioctl(fd, UI_DEV_CREATE) < 0 {

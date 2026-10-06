@@ -9,7 +9,7 @@ fn entry() -> Option<PathBuf> {
 fn contents() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
     Some(format!(
-        "[Desktop Entry]\nType=Application\nName=Open Controller\nComment=Controllers as Xbox controllers\n\
+        "[Desktop Entry]\nType=Application\nName=OpenController\nComment=Controllers as Xbox controllers\n\
          Exec=\"{}\" --minimized\nIcon=io.github.brunovncs.open-controller\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n",
         exe.display()
     ))

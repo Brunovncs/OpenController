@@ -5,7 +5,7 @@ use crate::Model;
 use crate::keys;
 use crate::requirements::{self, Component, Outcome};
 use crate::theme::{FONT, Theme, icon as glyph, radius};
-use crate::widgets::{icon_button, strong};
+use crate::widgets::{caption, icon_button, strong};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent, ModifiersChangedEvent,
@@ -378,7 +378,8 @@ impl MainView {
             .hover(move |s| s.bg(t.control))
             .on_click(cx.listener(|this, _, _, cx| this.home(cx)))
             .child(mark)
-            .child(strong("Open Controller", t.text));
+            .child(strong("OpenController", t.text))
+            .child(caption(concat!("v", env!("CARGO_PKG_VERSION")), t.text2));
         let gear =
             div()
                 .relative()

@@ -1,9 +1,10 @@
-//! The settings: the options there are, what Open Controller needs from the system (see
+//! The settings: the options there are, what OpenController needs from the system (see
 //! [`crate::requirements`]), and what is running.
 
 use crate::requirements;
+use crate::theme::icon as glyph;
 use crate::ui::MainView;
-use crate::widgets::{Kind, body, button, caption, display, group, row, section, switch};
+use crate::widgets::{Kind, body, button, caption, display, group, icon_button, row, section, switch};
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, Window, div, px};
 use open_controller_core::Snapshot;
@@ -12,7 +13,7 @@ use open_controller_core::ipc::ToTray;
 use open_controller_core::platform::VIRTUAL_PADS;
 
 fn drivers_line(snap: &Snapshot) -> String {
-    let mut parts = vec![format!("Open Controller {}", env!("CARGO_PKG_VERSION"))];
+    let mut parts = vec![format!("OpenController {}", env!("CARGO_PKG_VERSION"))];
     if !snap.sdl_version.is_empty() {
         parts.push(format!("SDL {}", snap.sdl_version));
     }
@@ -67,7 +68,15 @@ impl MainView {
             .flex()
             .flex_col()
             .max_w(px(860.))
-            .child(display(text.settings, t.text).pb(px(4.)))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .pb(px(4.))
+                    .child(icon_button("back", glyph::BACK, &t).on_click(cx.listener(|this, _, _, cx| this.home(cx))))
+                    .child(display(text.settings, t.text)),
+            )
             .child(section(text.options, &t).pt(px(16.)))
             .child(options)
             .child(section(text.requirements, &t))

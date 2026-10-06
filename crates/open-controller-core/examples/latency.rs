@@ -1,4 +1,4 @@
-//! Measures the two delays Open Controller adds on top of the controller itself:
+//! Measures the two delays OpenController adds on top of the controller itself:
 //!
 //! 1. the poll loop: the period of the deadline-paced 1 kHz loop it runs, and of a plain
 //!    `std::thread::sleep(1 ms)` loop for comparison;

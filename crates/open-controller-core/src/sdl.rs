@@ -238,7 +238,7 @@ impl Gamepad {
         }
     }
 
-    /// The touchpad's halves and two-finger touch, as the bits Open Controller gives them.
+    /// The touchpad's halves and two-finger touch, as the bits OpenController gives them.
     fn touch_buttons(&self, clicked: bool) -> u64 {
         unsafe {
             if SDL_GetNumGamepadTouchpads(self.gp) == 0 {

@@ -1,6 +1,6 @@
 [package]
 name = "open-controller"
-description = "Open Controller's resident process: the engine, and on Windows the notification-area icon"
+description = "OpenController's resident process: the engine, and on Windows the notification-area icon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

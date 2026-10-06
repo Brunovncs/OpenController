@@ -106,7 +106,7 @@ pub fn download_setup(r: &Release, dir: &Path) -> Result<PathBuf, String> {
 }
 
 /// Starts the installer without its wizard. It closes what is still running, replaces the
-/// programs in place, keeps the settings and starts Open Controller again.
+/// programs in place, keeps the settings and starts OpenController again.
 #[cfg(windows)]
 pub fn run_setup(file: &Path) -> Result<(), String> {
     Command::new(file)

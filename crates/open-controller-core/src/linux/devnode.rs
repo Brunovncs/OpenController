@@ -1,5 +1,5 @@
 //! What sysfs says about a device SDL opened: the HID device behind a `hidraw` node, its event
-//! nodes, its bus, and whether it is one of Open Controller's own virtual controllers.
+//! nodes, its bus, and whether it is one of OpenController's own virtual controllers.
 
 use std::path::{Path, PathBuf};
 
@@ -40,7 +40,7 @@ fn read(path: impl AsRef<Path>) -> Option<String> {
     std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }
 
-/// One of Open Controller's own virtual controllers, read back through its event node.
+/// One of OpenController's own virtual controllers, read back through its event node.
 pub fn is_virtual(path: &str) -> bool {
     node(path, "event").and_then(|n| read(format!("/sys/class/input/{n}/device/phys"))).is_some_and(|p| p.starts_with(super::uinput::PHYS))
 }

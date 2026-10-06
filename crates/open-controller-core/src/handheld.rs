@@ -288,7 +288,7 @@ fn hid_reader(m: &'static Machine, iface: Interface, tx: Sender<Held>, stop: &At
 
 /// The function keys some handhelds type for their buttons, caught system-wide with a
 /// low-level keyboard hook and swallowed. Only the exact keys of the recognised machine are
-/// touched; keys Open Controller types itself pass through.
+/// touched; keys OpenController types itself pass through.
 #[cfg(windows)]
 mod hook {
     use super::{Held, Machine, Source, button_index};

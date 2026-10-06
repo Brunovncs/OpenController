@@ -1,4 +1,4 @@
-//! The core of Open Controller: the engine that reads every connected controller through SDL 3
+//! The core of OpenController: the engine that reads every connected controller through SDL 3
 //! and presents each one to games as a virtual Xbox 360 controller (ViGEmBus on Windows, uinput
 //! on Linux), hiding the original (HidHide, an evdev grab), and the protocol between the
 //! resident process and the window. On macOS, which lets no program create controllers, it

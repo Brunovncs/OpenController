@@ -134,6 +134,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Open Controller ${{ needs.version.outputs.version }}" \
+            --title "OpenController ${{ needs.version.outputs.version }}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --verify-tag

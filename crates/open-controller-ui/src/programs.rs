@@ -1,6 +1,6 @@
 //! The programs with a window open, for picking the ones that switch a profile on.
 
-/// Programs that are part of the system or Open Controller, never what someone plays.
+/// Programs that are part of the system or OpenController, never what someone plays.
 const SYSTEM: [&str; 13] = [
     "explorer.exe",
     "open-controller.exe",

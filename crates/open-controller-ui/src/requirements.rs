@@ -1,4 +1,4 @@
-//! What Open Controller needs from the system, shown in the settings and warned about on the
+//! What OpenController needs from the system, shown in the settings and warned about on the
 //! home screen: drivers on Windows, a device rule on Linux, a permission on macOS. Each system's
 //! module says what there is and how to get it; the cards look the same everywhere.
 

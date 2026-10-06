@@ -951,7 +951,7 @@ impl Core {
         // Half a second on, half off.
         let blink_off = now.duration_since(self.started).as_millis() % 1000 >= 500;
         for p in self.phys.values_mut() {
-            // Where controllers stay as they are, their lights are still Open Controller's to set.
+            // Where controllers stay as they are, their lights are still OpenController's to set.
             let player = match p.kind {
                 Kind::Slot(s) => self.targets.get(&s).and_then(|t| t.player),
                 Kind::Native if !VIRTUAL_PADS => None,

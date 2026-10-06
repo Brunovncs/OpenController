@@ -1,4 +1,4 @@
-//! The drivers Open Controller relies on or can use, whether each is installed, and installing
+//! The drivers OpenController relies on or can use, whether each is installed, and installing
 //! one when the user asks: the installer is downloaded from its maker's GitHub release, checked
 //! against the hash it had when this version was made, and run elevated. Nothing is installed on
 //! its own.
@@ -159,7 +159,7 @@ fn download(p: &Package, dir: &Path) -> Result<PathBuf, String> {
         }
         if !matches(&file, p.sha256) {
             let _ = std::fs::remove_file(&file);
-            return Err(format!("the downloaded {} is not the one this version of Open Controller knows", p.name));
+            return Err(format!("the downloaded {} is not the one this version of OpenController knows", p.name));
         }
     }
     Ok(file)

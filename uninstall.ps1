@@ -1,4 +1,4 @@
-# Removes Open Controller: quits it the clean way, shows again any controller it hid, removes it
+# Removes OpenController: quits it the clean way, shows again any controller it hid, removes it
 # from HidHide's program list, "Start with Windows", the Start menu, its files and its settings.
 # The drivers (ViGEmBus, HidHide) stay; uninstall them from Windows Settings if you want.
 $ErrorActionPreference = 'Stop'
@@ -12,9 +12,13 @@ if (Test-Path $exe) {
     & $exe --restore | Out-Null
 }
 
-Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Open Controller' -ErrorAction SilentlyContinue
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Open Controller.lnk'
-if (Test-Path $shortcut) { Remove-Item -LiteralPath $shortcut }
+foreach ($name in 'OpenController', 'Open Controller') {
+    Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue
+}
+foreach ($name in 'OpenController.lnk', 'Open Controller.lnk') {
+    $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) $name
+    if (Test-Path $shortcut) { Remove-Item -LiteralPath $shortcut }
+}
 if (Test-Path $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
 if (Test-Path $data) { Remove-Item -LiteralPath $data -Recurse -Force }
-Write-Host 'Open Controller removed'
+Write-Host 'OpenController removed'

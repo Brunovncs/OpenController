@@ -1,4 +1,4 @@
-# Builds Open Controller and installs it for the current user in %LOCALAPPDATA%\Programs\open-controller,
+# Builds OpenController and installs it for the current user in %LOCALAPPDATA%\Programs\open-controller,
 # with a Start menu shortcut, then starts it. No administrator rights are needed. The drivers it
 # uses, ViGEmBus and HidHide, are installed separately (see the README).
 $ErrorActionPreference = 'Stop'
@@ -22,7 +22,9 @@ Get-Process open-controller-ui -ErrorAction SilentlyContinue | ForEach-Object { 
 
 Copy-Item "target\$profile\open-controller.exe", "target\$profile\open-controller-ui.exe" $dest -Force
 
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Open Controller.lnk'
+$programs = [Environment]::GetFolderPath('Programs')
+Remove-Item -LiteralPath (Join-Path $programs 'Open Controller.lnk') -ErrorAction SilentlyContinue
+$shortcut = Join-Path $programs 'OpenController.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcut)
 $link.TargetPath = $exe
@@ -31,4 +33,4 @@ $link.Description = 'Any controller, any connection, as an Xbox controller'
 $link.Save()
 
 Start-Process $exe
-Write-Host "Open Controller installed to $dest"
+Write-Host "OpenController installed to $dest"

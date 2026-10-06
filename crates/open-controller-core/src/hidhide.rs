@@ -5,7 +5,7 @@
 //! instance id), a list of programs that still see them (by NT image path) and a switch that
 //! turns hiding on. Other programs, DS4Windows among them, keep entries there too. So this
 //! module only ever adds and removes its own entries, by read-modify-write, and keeps a journal
-//! of them on disk before touching the driver. If Open Controller crashes, the next start reads
+//! of them on disk before touching the driver. If OpenController crashes, the next start reads
 //! the journal and undoes what the crash left behind.
 //!
 //! The driver's control device admits one handle at a time, so it is opened for each request
@@ -37,7 +37,7 @@ pub enum CloakError {
     NotInstalled,
     /// Another program kept HidHide's control device open.
     Busy,
-    /// In inverse mode the program list means the opposite; Open Controller leaves it alone.
+    /// In inverse mode the program list means the opposite; OpenController leaves it alone.
     InverseMode,
     /// The driver accepted a list but reads back something else.
     NotApplied,
@@ -164,7 +164,7 @@ impl HidHide {
     }
 }
 
-/// What Open Controller changed in HidHide's configuration, kept on disk while it is in effect.
+/// What OpenController changed in HidHide's configuration, kept on disk while it is in effect.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Journal {
     /// Device instance ids this program added to the hidden list.

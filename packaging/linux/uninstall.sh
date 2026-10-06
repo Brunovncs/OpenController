@@ -12,4 +12,4 @@ if [ -f /etc/udev/rules.d/70-open-controller.rules ]; then
     sudo rm -f /etc/udev/rules.d/70-open-controller.rules /etc/modules-load.d/open-controller.conf
     sudo udevadm control --reload-rules
 fi
-echo "Open Controller is uninstalled."
+echo "OpenController is uninstalled."

@@ -10,7 +10,7 @@ mod sys;
 
 pub use sys::watch;
 
-/// Programs that come to the front without being what the user is playing: Open Controller's own
+/// Programs that come to the front without being what the user is playing: OpenController's own
 /// window, and the Start menu, search and the like. Switching profiles for them would only flicker.
 const PASSING: [&str; 7] = [
     "open-controller-ui.exe",

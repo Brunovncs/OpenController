@@ -1,6 +1,6 @@
 [package]
 name = "open-controller-core"
-description = "Open Controller's core: controller input, virtual Xbox 360 controllers, device hiding and the tray/window protocol"
+description = "OpenController's core: controller input, virtual Xbox 360 controllers, device hiding and the tray/window protocol"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

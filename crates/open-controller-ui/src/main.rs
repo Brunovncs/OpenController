@@ -178,7 +178,7 @@ fn main() {
                         m.prefs = p;
                         cx.notify();
                     }),
-                    // Open Controller quit from the tray: the window goes with it, unless it is the
+                    // OpenController quit from the tray: the window goes with it, unless it is the
                     // update that asked, which still has the installer to start.
                     Event::TrayGone if updates::installing() => {}
                     Event::TrayGone => cx.update(|cx| cx.quit()),
@@ -206,7 +206,7 @@ fn main() {
 fn open_window(model: Entity<Model>, cx: &mut App) -> Option<WindowHandle<MainView>> {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(1160.), px(800.)), cx))),
-        titlebar: Some(TitlebarOptions { title: Some("Open Controller".into()), ..Default::default() }),
+        titlebar: Some(TitlebarOptions { title: Some("OpenController".into()), ..Default::default() }),
         app_id: Some("open-controller".into()),
         window_min_size: Some(size(px(720.), px(520.))),
         window_background: WindowBackgroundAppearance::Opaque,

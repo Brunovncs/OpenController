@@ -10,7 +10,7 @@ const FILE_NAME: &str = "settings.json";
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// Hide the original controllers from games while Open Controller runs (needs HidHide).
+    /// Hide the original controllers from games while OpenController runs (needs HidHide).
     pub hide_originals: bool,
     /// Ask GitHub for a newer version when the window opens.
     pub check_updates: bool,

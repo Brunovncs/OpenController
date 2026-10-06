@@ -1,6 +1,6 @@
 [package]
 name = "open-controller-ui"
-description = "Open Controller's window, a separate process that exists only while it is open"
+description = "OpenController's window, a separate process that exists only while it is open"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

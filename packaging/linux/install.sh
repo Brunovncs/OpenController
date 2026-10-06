@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs Open Controller for the current user, in ~/.local, and its udev rule, which needs
+# Installs OpenController for the current user, in ~/.local, and its udev rule, which needs
 # your password once. ./install.sh --no-rule skips the rule (the window can install it later).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -22,5 +22,5 @@ if [ "${1:-}" != "--no-rule" ]; then
     sudo modprobe uinput || true
     sudo udevadm control --reload-rules
     sudo udevadm trigger
-    echo "Done. Reconnect your controllers, then open Open Controller from your applications."
+    echo "Done. Reconnect your controllers, then open OpenController from your applications."
 fi

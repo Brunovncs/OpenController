@@ -16,9 +16,9 @@
 
 [Setup]
 AppId={{6F3C2A1E-8B4D-4E7A-9C51-2D0B7A4F9E13}
-AppName=Open Controller
+AppName=OpenController
 AppVersion={#Version}
-AppVerName=Open Controller {#Version}
+AppVerName=OpenController {#Version}
 AppPublisher=Brunovncs
 AppPublisherURL=https://open-controller-site.vercel.app
 AppSupportURL=https://github.com/Brunovncs/OpenController/issues
@@ -35,7 +35,7 @@ MinVersion=10.0
 WizardStyle=modern
 SetupIconFile={#Root}\assets\icon.ico
 UninstallDisplayIcon={app}\open-controller.exe
-UninstallDisplayName=Open Controller
+UninstallDisplayName=OpenController
 CloseApplications=yes
 RestartApplications=no
 Compression=lzma2/max
@@ -58,17 +58,23 @@ Source: "{#Root}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Root}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Root}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
+[InstallDelete]
+; The shortcuts up to 0.4.1, named "Open Controller".
+Type: files; Name: "{userprograms}\Open Controller.lnk"
+Type: files; Name: "{userdesktop}\Open Controller.lnk"
+
 [Icons]
-Name: "{userprograms}\Open Controller"; Filename: "{app}\open-controller.exe"; WorkingDir: "{app}"
-Name: "{userdesktop}\Open Controller"; Filename: "{app}\open-controller.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{userprograms}\OpenController"; Filename: "{app}\open-controller.exe"; WorkingDir: "{app}"
+Name: "{userdesktop}\OpenController"; Filename: "{app}\open-controller.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Registry]
 ; "Start with Windows" is the app's own setting; the value it writes goes with the app.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "OpenController"; Flags: uninsdeletevalue dontcreatekey
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Open Controller"; Flags: uninsdeletevalue dontcreatekey
 
 [Run]
 ; Also after a silent update, so the app the user had open comes back.
-Filename: "{app}\open-controller.exe"; Description: "{cm:LaunchProgram,Open Controller}"; Flags: nowait postinstall
+Filename: "{app}\open-controller.exe"; Description: "{cm:LaunchProgram,OpenController}"; Flags: nowait postinstall
 
 [UninstallRun]
 Filename: "{app}\open-controller.exe"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "Quit"

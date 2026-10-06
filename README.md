@@ -1,4 +1,4 @@
-# Open Controller
+# OpenController
 
 <img src="assets/icon-256.png" width="96" align="right" alt="">
 
@@ -15,13 +15,13 @@ knows, and keeps out of the way: a resident process of 3.2 MB that adds about 0.
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-Open Controller is open source (MIT) and in development, at version 0.4.1. The engine is tested
+OpenController is open source (MIT) and in development, at version 0.5.0. The engine is tested
 end to end with a simulated controller on Windows 11 and, in CI, on Linux; on hardware only on
 Windows, with an 8BitDo Ultimate 2 Wireless. Every other controller below is SDL's support, and the
 Linux and macOS versions have not met a real controller yet. Treat it as a beta, and please report
 what you plug in.
 
-![Open Controller with eight controllers as tiles, each drawn as it looks and with its live input: an 8BitDo Ultimate 2 on its receiver, a DualSense, a Switch Pro Controller, Joy-Cons, an 8BitDo SN30 Pro, an Xbox controller, a DualShock 4 reconnecting and a DualSense Edge](docs/window.png)
+![OpenController with eight controllers as tiles, each drawn as it looks and with its live input: an 8BitDo Ultimate 2 on its receiver, a DualSense, a Switch Pro Controller, Joy-Cons, an 8BitDo SN30 Pro, an Xbox controller, a DualShock 4 reconnecting and a DualSense Edge](docs/window.png)
 
 ## Installing
 
@@ -30,19 +30,19 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.4.1-windows-x64-setup.exe` and run it. It installs for your user only,
-without administrator rights, adds Open Controller to the Start menu and to Apps in Settings
+Download `open-controller-0.5.0-windows-x64-setup.exe` and run it. It installs for your user only,
+without administrator rights, adds OpenController to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
 `%APPDATA%\io.github.brunovncs.open-controller`, stay. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.4.1-windows-x64.zip`, extract it anywhere
+To run it without installing, download `open-controller-0.5.0-windows-x64.zip`, extract it anywhere
 and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
 on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
 administrator rights.
 
-Open Controller needs two free drivers by Nefarius, the same ones DS4Windows uses:
+OpenController needs two free drivers by Nefarius, the same ones DS4Windows uses:
 [ViGEmBus](https://github.com/nefarius/ViGEmBus), which creates the virtual Xbox controllers games
 see, and [HidHide](https://github.com/nefarius/HidHide), which hides the original controllers from
 games so a game that also understands a DualSense does not see it twice. ViGEmBus is required and
@@ -57,17 +57,17 @@ To build and install from source instead, with Windows 10 or 11 and [Rust](https
 .\uninstall.ps1   # quits it, shows any hidden controller again and removes the program and its settings
 ```
 
-Open Controller lives in the notification area: its icon opens the window and has "Start with
+OpenController lives in the notification area: its icon opens the window and has "Start with
 Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.4.1-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
+Download `open-controller-0.5.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
 recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
 with an entry in your applications menu, and a udev rule, which asks for your password once. The
 rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
 reports of the controllers in the model table (their extra buttons, gyro and light), as Steam's
-own rules do; without it Open Controller can do neither. `./install.sh --no-rule` skips it, and
+own rules do; without it OpenController can do neither. `./install.sh --no-rule` skips it, and
 Settings, Requirements in the window installs it later through polkit. `./uninstall.sh` removes
 everything again.
 
@@ -77,11 +77,11 @@ applications menu, and "Start when you sign in" adds an XDG autostart entry.
 
 ### macOS
 
-Download `open-controller-0.4.1-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
-move Open Controller to Applications. It is not notarised: the first time, open it with a
+Download `open-controller-0.5.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
+move OpenController to Applications. It is not notarised: the first time, open it with a
 right-click and Open. macOS lets no program create game controllers without an entitlement Apple
 grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
-directly, so on macOS Open Controller leaves controllers as they are and adds what games do not
+directly, so on macOS OpenController leaves controllers as they are and adds what games do not
 do: extra buttons as keys and macros, the light bar and its low-battery blink, battery levels and
 profiles. Typing keys for other apps needs the Accessibility permission, which the window asks for.
 
@@ -105,8 +105,8 @@ covers a cable swap, a Bluetooth reconnect or a receiver hiccup; meanwhile the g
 rest. A controller connected two ways at once (charging over USB while on Bluetooth) is one player,
 driven by whichever connection sent the last input.
 
-With HidHide installed, the originals are hidden from games while Open Controller runs and shown
-again when it quits. Open Controller only touches its own entries in HidHide's configuration,
+With HidHide installed, the originals are hidden from games while OpenController runs and shown
+again when it quits. OpenController only touches its own entries in HidHide's configuration,
 writes down what it hid before hiding it, and undoes it on the next start if it was killed in
 between. Signing out or shutting down Windows quits it cleanly.
 
@@ -185,7 +185,7 @@ and are left alone.
 ### Handheld PCs
 
 On a handheld, the built-in controller is an XInput pad that games read directly, and its extra
-buttons reach Windows as keys or through the maker's own HID interface. Open Controller recognises
+buttons reach Windows as keys or through the maker's own HID interface. OpenController recognises
 the machine by the name its firmware gives and reads them without writing anything to it: the
 function keys of AYANEO, ZOTAC Gaming Zone and OneXPlayer models, caught and swallowed so they do
 nothing else, and the HID reports of the Lenovo Legion Go, Go 2 and Go S (Y1 to Y3, M1 to M3, the
@@ -225,7 +225,7 @@ their names, drawings and the advice the window shows.
 | **Tested on hardware** | | | | **8BitDo Ultimate 2 Wireless on its receiver** |
 
 Light bars and player lights show the player number. Windows has no driver for the DualShock 3:
-with Nefarius' DsHidMini set to its SXS mode, Open Controller reads it over USB, and BthPS3 adds
+with Nefarius' DsHidMini set to its SXS mode, OpenController reads it over USB, and BthPS3 adds
 Bluetooth once it has been paired by cable. Valve's controllers are taken by Steam while it runs,
 and a Flydigi pad's extra buttons need "Allow third-party apps to take over mappings" in Flydigi
 Space Station; the window says so on their pages. A device SDL has no button layout for is listed
@@ -277,9 +277,9 @@ On Linux each virtual controller is a uinput device shaped like the one the kern
 makes for a real Xbox 360 controller (same ids, name, buttons and axis ranges), so SDL, Wine,
 Proton and native games take it for one; force-feedback effects a game uploads to it come back as
 rumble. Hiding takes an exclusive grab on the event nodes the kernel made for the physical
-controller, which Wine, Proton and most games read; Open Controller reads it through its `hidraw`
+controller, which Wine, Proton and most games read; OpenController reads it through its `hidraw`
 node, which the grab leaves alone. Grabs end with the process, so a crash leaves nothing hidden.
-Keys and macros go through a uinput keyboard of Open Controller's own. Players are numbered in the
+Keys and macros go through a uinput keyboard of OpenController's own. Players are numbered in the
 order their virtual controllers were made, since Linux has no XInput slots to read back.
 
 The window talks to the resident process over a named pipe private to the user and the session
@@ -289,7 +289,7 @@ when something changes.
 
 ### Network
 
-Open Controller sends nothing about you anywhere. It learns which program is in front, to switch
+OpenController sends nothing about you anywhere. It learns which program is in front, to switch
 profiles (from Windows, from the X server on Linux, XWayland included, and from the workspace on
 macOS), and keeps that to itself. When its window opens it asks GitHub's API for the latest
 release, to say when a newer version is out; the request carries nothing but the app's name, and
@@ -372,7 +372,7 @@ trade players with input reaching each other's slot, that rumble set by a "game"
 disconnecting and reconnecting keeps the slot, and that stopping unplugs it.
 
 `linux_loopback` does the same on Linux through the kernel: input reaches the uinput Xbox 360
-controller's event node, a paddle presses Y and holds F24 on Open Controller's keyboard, a
+controller's event node, a paddle presses Y and holds F24 on OpenController's keyboard, a
 force-feedback effect played by a "game" comes back as rumble, and stopping removes the
 controller. It needs uinput and root (`sudo modprobe uinput && sudo
 target/debug/examples/linux_loopback`). The uinput request numbers are also checked against the
@@ -394,7 +394,7 @@ Edge into the `.ico` files.
   Proton are), and handheld buttons are left to Handheld Daemon or InputPlumber.
 - On macOS there are no virtual controllers, player numbers, gyro aiming or hiding; see Installing.
 - Tested on hardware with one controller so far; every claim above about another controller is
-  SDL's support, not a test of Open Controller. The handheld buttons and the gyro have only been
+  SDL's support, not a test of OpenController. The handheld buttons and the gyro have only been
   tested with SDL's simulated controller.
 - ViGEmBus is retired upstream. It is stable and still what DS4Windows uses, but it gets no new
   versions.
@@ -403,7 +403,7 @@ Edge into the `.ico` files.
 - Everything is an Xbox 360 controller. Games that show PlayStation button prompts for a DualSense
   will show Xbox ones, and the DualSense's adaptive triggers, touchpad and motion sensors are not
   passed on.
-- Hiding needs HidHide, and a game that opened a controller before Open Controller hid it keeps it
+- Hiding needs HidHide, and a game that opened a controller before OpenController hid it keeps it
   until the game restarts. If Steam Input is on for PlayStation or Switch controllers, Steam reads
   them as well; turn it off for those controllers in Steam's settings.
 - When a new controller connects, the engine pauses about 17 ms to plug in its virtual controller.
@@ -411,9 +411,9 @@ Edge into the `.ico` files.
   a normal program's input out of elevated ones. Games with anti-cheat may also ignore them.
 - Extra buttons are only what SDL reports, plus the touchpad's halves and a handheld's own buttons.
   Pads in XInput mode and Xbox Elite paddles send nothing a program can read.
-- On a handheld, the buttons that arrive as keys are taken from every program while Open Controller
+- On a handheld, the buttons that arrive as keys are taken from every program while OpenController
   runs, and the ROG Ally and MSI Claw are not covered: their extra buttons need configuration
-  written to the controller, which Open Controller does not do.
+  written to the controller, which OpenController does not do.
 - 8BitDo pads' RGB lights, on-board profiles and firmware settings are left to 8BitDo's app.
 - Switch 2 controllers and the official Wii U GameCube adapter need libusb, which this build of SDL
   leaves out.
@@ -422,7 +422,7 @@ Edge into the `.ico` files.
 
 ## Disclaimer
 
-Open Controller is not affiliated with Sony, Microsoft, Nintendo, Valve, 8BitDo or any other
+OpenController is not affiliated with Sony, Microsoft, Nintendo, Valve, 8BitDo or any other
 controller maker; their names identify compatible hardware only. ViGEmBus, HidHide, DsHidMini and
 BthPS3 are by Nefarius Software Solutions and are downloaded from their releases, not bundled. No
 code from DS4Windows or PadForge is included. Use it at your own risk.

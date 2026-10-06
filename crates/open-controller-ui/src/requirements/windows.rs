@@ -1,4 +1,4 @@
-//! Windows: the drivers Open Controller and some controllers need, each installable from here
+//! Windows: the drivers OpenController and some controllers need, each installable from here
 //! when the user asks.
 
 use super::{Card, Need};

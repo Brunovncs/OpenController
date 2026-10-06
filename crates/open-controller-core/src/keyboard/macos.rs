@@ -1,4 +1,4 @@
-//! macOS: keys go out as Quartz events, which macOS allows once the user grants Open Controller
+//! macOS: keys go out as Quartz events, which macOS allows once the user grants OpenController
 //! the Accessibility permission. Key codes are positions, so a virtual-key code becomes the key in
 //! its place on a US keyboard.
 

@@ -17,8 +17,8 @@ const VENDORS: [u16; 4] = [0x054C, 0x057E, 0x28DE, 0x2DC8];
 
 pub fn rule() -> String {
     let mut out = String::from(
-        "# Open Controller: virtual controllers for the user at the seat, and the HID reports of\n\
-         # known controllers. Written by Open Controller; remove this file to undo.\n\
+        "# OpenController: virtual controllers for the user at the seat, and the HID reports of\n\
+         # known controllers. Written by OpenController; remove this file to undo.\n\
          KERNEL==\"uinput\", SUBSYSTEM==\"misc\", TAG+=\"uaccess\", OPTIONS+=\"static_node=uinput\"\n",
     );
     for v in VENDORS {

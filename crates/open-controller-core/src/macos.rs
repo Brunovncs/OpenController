@@ -1,6 +1,6 @@
 //! macOS. A program cannot create game controllers there without an entitlement Apple grants
 //! case by case, and games already read PlayStation, Xbox and Switch Pro controllers directly
-//! through the Game Controller framework. So every controller stays as it is: Open Controller
+//! through the Game Controller framework. So every controller stays as it is: OpenController
 //! types keys for their extra buttons, sets their light and shows their battery. The engine's
 //! virtual-controller and hiding parts get stand-ins that report this.
 

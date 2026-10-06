@@ -19,7 +19,7 @@ pub const MISC3: u8 = 22;
 pub const MISC4: u8 = 23;
 pub const MISC5: u8 = 24;
 pub const MISC6: u8 = 25;
-/// Buttons Open Controller makes out of the touchpad, past SDL's own: a click on its left or right
+/// Buttons OpenController makes out of the touchpad, past SDL's own: a click on its left or right
 /// half, and two fingers on it.
 pub const TOUCH_LEFT: u8 = 26;
 pub const TOUCH_RIGHT: u8 = 27;

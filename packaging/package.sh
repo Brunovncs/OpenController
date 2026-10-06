@@ -24,7 +24,7 @@ linux)
     ;;
 macos)
     name="open-controller-$version-macos-$arch"
-    app="$name/Open Controller.app"
+    app="$name/OpenController.app"
     rm -rf "$name" && mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp "$build/open-controller" "$build/open-controller-ui" "$app/Contents/MacOS/"
     sed "s/VERSION/$version/g" "$root/packaging/macos/Info.plist" > "$app/Contents/Info.plist"

@@ -1,4 +1,4 @@
-//! Hiding a controller from games on Linux: Open Controller holds an exclusive grab on every
+//! Hiding a controller from games on Linux: OpenController holds an exclusive grab on every
 //! event node the kernel made for it, so programs reading event devices (Wine, Proton, most
 //! games) get nothing from them. SDL reads the controller through its `hidraw` node, which a
 //! grab leaves alone. Grabs end with the process, so nothing stays hidden after a crash.

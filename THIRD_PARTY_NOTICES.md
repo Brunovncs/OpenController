@@ -1,6 +1,6 @@
 # Third-party notices
 
-Open Controller is MIT licensed (see [LICENSE](LICENSE)). Its programs include the code below,
+OpenController is MIT licensed (see [LICENSE](LICENSE)). Its programs include the code below,
 each under its own license. ViGEmBus, HidHide, DsHidMini and BthPS3 are not included: Open
 Controller downloads their official installers from Nefarius' GitHub releases when you ask it to.
 
@@ -33,7 +33,7 @@ are bundled in `open-controller.exe`, under the same zlib license as SDL.
 ## Rust crates
 
 Each crate's license text is in its source, at the repository listed. Where a crate offers a
-choice of licenses, Open Controller uses it under the first one that applies.
+choice of licenses, OpenController uses it under the first one that applies.
 
 | Crate | Version | License |
 |---|---|---|

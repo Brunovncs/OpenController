@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Open Controller</string>
+    <string>OpenController</string>
     <key>CFBundleDisplayName</key>
-    <string>Open Controller</string>
+    <string>OpenController</string>
     <key>CFBundleIdentifier</key>
     <string>io.github.brunovncs.open-controller</string>
     <key>CFBundleExecutable</key>

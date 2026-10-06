@@ -1,7 +1,7 @@
-//! "Open Controller 0.3.0 is out": a bar under the top bar when GitHub has a newer release. On
+//! "OpenController 0.3.0 is out": a bar under the top bar when GitHub has a newer release. On
 //! Windows "Update now" downloads the installer, checks it, asks the resident process to quit
 //! (which unplugs the virtual controllers and shows the hidden ones again) and runs it; the
-//! installer replaces the programs in place and starts Open Controller again. Elsewhere the bar
+//! installer replaces the programs in place and starts OpenController again. Elsewhere the bar
 //! opens the release's page.
 
 use crate::theme::{icon as glyph, radius};

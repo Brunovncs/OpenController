@@ -158,12 +158,12 @@ fn main() {
     wait_for("Y to be let go", Duration::from_millis(500), || (!key(&pad, BTN_Y)).then_some(()));
     check(true, "a paddle assigned to Y presses Y, and lets it go");
 
-    let keyboard = wait_for("the keyboard", Duration::from_secs(5), || node(|_, name| name == "Open Controller keyboard"));
+    let keyboard = wait_for("the keyboard", Duration::from_secs(5), || node(|_, name| name == "OpenController keyboard"));
     paddle(LEFT_PADDLE1, true);
     wait_for("F24 down", Duration::from_millis(500), || key(&keyboard, KEY_F24).then_some(()));
     paddle(LEFT_PADDLE1, false);
     wait_for("F24 up", Duration::from_millis(500), || (!key(&keyboard, KEY_F24)).then_some(()));
-    check(true, "a paddle assigned to a key holds it on Open Controller's keyboard while held");
+    check(true, "a paddle assigned to a key holds it on OpenController's keyboard while held");
 
     // A game's rumble: upload a force-feedback effect to the virtual pad and play it.
     let mut effect: libc::ff_effect = unsafe { std::mem::zeroed() };

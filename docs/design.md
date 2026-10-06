@@ -1,6 +1,6 @@
 # Design notes
 
-Why Open Controller is built the way it is, and what was learned from the two programs closest to
+Why OpenController is built the way it is, and what was learned from the two programs closest to
 it: DS4Windows (the maintained fork, schmaldeo/DS4Windows) and PadForge. Both were read as
 references; no code was taken from either, and PadForge's license (CC BY-NC-SA) would not allow it.
 
@@ -10,7 +10,7 @@ DS4Windows parses each controller's HID reports itself: DualShock 4, DualSense, 
 Joy-Con, with their Bluetooth CRCs, feature reports and receiver quirks. That is why it supports
 those and nothing else. SDL 3 has drivers for those and for Xbox, Stadia, Steam, Luna, 8BitDo and
 many more, plus a mapping format for generic pads, maintained by people who see every new
-controller first. Open Controller uses it and adds the community mapping database on top.
+controller first. OpenController uses it and adds the community mapping database on top.
 
 SDL is built from source and linked statically, with only the joystick, HIDAPI, haptic, sensor
 and power subsystems: no video, audio or GPU code. Three things about it matter:
@@ -113,7 +113,7 @@ light bar shows and how bright. The window sends edits (assign a button, add, re
 delete a profile, change the light), the resident process applies them to the settings file and
 hands the engine the whole list, and the engine uses the profile in use. A light bar is given its
 colour only when the colour changes: the player's (SDL's own palette), a chosen one, the battery's
-or none. Once Open Controller sets a colour, SDL no longer changes it with the player number, so the
+or none. Once OpenController sets a colour, SDL no longer changes it with the player number, so the
 player's colour is set the same way.
 
 ## Playing together
@@ -123,7 +123,7 @@ game keeps seeing the same four XInput controllers, and the rumble a game asked 
 its new hands. A profile can name programs; the resident process asks Windows to say when the
 foreground window changes (`SetWinEventHook`, no polling), and the engine uses the first profile
 that names it, or the chosen one. Only assignments, light, gyro and sticks follow; players never
-change behind anyone's back. Open Controller's own window and the Start menu do not count as a
+change behind anyone's back. OpenController's own window and the Start menu do not count as a
 program coming to the front, so opening the window mid-game keeps the game's profile.
 
 ## Gyro, sticks and touchpad
@@ -142,7 +142,7 @@ worked out from SDL's finger positions on every report and carried as buttons pa
 A handheld PC is recognised by its firmware's manufacturer, product name and version (Lenovo puts
 "Legion Go" in the version), not by its pad's USB id, since many present a generic Xbox 360 pad.
 Buttons that arrive as function keys are caught with a low-level keyboard hook on a thread of its
-own, only for the keys of the recognised machine; keys Open Controller types itself pass through,
+own, only for the keys of the recognised machine; keys OpenController types itself pass through,
 and when the firmware held Windows with the key, an unassigned key is sent between so that
 letting go of Windows does not open the Start menu. Buttons that arrive as HID reports are read
 with SDL's own hidapi, read-only. Nothing is written to any controller: the ROG Ally's M1 and M2
@@ -194,7 +194,7 @@ cannot be one controller. Without a serial, the device path stands in.
 
 DS4Windows assigns slots by arrival and can keep a virtual controller plugged with no physical one
 ("permanent" slots). PadForge debounces disconnects for 2 s and destroys a virtual controller after
-60 s. Open Controller keeps a slot for 15 s after its controller leaves, sending a neutral report,
+60 s. OpenController keeps a slot for 15 s after its controller leaves, sending a neutral report,
 and gives it back to the same controller on any transport. A controller turned off from the window
 skips the wait. When one controller is connected two ways, the slot follows the connection where
 something happened: a button, or a stick moved further than noise, so an idle link's jitter does
@@ -204,7 +204,7 @@ not pull it back and forth.
 
 DS4Windows relies on its users to configure HidHide by hand and falls back to "exclusive mode",
 which disables and re-enables the device; its own user guide says that can leave a controller
-disabled in Device Manager. Open Controller configures HidHide itself, carefully, because the
+disabled in Device Manager. OpenController configures HidHide itself, carefully, because the
 configuration is global and shared with other programs:
 
 - Only its own entries are added or removed, by reading the list, changing it and writing it back.
@@ -237,7 +237,7 @@ needs to be told about it. Rumble needs answering the kernel's force-feedback up
 requests on the device's own handle; each virtual controller has a thread for that, which keeps
 the effects a game uploaded and passes on the one playing until it stops or its length runs out.
 Hiding on Linux has no HidHide: an exclusive grab (`EVIOCGRAB`) on the controller's event nodes
-takes them from every other reader, and Open Controller keeps reading through `hidraw`, which SDL
+takes them from every other reader, and OpenController keeps reading through `hidraw`, which SDL
 prefers when it may open it. That is why the udev rule grants `hidraw` access for known
 controllers, generated from the model table rather than by maker, so no keyboard's raw reports
 become readable. What a grab cannot do is stop another program from opening the same `hidraw`
