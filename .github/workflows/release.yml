@@ -1,11 +1,11 @@
-name: release
+name: Release
 
-# Push a tag like v0.1.0 (matching the version in Cargo.toml) to build a Windows zip into a
-# draft GitHub release. The executables are not code-signed, so SmartScreen warns on first launch.
+# Push a tag like v0.1.0, matching the version in Cargo.toml, to build the Windows zip and publish
+# it as a release whose notes are that version's section of CHANGELOG.md. The programs are not
+# code-signed, so SmartScreen warns on first launch.
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,26 +13,44 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Check the tag against Cargo.toml and CHANGELOG.md
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match version $version in Cargo.toml" }
+          $text = Get-Content CHANGELOG.md -Raw
+          $m = [regex]::Match($text, "(?ms)^## $([regex]::Escape($version))\s*\r?\n(.*?)(?=^## |\z)")
+          if (-not $m.Success) { throw "CHANGELOG.md has no section for $version" }
+          $m.Groups[1].Value.Trim() | Out-File -Encoding utf8 "$env:RUNNER_TEMP\notes.md"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Tests
+        run: cargo test --workspace
       - name: Build
         run: cargo build --release --workspace
 
       - name: Package
         shell: pwsh
         run: |
-          $name = "open-controller-${{ github.ref_name }}-windows-x64"
+          $name = "open-controller-${{ steps.version.outputs.version }}-windows-x64"
           New-Item -ItemType Directory "dist\$name" | Out-Null
-          Copy-Item target\release\open-controller.exe, target\release\open-controller-ui.exe, README.md, LICENSE "dist\$name"
+          Copy-Item target\release\open-controller.exe, target\release\open-controller-ui.exe, README.md, LICENSE, THIRD_PARTY_NOTICES.md, CHANGELOG.md "dist\$name"
           Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip"
+          (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "dist\$name.zip.sha256"
 
-      - name: Upload to a draft release
+      - name: Publish the release
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || gh release create "${{ github.ref_name }}" --draft --title "Open Controller ${{ github.ref_name }}" --notes ""
-          gh release upload "${{ github.ref_name }}" dist/*.zip --clobber
+          gh release create "${{ github.ref_name }}" dist/*.zip dist/*.sha256 \
+            --title "Open Controller ${{ steps.version.outputs.version }}" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag
