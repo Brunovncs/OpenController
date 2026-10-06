@@ -57,16 +57,18 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
           & $iscc /Qp /DVersion=0.0.0 /DBuild=target\debug packaging\windows\open-controller.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Only the installer is waited for: Start-Process -Wait would also wait for the app it starts.
       - name: Install, update and uninstall
         shell: pwsh
+        timeout-minutes: 10
         run: |
           $setup = (Get-ChildItem dist\*-setup.exe | Select-Object -First 1).FullName
           $app = "$env:LOCALAPPDATA\Programs\open-controller"
-          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          (Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru).WaitForExit()
           if (-not (Test-Path "$app\open-controller.exe")) { throw "the installer did not install" }
-          Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          (Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -PassThru).WaitForExit()
           if (-not (Test-Path "$app\unins000.exe")) { throw "the update lost the uninstaller" }
-          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -Wait
+          (Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES' -PassThru).WaitForExit()
           $deadline = (Get-Date).AddSeconds(60)
           while ((Test-Path "$app\open-controller.exe") -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
           if (Test-Path "$app\open-controller.exe") { throw "the uninstaller left the program behind" }
