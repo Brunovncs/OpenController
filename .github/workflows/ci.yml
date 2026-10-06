@@ -72,7 +72,7 @@ jobs:
           $deadline = (Get-Date).AddSeconds(60)
           while ((Test-Path "$app\open-controller.exe") -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
           if (Test-Path "$app\open-controller.exe") { throw "the uninstaller left the program behind" }
-          Get-Process open-controller* -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (Get-Process open-controller* -ErrorAction SilentlyContinue) { throw "the uninstaller left the program running" }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-setup

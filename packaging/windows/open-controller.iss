@@ -82,11 +82,14 @@ Filename: "{app}\open-controller.exe"; Description: "{cm:LaunchProgram,OpenContr
 
 [UninstallRun]
 Filename: "{app}\open-controller.exe"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "Quit"
+; A copy still starting up cannot hear "quit" yet; --restore then shows again anything it hid.
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM open-controller.exe /IM open-controller-ui.exe"; Flags: runhidden waituntilterminated; RunOnceId: "Kill"
 Filename: "{app}\open-controller.exe"; Parameters: "--restore"; Flags: runhidden waituntilterminated; RunOnceId: "Restore"
 
 [Code]
-// A running copy quits the clean way before its files are replaced; the window, which holds no
-// state, is closed if it is still open.
+// A running copy quits the clean way before its files are replaced. Whatever is left is closed:
+// the window holds no state, and a copy still starting up cannot hear "quit" yet; the new copy
+// shows again anything it hid when it starts.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
@@ -95,7 +98,7 @@ begin
   Exe := ExpandConstant('{app}\open-controller.exe');
   if FileExists(Exe) then
     Exec(Exe, '--quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM open-controller-ui.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM open-controller.exe /IM open-controller-ui.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Result := '';
 end;
 
