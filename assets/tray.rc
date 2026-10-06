@@ -1,2 +1,4 @@
 1 ICON "icon.ico"
+2 ICON "tray-dark.ico"
+3 ICON "tray-light.ico"
 1 24 "tray.manifest"

@@ -34,8 +34,17 @@ user-mode HID driver; writing and signing a driver is out of scope here.
 The client speaks ViGEmBus's IOCTLs directly. Plugging a target waits for "device ready", which
 the driver gives up on after 1 s; the first virtual controller on a machine can take longer while
 Windows installs the Xbox 360 driver, so that timeout is treated as success and the controller is
-kept. Its XInput slot is known microseconds later normally (DS4Windows sleeps 250 ms first); if
-it is not known after 5 s, it is asked once a second from then on.
+kept. Right after plugging, the bus refuses a report or two (error 259) until the Xbox 360 driver
+has opened the controller, so a refused report is sent again on the next pass instead of being
+dropped: otherwise a button let go at that moment would stay pressed in the game.
+
+ViGEmBus can be asked which XInput slot a controller got, and DS4Windows does, but the answer is
+wrong as soon as another XInput controller exists: with an 8BitDo pad in slot 0, a new virtual
+controller in slot 1 is reported as 0. The slot is found where games look instead. The new
+controller shows a marker, four exact stick positions well inside every game's deadzone and
+different for each bus serial, and XInput's four slots are read until one shows it, a few
+milliseconds after plugging. A controller that finds no slot within 5 s is a fifth one; it looks
+again, briefly, only when a slot is free.
 
 Rumble requests come back as a pending IOCTL per controller, on its own thread, and are forwarded
 to the physical controller from the input thread. SDL stops a rumble after 65.5 s at most, while
@@ -51,6 +60,96 @@ recognised by the XInput slot its virtual controller holds (SDL's XInput paths a
 or, for paths that name a device, by walking the device tree up to ViGEmBus, as DS4Windows does.
 An XInput device that appears while a virtual controller's slot is not known yet waits until it
 is, rather than being guessed.
+
+## Names
+
+SDL names the controllers it reads through XInput "XInput Controller", since XInput reports no
+name. Windows still knows the USB product string of the device behind it, which XInput's vendor
+and product ids lead to: an 8BitDo receiver becomes "8BitDo Ultimate 2 Wireless Controller for PC".
+The lookup takes about a millisecond and is cached per model.
+
+## Extra buttons and what they do
+
+SDL reports buttons beyond the Xbox set as paddles, misc buttons and the touchpad click, and whether
+a controller has each one. What they are called depends on the controller (`extras.rs`): L4, R4, PL
+and PR on an 8BitDo Ultimate 2, the back buttons and Fn buttons on a DualSense Edge, Capture on a
+Switch controller, the mic button on a DualSense. Games never see them through a virtual Xbox
+controller, so they are what the user assigns: an Xbox button (held with them), a key or shortcut
+(held with them), or a macro of keys and waits (typed once per press, 32 steps at most).
+
+Only extra buttons can be assigned. Remapping the standard buttons is what games' own settings and
+Steam Input are for, and a mapper is what this project set out not to be.
+
+Assignments belong to a controller's serial when it has one, so they follow it across cables and
+pairings, and to its model otherwise. Keys go out through `SendInput` from a thread of their own,
+so a macro's waits never touch the input thread, with scan codes for games that read Raw Input.
+Held keys follow the buttons' state, not their release events: a controller connected twice can
+press on one connection and release on the other, and an edge-driven key would stay down. They are
+let go when the controller leaves, when its assignments change and when the engine stops.
+
+Some controllers hide their extra buttons from every program in some modes. An 8BitDo Ultimate 2
+on its receiver in XInput mode (2DC8:310B) sends nothing for L4, R4, PL and PR; turned on while
+holding B, it switches to D-input mode (2DC8:6012), where SDL reads all four and the gyro. The
+window says so when it sees the XInput one. An Xbox Elite controller's paddles never reach programs
+on Windows except as copies of other buttons.
+
+## Known models
+
+`models.rs` names 334 controllers by USB id and puts each in a family, taken from SDL 3.4's own
+lists (`controller_list.h`, `usb_ids.h`, its HIDAPI drivers and built-in Windows mappings) plus the
+8BitDo range. The family decides what the extra buttons are called, how the controller is drawn
+and what the window tells the user about it (switch an 8BitDo to D-input, close Steam, allow
+third-party apps in Flydigi's app). Which extra buttons a controller really has is always asked of
+SDL when it connects; the table only names them. Where SDL's driver reports buttons its mapping
+leaves out (the 8BitDo Ultimate 3's L4, R4, PL, PR and Share), the missing mapping fields are
+added to the open gamepad. SDL is told to use its PS3 driver through a "Sixaxis" driver, which is
+what DsHidMini's SXS mode presents, since Windows itself cannot start a DualShock 3.
+
+## Profiles and light
+
+A controller's settings are a list of profiles, one in use, each with its assignments, what its
+light bar shows and how bright. The window sends edits (assign a button, add, rename, select,
+delete a profile, change the light), the resident process applies them to the settings file and
+hands the engine the whole list, and the engine uses the profile in use. A light bar is given its
+colour only when the colour changes: the player's (SDL's own palette), a chosen one, the battery's
+or none. Once Open Controller sets a colour, SDL no longer changes it with the player number, so the
+player's colour is set the same way.
+
+## Drivers
+
+The settings list ViGEmBus, HidHide, DsHidMini and BthPS3 with whether each works: the engine's own
+view for the first two, Programs and Features for the rest. Installing one downloads the
+installer of a pinned version from its GitHub release with Windows' own curl, refuses it unless its
+SHA-256 is the one recorded in `drivers.rs`, and runs it through `ShellExecuteEx` with the `runas`
+verb, so the user sees Windows' administrator prompt with Nefarius' signature. ViGEmBus and HidHide
+install silently once allowed; an update runs the installer's own wizard, since HidHide's may ask to
+restart halfway. Nothing is installed without a click: these are kernel drivers, two of them need a
+restart, and HidHide changes which devices other programs see. ViGEmBus is retired upstream at
+1.22.0, so its pin will not move.
+
+## The icon
+
+Two pads, an outline behind and a solid one in front: any controller in, one virtual controller
+out. `assets/icon.svg` is drawn on a 1024 grid for 40 px and up; `icon-small.svg` redraws it on a
+16 grid for 16 to 32 px, with the front pad larger, since the large drawing turns to mush there.
+The notification area gets its own pair without the tile, white for a dark taskbar and near-black
+for a light one (`tray-dark.svg`, `tray-light.svg`), and the resident process swaps them when the
+taskbar changes theme, which Windows sets apart from the apps' own. `scripts/icon_small.py` writes
+the small drawings and `scripts/render_icon.py` rasterises everything with headless Edge into the
+`.ico` files.
+
+## The window
+
+A bar on top, the controllers as tiles, and a page per controller with a rail of sections, the
+way peripheral apps lay it out, in Windows' own type (Segoe UI Variable) and icons (Segoe Fluent
+Icons). Surfaces are opaque and step up from the page to cards to controls, with hairline edges
+rather than shadows, 16 px corners on tiles, 12 on cards and 8 on controls, one accent taken from
+the Windows accent palette (the default blue when the user's accent is a grey that would not read),
+and colour for state only where something needs attention. The drawings are vector, one of six
+shapes chosen by family, filled with a soft gradient and lit with the accent as the controller is
+used. Product photos would look better and are not used: the ones in vendors' apps are theirs.
+Pressing an extra button on the controller picks it in the window; recording a key is pressing it.
+Changes apply as they are made, with no Save button.
 
 ## Identity, slots and the handoff
 

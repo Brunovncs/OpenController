@@ -4115,6 +4115,7 @@ dependencies = [
  "sdl3-sys",
  "serde",
  "serde_json",
+ "sha2",
  "windows-sys 0.61.2",
 ]
 
@@ -4127,6 +4128,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "open-controller-core",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
