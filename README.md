@@ -15,13 +15,13 @@ knows, and keeps out of the way: a resident process of 3.2 MB that adds about 0.
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-Open Controller is open source (MIT) and in development, at version 0.3.0. The engine is tested
+Open Controller is open source (MIT) and in development, at version 0.4.0. The engine is tested
 end to end with a simulated controller on Windows 11 and, in CI, on Linux; on hardware only on
 Windows, with an 8BitDo Ultimate 2 Wireless. Every other controller below is SDL's support, and the
 Linux and macOS versions have not met a real controller yet. Treat it as a beta, and please report
 what you plug in.
 
-![Open Controller with eight controllers as tiles, each drawn with its live input: an 8BitDo Ultimate 2 on its receiver, a DualSense Edge, a Switch Pro Controller, Joy-Cons, a DualShock 3, an Xbox controller, a DualShock 4 reconnecting and an 8BitDo in XInput mode](docs/window.png)
+![Open Controller with eight controllers as tiles, each drawn as it looks and with its live input: an 8BitDo Ultimate 2 on its receiver, a DualSense, a Switch Pro Controller, Joy-Cons, an 8BitDo SN30 Pro, an Xbox controller, a DualShock 4 reconnecting and a DualSense Edge](docs/window.png)
 
 ## Installing
 
@@ -30,14 +30,14 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.3.0-windows-x64-setup.exe` and run it. It installs for your user only,
+Download `open-controller-0.4.0-windows-x64-setup.exe` and run it. It installs for your user only,
 without administrator rights, adds Open Controller to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
 `%APPDATA%\io.github.brunovncs.open-controller`, stay. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.3.0-windows-x64.zip`, extract it anywhere
+To run it without installing, download `open-controller-0.4.0-windows-x64.zip`, extract it anywhere
 and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
 on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
 administrator rights.
@@ -62,7 +62,7 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.3.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
+Download `open-controller-0.4.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
 recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
 with an entry in your applications menu, and a udev rule, which asks for your password once. The
 rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
@@ -77,7 +77,7 @@ applications menu, and "Start when you sign in" adds an XDG autostart entry.
 
 ### macOS
 
-Download `open-controller-0.3.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
+Download `open-controller-0.4.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
 move Open Controller to Applications. It is not notarised: the first time, open it with a
 right-click and Open. macOS lets no program create game controllers without an entitlement Apple
 grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
@@ -112,10 +112,13 @@ between. Signing out or shutting down Windows quits it cleanly.
 
 ### The window
 
-Each controller is a tile, drawn in its own shape (an Xbox-style pad, a PlayStation pad with its
-touchpad, a symmetric pad like the DualShock 3 or 8BitDo Pro 2, a pad without sticks, a pair of
-Joy-Cons or a handheld) with its sticks, triggers and buttons lit as they are pressed, and its
-player, connection and battery. A controller's page has its profiles at the top and three
+Each controller is a tile, drawn as it looks: the DualSense, DualSense Edge, DualShock 4 and 3,
+the Xbox and Switch Pro controllers, Joy-Cons, the 8BitDo Ultimate and SN30 Pro shapes, Super
+Nintendo style pads, handhelds and a generic pad, each with its outline, its controls where the
+real one has them and details such as the DualSense's light strips or the Ultimate's star. Sticks,
+triggers and buttons light up as they are pressed, next to the player, connection and battery.
+The same drawings are on the website. Icons are drawn too, so the window looks the same on
+Windows, Linux and macOS. A controller's page has its profiles at the top and three
 sections: Buttons, with the drawing and the extra buttons; Light, for controllers whose light bar
 can be coloured; and Information, with the model, its USB id, what games see and what it can do.
 "Identify" makes it rumble, and "Turn off" disconnects a Bluetooth PlayStation or Switch
@@ -337,7 +340,7 @@ start-up. SDL is built from source and linked statically, which needs CMake and 
 Without the Visual Studio build tools, the GNU toolchain works for this folder
 (`rustup override set stable-x86_64-pc-windows-gnu`) with a MinGW gcc on `PATH`.
 
-The 74 tests on Windows (66 on Linux and macOS, where the Windows drivers' do not apply) cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
+The 76 tests on Windows (68 on Linux and macOS, where the Windows drivers' do not apply) cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
 grace period, two connections of one controller), device identity and connection type, the
 ViGEmBus and HidHide request layouts and IOCTL codes, HidHide's list handling (other programs'
 entries survive) and its journal file, the bundled mappings, the table of known models and the
