@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## 0.8.1
+## 0.8.2
 
 Each controller can now be kept native from its page. Games then see the real controller, with
 its own button prompts, adaptive triggers and, over the cable, haptic feedback. This also lets
@@ -31,8 +31,9 @@ right when read through their event node. The dock shows the right icon, a windo
 open says so, and quitting leaves no files behind.
 
 On macOS, closing the window now ends it, as on Windows and Linux. Only the small part that keeps
-your controllers working stays in the background. A controller slow to take rumble no longer
-freezes the others. Settings carry over.
+your controllers working stays in the background. OpenController's own files on macOS moved to a
+shorter folder, since the long one could keep it from starting. A controller slow to take rumble
+no longer freezes the others. Settings carry over.
 
 ## 0.8.0
 
