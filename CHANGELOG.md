@@ -3,6 +3,13 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.7.1
+
+Every controller is drawn as it really looks. The drawings are traced from each maker's own
+pictures, so a DualSense, a DualShock 4, an 8BitDo Ultimate 2 or a Switch Pro Controller has its
+real outline and its buttons where they really are. The 8BitDo Ultimate 2C and the first Ultimate
+have drawings of their own. Settings carry over.
+
 ## 0.7.0
 
 A controller on its receiver no longer shows up three times. Windows sometimes lists an Xbox-style
