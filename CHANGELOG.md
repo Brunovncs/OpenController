@@ -3,6 +3,24 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.8.0
+
+A controller that misbehaves, or that OpenController does not know, can now be reported from the
+window. Report a problem, on its Information page, sends its technical details so it can be added
+or fixed without having it in hand. You see everything before it is sent, and you can add the
+model and what goes wrong. Each controller now shows how sure OpenController is that it works:
+verified, compatible, works with a note, or not on the list yet. 320 more controllers are
+recognised by name: GameSir, PowerA, Turtle Beach, Razer, SCUF, Nacon, HORI, Redragon, EasySMX
+and MSI pads, the Atari VCS controllers, the Sega and NeoGeo mini consoles' pads, old Logitech,
+Saitek, Thrustmaster and SideWinder pads, the original Xbox controller, and adapters for
+PlayStation, GameCube, N64, Saturn and Wii controllers. 22 controllers now have a drawing of their
+own, traced like the others from pictures of the real thing: the Xbox 360 controller and the original
+Xbox Controller S, GameSir G7 SE, G7 Pro, Nova Lite and Cyclone 2, Flydigi Vader and Apex, Redragon
+Harrow, Saturn and Darkflame G820, Razer Wolverine V3, Victrix Pro BFG, Nacon Revolution 5 Pro,
+Turtle Beach Stealth Ultra, Logitech F310, HORI Fighting Commander OCTA, Atari VCS, 8BitDo 64, the
+Sega Genesis and Mega Drive pads and the PlayStation Classic controller. Their buttons light up as
+they are pressed, white and black, C and Z included. Settings carry over.
+
 ## 0.7.1
 
 Every controller is drawn as it really looks. The drawings are traced from each maker's own
