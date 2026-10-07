@@ -3,10 +3,36 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.1
+
+Each controller can now be kept native from its page. Games then see the real controller, with
+its own button prompts, adaptive triggers and, over the cable, haptic feedback. This also lets
+OpenController work alongside a DS5Dongle. Profiles, gyro and remapping are off while a controller
+stays native. Close the game before switching.
+
+Gyro aiming has finer tuning: its own sensitivity while aiming with LT, a separate up and down
+speed, a button that pauses it while held, and a press to turn it on and off instead of holding.
+Under Advanced there is acceleration for fast turns, steadying for slow movements and an
+adjustable anti-deadzone.
+
+On Windows, Settings has a new Advanced section where the virtual controllers can be made with
+VIIPER instead of ViGEmBus. It is experimental and off by default, and ViGEmBus stays the
+recommended choice. Trying the other one can help if a game doesn't see your controller or your
+PC gets blue screens. With VIIPER chosen, Requirements installs usbip-win2 and the VIIPER server.
+If VIIPER does not start, OpenController goes back to ViGEmBus and tells you.
+
+Linux got a round of fixes. A DualSense connected after OpenController starts, as over Bluetooth,
+is now hidden from games. On GNOME and other Wayland desktops that leave the frame to the app, the
+window has its own title bar to move, resize, maximize and close it. Players are numbered past
+four. The window says when the kernel has no uinput, as on WSL, and when it couldn't ask for the
+password. install.sh and uninstall.sh say when something failed, work under sudo and list missing
+libraries. Setting up device access no longer writes a file to /tmp first. DualSense buttons are
+right when read through their event node. The dock shows the right icon, a window that fails to
+open says so, and quitting leaves no files behind.
 
 On macOS, closing the window now ends it, as on Windows and Linux. Only the small part that keeps
-your controllers working stays in the background.
+your controllers working stays in the background. A controller slow to take rumble no longer
+freezes the others. Settings carry over.
 
 ## 0.8.0
 
