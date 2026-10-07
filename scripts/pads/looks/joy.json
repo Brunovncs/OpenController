@@ -1,0 +1,162 @@
+{
+ "source": "img:trace/joy.png:0,0,683,909",
+ "width": 1600,
+ "ink": 110,
+ "line": 6,
+ "parts": 2,
+ "body_open": 15,
+ "erase": [],
+ "bumpers": [
+  {
+   "seed": [
+    300,
+    129
+   ],
+   "tone": 18
+  },
+  {
+   "seed": [
+    1300,
+    130
+   ],
+   "tone": 18
+  }
+ ],
+ "sticks": [
+  {
+   "seed": [
+    413,
+    607
+   ],
+   "tone": 10,
+   "well": 151
+  },
+  {
+   "seed": [
+    1187,
+    1137
+   ],
+   "tone": 10,
+   "well": 151
+  }
+ ],
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1134,
+    769
+   ],
+   "tone": 14
+  },
+  {
+   "input": "east",
+   "seed": [
+    1283,
+    630
+   ],
+   "tone": 14
+  },
+  {
+   "input": "west",
+   "seed": [
+    988,
+    620
+   ],
+   "tone": 14
+  },
+  {
+   "input": "north",
+   "seed": [
+    1185,
+    497
+   ],
+   "tone": 14
+  },
+  {
+   "input": "up",
+   "seed": [
+    367,
+    990
+   ],
+   "tone": 14
+  },
+  {
+   "input": "down",
+   "seed": [
+    367,
+    1343
+   ],
+   "tone": 14
+  },
+  {
+   "input": "left",
+   "seed": [
+    224,
+    1118
+   ],
+   "tone": 14
+  },
+  {
+   "input": "right",
+   "seed": [
+    596,
+    1118
+   ],
+   "tone": 14
+  },
+  {
+   "input": "back",
+   "seed": [
+    575,
+    291
+   ],
+   "tone": 14,
+   "circle": false
+  },
+  {
+   "input": "start",
+   "seed": [
+    990,
+    261
+   ],
+   "tone": 14,
+   "circle": false
+  },
+  {
+   "input": "misc1",
+   "seed": [
+    474,
+    1490
+   ],
+   "tone": 14,
+   "circle": false
+  },
+  {
+   "input": "guide",
+   "seed": [
+    1078,
+    1439
+   ],
+   "tone": 20,
+   "icon": "home"
+  }
+ ],
+ "glyphs": "nintendo",
+ "body_tone": [
+  {
+   "seed": [
+    150,
+    1700
+   ],
+   "tone": 30
+  },
+  {
+   "seed": [
+    1450,
+    1700
+   ],
+   "tone": 30
+  }
+ ]
+}

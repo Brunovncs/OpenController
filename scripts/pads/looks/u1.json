@@ -1,0 +1,125 @@
+{
+ "source": "pdf:manuals/Ultimate-24G-Wireless-Controller-PC-8.pdf:0:70,140,216,246",
+ "width": 1600,
+ "ink": 110,
+ "line": 6,
+ "bumpers": [
+  [
+   350,
+   92
+  ],
+  [
+   1250,
+   92
+  ]
+ ],
+ "sticks": [
+  {
+   "seed": [
+    372,
+    293
+   ]
+  },
+  {
+   "seed": [
+    1010,
+    533
+   ]
+  }
+ ],
+ "dpad": {
+  "seed": [
+   510,
+   600
+  ],
+  "center": [
+   598,
+   601
+  ]
+ },
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1237,
+    512
+   ]
+  },
+  {
+   "input": "east",
+   "seed": [
+    1345,
+    405
+   ]
+  },
+  {
+   "input": "west",
+   "seed": [
+    1130,
+    405
+   ]
+  },
+  {
+   "input": "north",
+   "seed": [
+    1237,
+    297
+   ]
+  },
+  {
+   "input": "back",
+   "seed": [
+    690,
+    390
+   ],
+   "icon": "minus"
+  },
+  {
+   "input": "start",
+   "seed": [
+    918,
+    390
+   ],
+   "icon": "plus"
+  },
+  {
+   "input": "guide",
+   "seed": [
+    803,
+    193
+   ],
+   "icon": "ring"
+  },
+  {
+   "input": "misc1",
+   "seed": [
+    805,
+    392
+   ],
+   "icon": "star"
+  },
+  {
+   "input": "none",
+   "seed": [
+    805,
+    488
+   ],
+   "circle": false
+  }
+ ],
+ "dots": [
+  [
+   804,
+   574
+  ],
+  [
+   804,
+   603
+  ],
+  [
+   804,
+   631
+  ]
+ ],
+ "glyphs": "xbox"
+}

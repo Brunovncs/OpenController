@@ -1,0 +1,210 @@
+{
+ "source": "svg:svgref/Dualshock_4_Layout.svg:20,15,580,400",
+ "width": 1600,
+ "ink": 110,
+ "line": 4,
+ "bumpers": [
+  [
+   320,
+   57
+  ],
+  [
+   1280,
+   57
+  ]
+ ],
+ "sticks": [
+  {
+   "seed": [
+    552,
+    446
+   ],
+   "well": [
+    552,
+    425
+   ]
+  },
+  {
+   "seed": [
+    1052,
+    446
+   ],
+   "well": [
+    1052,
+    425
+   ]
+  }
+ ],
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1292,
+    470
+   ]
+  },
+  {
+   "input": "east",
+   "seed": [
+    1408,
+    357
+   ]
+  },
+  {
+   "input": "west",
+   "seed": [
+    1177,
+    356
+   ]
+  },
+  {
+   "input": "north",
+   "seed": [
+    1292,
+    238
+   ]
+  },
+  {
+   "input": "up",
+   "seed": [
+    310,
+    225
+   ],
+   "circle": false
+  },
+  {
+   "input": "down",
+   "seed": [
+    310,
+    405
+   ],
+   "circle": false
+  },
+  {
+   "input": "left",
+   "seed": [
+    215,
+    315
+   ],
+   "circle": false
+  },
+  {
+   "input": "right",
+   "seed": [
+    400,
+    315
+   ],
+   "circle": false
+  },
+  {
+   "input": "back",
+   "seed": [
+    482,
+    163
+   ],
+   "circle": false
+  },
+  {
+   "input": "start",
+   "seed": [
+    1122,
+    163
+   ],
+   "circle": false
+  },
+  {
+   "input": "guide",
+   "seed": [
+    800,
+    506
+   ],
+   "icon": "ps"
+  }
+ ],
+ "touchpad": [
+  800,
+  112
+ ],
+ "panels": [
+  {
+   "seed": [
+    200,
+    200
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    1215,
+    250
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    180,
+    960
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    1420,
+    960
+   ],
+   "style": "shade"
+  }
+ ],
+ "dots": [
+  [
+   744,
+   428
+  ],
+  [
+   772,
+   428
+  ],
+  [
+   800,
+   428
+  ],
+  [
+   828,
+   428
+  ],
+  [
+   856,
+   428
+  ],
+  [
+   758,
+   448
+  ],
+  [
+   786,
+   448
+  ],
+  [
+   814,
+   448
+  ],
+  [
+   842,
+   448
+  ],
+  [
+   772,
+   468
+  ],
+  [
+   800,
+   468
+  ],
+  [
+   828,
+   468
+  ]
+ ],
+ "glyphs": "ps",
+ "tint": true
+}

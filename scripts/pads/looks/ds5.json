@@ -1,0 +1,199 @@
+{
+ "source": "pdfvec:manuals/ds5.pdf:5:32,64,170,157:nogray,nowhite",
+ "width": 1600,
+ "ink": 170,
+ "line": 4,
+ "bumpers": [
+  [
+   330,
+   70
+  ],
+  [
+   1270,
+   70
+  ]
+ ],
+ "sticks": [
+  {
+   "seed": [
+    558,
+    500
+   ],
+   "well": [
+    558,
+    425
+   ]
+  },
+  {
+   "seed": [
+    1040,
+    500
+   ],
+   "well": [
+    1040,
+    425
+   ]
+  }
+ ],
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1268,
+    478
+   ]
+  },
+  {
+   "input": "east",
+   "seed": [
+    1378,
+    368
+   ]
+  },
+  {
+   "input": "west",
+   "seed": [
+    1157,
+    368
+   ]
+  },
+  {
+   "input": "north",
+   "seed": [
+    1268,
+    252
+   ]
+  },
+  {
+   "input": "up",
+   "seed": [
+    330,
+    262
+   ],
+   "circle": false
+  },
+  {
+   "input": "down",
+   "seed": [
+    330,
+    395
+   ],
+   "circle": false
+  },
+  {
+   "input": "left",
+   "seed": [
+    262,
+    328
+   ],
+   "circle": false
+  },
+  {
+   "input": "right",
+   "seed": [
+    398,
+    328
+   ],
+   "circle": false
+  },
+  {
+   "input": "back",
+   "seed": [
+    447,
+    163
+   ],
+   "circle": false
+  },
+  {
+   "input": "start",
+   "seed": [
+    1150,
+    163
+   ],
+   "circle": false
+  },
+  {
+   "input": "guide",
+   "at": [
+    796,
+    518,
+    34
+   ],
+   "icon": "ps"
+  },
+  {
+   "input": "misc1",
+   "seed": [
+    798,
+    612
+   ],
+   "circle": false
+  }
+ ],
+ "touchpad": [
+  800,
+  200
+ ],
+ "panels": [
+  {
+   "seed": [
+    800,
+    650
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    800,
+    390
+   ],
+   "style": "light"
+  },
+  {
+   "seed": [
+    797,
+    679
+   ],
+   "style": "part"
+  }
+ ],
+ "ink_dots": [
+  [
+   743,
+   422
+  ],
+  [
+   771,
+   422
+  ],
+  [
+   798,
+   422
+  ],
+  [
+   825,
+   422
+  ],
+  [
+   851,
+   422
+  ],
+  [
+   757,
+   445
+  ],
+  [
+   784,
+   445
+  ],
+  [
+   811,
+   445
+  ],
+  [
+   838,
+   445
+  ]
+ ],
+ "glyphs": "ps"
+}

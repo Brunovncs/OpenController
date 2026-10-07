@@ -30,6 +30,13 @@ statically. It is under the zlib license:
 The Windows entries of [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB)
 are bundled in `open-controller.exe`, under the same zlib license as SDL.
 
+## Controller drawings
+
+The DualShock 4 and DualShock 3 drawings in `assets/pads.json` are traced from "Dualshock 4
+Layout.svg" and "Dualshock3 Layout.svg" by Tokyoship on Wikimedia Commons, under
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); the Joy-Con, from "Nintendo Switch
+Joy-Con illustration.svg", in the public domain. `scripts/pads/README.md` lists every source.
+
 ## Rust crates
 
 Each crate's license text is in its source, at the repository listed. Where a crate offers a

@@ -1,0 +1,144 @@
+{
+ "source": "pdf:manuals/Ultimate-2-Wireless-Controller-EN.pdf:0:70,148,216,252",
+ "width": 1600,
+ "ink": 110,
+ "line": 6,
+ "bumpers": [
+  [
+   330,
+   112
+  ],
+  [
+   1270,
+   112
+  ]
+ ],
+ "sticks": [
+  {
+   "seed": [
+    367,
+    300
+   ],
+   "ring": true
+  },
+  {
+   "seed": [
+    1008,
+    560
+   ],
+   "ring": true
+  }
+ ],
+ "dpad": {
+  "seed": [
+   500,
+   590
+  ],
+  "center": [
+   595,
+   592
+  ]
+ },
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1205,
+    480
+   ],
+   "label": "A"
+  },
+  {
+   "input": "east",
+   "seed": [
+    1312,
+    370
+   ],
+   "label": "B"
+  },
+  {
+   "input": "west",
+   "seed": [
+    1100,
+    370
+   ],
+   "label": "X"
+  },
+  {
+   "input": "north",
+   "seed": [
+    1205,
+    262
+   ],
+   "label": "Y"
+  },
+  {
+   "input": "back",
+   "seed": [
+    585,
+    200
+   ],
+   "icon": "minus"
+  },
+  {
+   "input": "start",
+   "seed": [
+    978,
+    200
+   ],
+   "icon": "plus"
+  },
+  {
+   "input": "guide",
+   "seed": [
+    800,
+    177
+   ],
+   "icon": "ring"
+  },
+  {
+   "input": "none",
+   "seed": [
+    676,
+    312
+   ],
+   "icon": "square"
+  },
+  {
+   "input": "misc1",
+   "seed": [
+    880,
+    312
+   ],
+   "icon": "star"
+  },
+  {
+   "input": "none",
+   "seed": [
+    780,
+    462
+   ],
+   "circle": false
+  }
+ ],
+ "dots": [
+  [
+   800,
+   335
+  ],
+  [
+   800,
+   562
+  ],
+  [
+   800,
+   590
+  ],
+  [
+   800,
+   620
+  ]
+ ],
+ "glyphs": "xbox",
+ "stick_rings": true
+}

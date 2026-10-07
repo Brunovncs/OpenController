@@ -1,0 +1,117 @@
+{
+ "source": "pdf:manuals/Ultimate-2C-Wireless-Controller-EN.pdf:0:70,135,216,240",
+ "width": 1600,
+ "ink": 110,
+ "line": 6,
+ "bumpers": [
+  [
+   330,
+   105
+  ],
+  [
+   1270,
+   105
+  ]
+ ],
+ "sticks": [
+  {
+   "seed": [
+    373,
+    280
+   ]
+  },
+  {
+   "seed": [
+    1008,
+    515
+   ]
+  }
+ ],
+ "dpad": {
+  "seed": [
+   510,
+   590
+  ],
+  "center": [
+   598,
+   590
+  ]
+ },
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1232,
+    495
+   ]
+  },
+  {
+   "input": "east",
+   "seed": [
+    1338,
+    390
+   ]
+  },
+  {
+   "input": "west",
+   "seed": [
+    1126,
+    390
+   ]
+  },
+  {
+   "input": "north",
+   "seed": [
+    1232,
+    280
+   ]
+  },
+  {
+   "input": "back",
+   "seed": [
+    608,
+    250
+   ],
+   "icon": "minus"
+  },
+  {
+   "input": "start",
+   "seed": [
+    997,
+    250
+   ],
+   "icon": "plus"
+  },
+  {
+   "input": "guide",
+   "seed": [
+    803,
+    181
+   ],
+   "icon": "ring"
+  },
+  {
+   "input": "none",
+   "seed": [
+    703,
+    362
+   ],
+   "icon": "square"
+  },
+  {
+   "input": "misc1",
+   "seed": [
+    903,
+    363
+   ],
+   "icon": "star"
+  }
+ ],
+ "dots": [
+  [
+   802,
+   336
+  ]
+ ],
+ "glyphs": "xbox"
+}

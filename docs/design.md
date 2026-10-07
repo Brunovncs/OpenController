@@ -188,9 +188,12 @@ way peripheral apps lay it out, in Windows' own type (Segoe UI Variable) and ico
 Icons). Surfaces are opaque and step up from the page to cards to controls, with hairline edges
 rather than shadows, 16 px corners on tiles, 12 on cards and 8 on controls, one accent taken from
 the Windows accent palette (the default blue when the user's accent is a grey that would not read),
-and colour for state only where something needs attention. The drawings are vector, one of six
-shapes chosen by family, filled with a soft gradient and lit with the accent as the controller is
-used. Product photos would look better and are not used: the ones in vendors' apps are theirs.
+and colour for state only where something needs attention. The drawings are vector, one of 14
+by family, each traced from its maker's own front view (the line art in its manual, or a straight
+product shot) so its outline and the place and size of every control are the real ones, filled with
+a soft gradient and lit with the accent as the controller is used. The shapes live in
+`assets/pads.json`, which the website draws from too; `scripts/pads` traces them. Photos themselves
+are not shown: they are the makers'.
 Pressing an extra button on the controller picks it in the window; recording a key is pressing it.
 Changes apply as they are made, with no Save button.
 
