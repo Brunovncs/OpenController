@@ -21,6 +21,12 @@ impl std::fmt::Display for BusError {
     }
 }
 
+impl BusError {
+    pub fn driver(&self) -> crate::engine::Driver {
+        crate::engine::Driver::Unsupported
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Feedback {
     pub serial: u32,
@@ -91,6 +97,10 @@ impl Cloak {
 
     pub fn hide(&mut self, _: &[String]) -> Result<(), CloakError> {
         Ok(())
+    }
+
+    pub fn follow_up(&mut self) -> Option<std::time::Duration> {
+        None
     }
 
     pub fn reveal(&mut self, _: &[String]) -> Result<(), CloakError> {

@@ -17,6 +17,7 @@ HEADER = """# Third-party notices
 OpenController is MIT licensed (see [LICENSE](LICENSE)). Its programs include the code below,
 each under its own license. ViGEmBus, HidHide, DsHidMini and BthPS3 are not included: Open
 Controller downloads their official installers from Nefarius' GitHub releases when you ask it to.
+Neither are usbip-win2 and VIIPER, which the experimental VIIPER option downloads the same way.
 
 ## SDL 3
 
@@ -43,6 +44,27 @@ statically. It is under the zlib license:
 
 The Windows entries of [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB)
 are bundled in `open-controller.exe`, under the same zlib license as SDL.
+
+## VIIPER
+
+[VIIPER](https://github.com/Alia5/VIIPER) is an experimental option on Windows, off by default.
+Its server, `viiper.exe`, is not part of OpenController. When you choose VIIPER and click
+Install, OpenController downloads the official v0.8.2 release from GitHub, checks it against
+the hash it had when this version was made and unpacks it next to itself, with the
+`licenses.txt` it comes with. It runs as a separate program that OpenController talks to over a
+local TCP connection; OpenController includes none of its code and stays MIT.
+
+> VIIPER - Virtual Input over IP EmulatoR
+>
+> Copyright (C) 2025-2026 Peter Repukat
+>
+> This program is free software: you can redistribute it and/or modify it under the terms of the
+> GNU General Public License as published by the Free Software Foundation, either version 3 of
+> the License, or (at your option) any later version.
+
+The source of that version is at https://github.com/Alia5/VIIPER/tree/v0.8.2 and the license at
+https://www.gnu.org/licenses/gpl-3.0.html. [usbip-win2](https://github.com/vadimgrn/usbip-win2),
+the driver VIIPER needs, is installed with its own installer, under its own license.
 
 ## Rust crates
 

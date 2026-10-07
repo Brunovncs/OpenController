@@ -11,7 +11,9 @@ use crate::keyboard::Keyboard;
 use crate::mapping::{self, PadState, XusbReport};
 use crate::models;
 use crate::motion::{self, GyroAim};
-use crate::platform::{Bus, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, VIRTUAL_PADS, bluetooth, devnode};
+use crate::platform::{
+    self, Bus, DRIVER_CHOICE, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, VIRTUAL_PADS, VirtualDriver, bluetooth, devnode,
+};
 use crate::plug::Plugger;
 use crate::profile::{self, GyroMode, Profile, Profiles};
 use crate::report::Diagnosis;
@@ -88,8 +90,6 @@ const EXTRA_BUTTONS: u64 = {
     }
     m
 };
-/// The left trigger past halfway: aiming, for the gyro.
-const AIMING: i16 = 16384;
 /// Below this charge, a light bar set to blink does.
 const LOW_BATTERY: u8 = 15;
 /// Stops the handheld button readers when the engine stops.
@@ -102,6 +102,8 @@ pub struct Config {
     pub hide: bool,
     /// Each controller's profiles, by where its settings are kept (see [`binding::store_key`]).
     pub profiles: HashMap<String, Profiles>,
+    /// The driver that makes the virtual controllers, where there is a choice.
+    pub driver: VirtualDriver,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -129,12 +131,16 @@ pub enum Command {
     /// What SDL says about a controller and what happened lately, for a report on it, with its
     /// device path for the caller to look up in the device tree away from the input thread.
     Diagnose(PadKey, Sender<Option<(Diagnosis, String)>>),
+    /// Makes the virtual controllers again with this driver. Choosing VIIPER again after it
+    /// failed tries it again.
+    SetVirtualDriver(VirtualDriver),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Role {
     /// Games see it as an Xbox 360 controller in XInput slot `player` (0 to 3); `None` for a
-    /// fifth controller and up, which XInput games cannot see.
+    /// fifth controller and up, which XInput games cannot see. Outside Windows, `player` is its
+    /// place in the order the virtual controllers were made, with no limit.
     Virtual { player: Option<u8> },
     /// The controller is away; its virtual controller stays for `remaining`.
     Waiting { player: Option<u8>, remaining: Duration },
@@ -144,6 +150,9 @@ pub enum Role {
     Unmapped,
     /// Recognised, but no virtual controller could be created.
     Unavailable,
+    /// Left as it is by choice: games read the controller itself, no virtual controller is
+    /// made for it and nothing is written to it.
+    KeptNative,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -195,6 +204,8 @@ pub enum Driver {
     Failed(String),
     /// This system has no such thing: macOS makes no virtual controllers and hides none.
     Unsupported,
+    /// The Linux kernel has no uinput (WSL, some custom kernels), so no controller can be made.
+    NoKernelSupport,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -208,6 +219,18 @@ pub struct Snapshot {
     pub running: bool,
     /// The program in front, as profiles name programs.
     pub foreground: String,
+    /// The driver making the virtual controllers, which `vigem` is the state of. ViGEmBus unless
+    /// VIIPER was chosen and started.
+    #[serde(default)]
+    pub bus: VirtualDriver,
+    /// VIIPER when it is chosen: `Ready` while it makes the controllers, `Missing` or `Failed`
+    /// when it could not and ViGEmBus took over. `Unsupported` when it is not chosen.
+    #[serde(default = "unsupported")]
+    pub viiper: Driver,
+}
+
+fn unsupported() -> Driver {
+    Driver::Unsupported
 }
 
 impl Default for Snapshot {
@@ -221,6 +244,8 @@ impl Default for Snapshot {
             sdl_error: None,
             running: false,
             foreground: String::new(),
+            bus: VirtualDriver::ViGEmBus,
+            viiper: Driver::Unsupported,
         }
     }
 }
@@ -318,9 +343,10 @@ struct Phys {
     power: Power,
     /// The colour last given its light bar.
     led: Option<[u8; 3]>,
-    /// Whether its gyro reports are on, the gyro's push on the right stick and when it was last
-    /// read.
+    /// Whether its gyro reports are on, whether a toggle turned the gyro on, the gyro's push on
+    /// the right stick and when it was last read.
     gyro_on: bool,
+    gyro_toggled: bool,
     aim: GyroAim,
     aim_out: (i16, i16),
     aim_at: Option<Instant>,
@@ -380,8 +406,13 @@ struct Core {
     bus: Option<Arc<Bus>>,
     /// Read once on connecting: the device tree is slow to query, and this is the input thread.
     bus_version: Option<String>,
-    bus_error: Option<String>,
+    bus_error: Option<Driver>,
     bus_retry: Instant,
+    /// The driver chosen, the one making the controllers, and why VIIPER is not when it was
+    /// chosen and failed. It is tried once per choice.
+    driver: VirtualDriver,
+    bus_driver: VirtualDriver,
+    viiper_error: Option<String>,
     io: Io,
     /// Plugs virtual controllers in away from this thread; there once the bus is.
     plugger: Option<Plugger>,
@@ -453,6 +484,9 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         bus_version: None,
         bus_error: None,
         bus_retry: Instant::now(),
+        driver: config.driver,
+        bus_driver: VirtualDriver::ViGEmBus,
+        viiper_error: None,
         io: Io::new(),
         plugger: None,
         hider,
@@ -528,22 +562,71 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
 
 impl Core {
     fn connect_bus(&mut self) {
-        match Bus::connect() {
+        let want = if DRIVER_CHOICE && self.viiper_error.is_none() { self.driver } else { VirtualDriver::ViGEmBus };
+        let mut result = platform::connect_bus(want);
+        self.bus_driver = want;
+        if want == VirtualDriver::Viiper
+            && let Err(e) = &result
+        {
+            let why = e.to_string();
+            self.note(format!("VIIPER: {why}; ViGEmBus makes the controllers instead"));
+            self.viiper_error = Some(why);
+            self.bus_driver = VirtualDriver::ViGEmBus;
+            result = platform::connect_bus(VirtualDriver::ViGEmBus);
+        }
+        match result {
             Ok(b) => {
-                self.bus_version = devnode::driver_version(&b.path);
+                self.bus_version = platform::bus_version(&b);
                 let bus = Arc::new(b);
                 self.plugger = Some(Plugger::start(bus.clone()));
                 self.bus = Some(bus);
                 self.bus_error = None;
             }
             Err(e) => {
-                if self.bus_error.as_deref() != Some(&e.to_string()) {
+                let state = e.driver();
+                if self.bus_error.as_ref() != Some(&state) {
                     self.note(format!("virtual controller bus: {e}"));
                 }
-                self.bus_error = Some(e.to_string());
+                self.bus_error = Some(state);
             }
         }
         self.bus_retry = Instant::now() + RETRY;
+        self.changed = true;
+    }
+
+    /// VIIPER stopped working: its controllers are made again with ViGEmBus.
+    fn leave_viiper(&mut self, why: String) {
+        self.note(format!("VIIPER: {why}; ViGEmBus makes the controllers instead"));
+        self.viiper_error = Some(why);
+        self.close_bus();
+        self.connect_bus();
+    }
+
+    /// Unplugs every virtual controller and lets go of the bus. The slots keep their controllers,
+    /// shown to games again until the next bus gives them new virtual controllers.
+    fn close_bus(&mut self) {
+        let targets: Vec<(SlotId, Target)> = self.targets.drain().collect();
+        let mut shown = Vec::new();
+        for (s, t) in targets {
+            if let Some(p) = t.rumble_to.and_then(|d| self.phys.get(&d)) {
+                p.pad.rumble(0, 0, 0);
+            }
+            if let Some(bus) = self.bus.as_ref() {
+                let _ = bus.submit(&mut self.io, t.serial, &XusbReport::default());
+                let _ = bus.unplug(&mut self.io, t.serial);
+            }
+            let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
+            shown.extend(devices.iter().filter_map(|d| self.phys.get(d).and_then(|p| p.instance.clone())));
+        }
+        self.hider.reveal(shown);
+        // A plug under way finishes and is undone.
+        if let Some(mut p) = self.plugger.take() {
+            p.stop();
+        }
+        if let Some(bus) = self.bus.take() {
+            bus.cancel_all();
+        }
+        self.failed.clear();
         self.changed = true;
     }
 
@@ -562,6 +645,7 @@ impl Core {
             }
             Command::Identify(key) => {
                 if let Some(dev) = self.device_for(key)
+                    && !self.roster.slot_of(dev).is_some_and(|s| self.is_native(s))
                     && let Some(p) = self.phys.get(&dev)
                 {
                     p.pad.rumble(0x7000, 0x7000, 400);
@@ -584,10 +668,14 @@ impl Core {
                     self.release_keys(self.owner_of(d));
                 }
                 let profiles = profiles.sanitised();
+                let (was_native, now_native) = (native(&self.profiles, &store), profiles.native);
                 if profiles.is_default() {
                     self.profiles.remove(&store);
                 } else {
-                    self.profiles.insert(store, profiles);
+                    self.profiles.insert(store.clone(), profiles);
+                }
+                if was_native != now_native {
+                    self.set_native(&store, now_native);
                 }
                 self.profiles_changed(&devices);
             }
@@ -614,6 +702,17 @@ impl Core {
                 let _ = reply.send(found.map(|(facts, path)| (Diagnosis { facts, log: self.log.iter().cloned().collect() }, path)));
                 return;
             }
+            Command::SetVirtualDriver(_) if !DRIVER_CHOICE => {}
+            Command::SetVirtualDriver(d) => {
+                let retry = d == VirtualDriver::Viiper && self.viiper_error.is_some();
+                self.driver = d;
+                self.viiper_error = None;
+                if retry || self.bus.is_none() || self.bus_driver != d {
+                    self.note(format!("virtual controllers now from {d:?}"));
+                    self.close_bus();
+                    self.connect_bus();
+                }
+            }
         }
         self.changed = true;
     }
@@ -633,6 +732,11 @@ impl Core {
     /// After a profile change: the gyro is turned on or off to match, and the virtual
     /// controllers get the new assignments at once.
     fn profiles_changed(&mut self, devices: &[DeviceId]) {
+        for d in devices {
+            if let Some(p) = self.phys.get_mut(d) {
+                p.gyro_toggled = false;
+            }
+        }
         self.sync_gyro();
         let slots: Vec<SlotId> = devices.iter().filter_map(|&d| self.roster.slot_of(d)).collect();
         for s in slots {
@@ -640,10 +744,52 @@ impl Core {
         }
     }
 
+    /// Whether the slot's controller is kept native: no virtual controller, not hidden, and
+    /// nothing written to it.
+    fn is_native(&self, s: SlotId) -> bool {
+        self.memo.get(&s).is_some_and(|m| native(&self.profiles, &m.store))
+    }
+
+    /// The controllers kept under `store` were made native or Xbox controllers again; the
+    /// profiles already say which, so `plug_missing` never plugs a native one back in. Going
+    /// native, the virtual controller lets go of everything and leaves before games are shown
+    /// the original. Coming back, `plug_missing` makes a virtual controller, which hides it
+    /// again, and the light, player and gyro are set anew.
+    fn set_native(&mut self, store: &str, on: bool) {
+        let slots: Vec<SlotId> = self.memo.iter().filter(|(_, m)| m.store == store).map(|(&s, _)| s).collect();
+        for s in slots {
+            let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
+            self.note(format!("slot {} {}", s.0, if on { "kept native" } else { "back to Xbox" }));
+            if !on {
+                for d in &devices {
+                    if let Some(p) = self.phys.get_mut(d) {
+                        p.led = None;
+                    }
+                }
+                continue;
+            }
+            for d in &devices {
+                if let Some(p) = self.phys.get(d) {
+                    p.pad.rumble(0, 0, 0);
+                    p.pad.set_player(-1);
+                }
+            }
+            self.sync_gyro();
+            // Unplugging forgets what the controller is, and it is still here.
+            let model = self.memo.get(&s).cloned();
+            self.unplug(s);
+            if let Some(m) = model {
+                self.memo.insert(s, m);
+            }
+            let ids: Vec<String> = devices.iter().filter_map(|d| self.phys.get(d).and_then(|p| p.instance.clone())).collect();
+            self.hider.reveal(ids);
+        }
+    }
+
     /// Two slots trade virtual controllers, and so players: games see the same controllers
     /// with different hands on them.
     fn swap(&mut self, a: SlotId, b: SlotId) {
-        if self.roster.get(a).is_none() || self.roster.get(b).is_none() {
+        if self.roster.get(a).is_none() || self.roster.get(b).is_none() || self.is_native(a) || self.is_native(b) {
             return;
         }
         self.release_keys(Owner::Slot(a));
@@ -690,7 +836,7 @@ impl Core {
         for id in ids {
             let want = {
                 let p = &self.phys[&id];
-                matches!(p.kind, Kind::Slot(_))
+                matches!(p.kind, Kind::Slot(s) if !self.is_native(s))
                     && p.model.features.motion
                     && self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off)
             };
@@ -825,6 +971,7 @@ impl Core {
             state: PadState::default(),
             led: None,
             gyro_on: false,
+            gyro_toggled: false,
             aim: GyroAim::default(),
             aim_out: (0, 0),
             aim_at: None,
@@ -857,12 +1004,18 @@ impl Core {
         }
         self.phys.insert(id, p);
         if let Kind::Slot(s) = kind {
-            self.hide(id);
-            if let Some(player) = self.targets.get(&s).and_then(|t| t.player) {
-                self.phys[&id].pad.set_player(player as i32);
+            if self.is_native(s) {
+                // SDL numbered it when it opened; without a number, numbering another controller
+                // never moves this one and rewrites its lights.
+                self.phys[&id].pad.set_player(-1);
+            } else {
+                self.hide(id);
+                if let Some(player) = self.targets.get(&s).and_then(|t| t.player) {
+                    self.phys[&id].pad.set_player(player as i32);
+                }
+                self.resend(s);
+                self.move_rumble(s);
             }
-            self.resend(s);
-            self.move_rumble(s);
         }
         self.sync_gyro();
         self.changed = true;
@@ -900,8 +1053,9 @@ impl Core {
             let empty = self.roster.get(s).is_some_and(|slot| slot.devices.is_empty());
             let turned_off = self.turning_off.iter().any(|&(x, at)| x == id && now.duration_since(at) < TURN_OFF_WAIT);
             self.turning_off.retain(|&(x, at)| x != id && now.duration_since(at) < TURN_OFF_WAIT);
-            if empty && turned_off {
-                // Turned off on purpose: no point waiting for it to come back.
+            if empty && (turned_off || self.is_native(s)) {
+                // Turned off on purpose, or kept native with no virtual controller to keep: no
+                // point waiting for it to come back.
                 self.roster.remove(s);
                 self.unplug(s);
             } else {
@@ -922,7 +1076,7 @@ impl Core {
         // Only a controller games can see as an Xbox controller is hidden; hiding one whose
         // virtual controller does not exist would take it away from games altogether.
         let Kind::Slot(s) = p.kind else { return };
-        if !self.targets.contains_key(&s) {
+        if !self.targets.contains_key(&s) || self.is_native(s) {
             return;
         }
         if let Some(instance) = p.instance.clone() {
@@ -1027,6 +1181,7 @@ impl Core {
         for p in self.phys.values_mut() {
             // Where controllers stay as they are, their lights are still OpenController's to set.
             let player = match p.kind {
+                Kind::Slot(_) if native(&self.profiles, &p.model.store) => continue,
                 Kind::Slot(s) => self.targets.get(&s).and_then(|t| t.player),
                 Kind::Native if !VIRTUAL_PADS => None,
                 _ => continue,
@@ -1089,16 +1244,11 @@ impl Core {
             }
             if p.gyro_on {
                 let gyro = self.profiles.get(&p.model.store).map(|x| x.for_program(&self.foreground).gyro).unwrap_or_default();
-                let active = match gyro.mode {
-                    GyroMode::Off => false,
-                    GyroMode::Always => true,
-                    GyroMode::Aiming => p.state.axes[mapping::axis::LEFT_TRIGGER] > AIMING,
-                    GyroMode::Holding(b) => p.state.pressed(u32::from(b)),
-                };
+                let active = motion::gyro_active(&gyro, &p.state, &before, &mut p.gyro_toggled);
                 match (active, p.pad.gyro()) {
                     (true, Some(rate)) => {
                         let dt = p.aim_at.map_or(0.004, |t| now.duration_since(t).as_secs_f32());
-                        p.aim_out = p.aim.update(rate, dt, gyro);
+                        p.aim_out = p.aim.update(rate, dt, gyro, motion::aiming(&p.state));
                         p.aim_at = Some(now);
                     }
                     _ => {
@@ -1123,7 +1273,7 @@ impl Core {
                     self.changed = true;
                     self.move_rumble(s);
                 }
-                if self.roster.get(s).and_then(|x| x.source) == Some(id) {
+                if self.roster.get(s).and_then(|x| x.source) == Some(id) && !self.is_native(s) {
                     self.resend(s);
                     if (before.buttons ^ state.buttons) & EXTRA_BUTTONS != 0 || !self.held.is_empty() {
                         self.type_keys(Owner::Slot(s), id, before.buttons, state.buttons);
@@ -1187,6 +1337,9 @@ impl Core {
         if self.bus.is_none() && now >= self.bus_retry {
             self.connect_bus();
         }
+        if let Some(why) = self.bus.as_deref().and_then(platform::bus_lost) {
+            self.leave_viiper(why);
+        }
         self.follow_hider();
         self.plug_missing(now);
         self.find_player_slots(now);
@@ -1224,24 +1377,30 @@ impl Core {
     /// Asks for a virtual controller for every slot that has a controller and none yet, and
     /// sets up the ones that are ready.
     fn plug_missing(&mut self, now: Instant) {
-        let Some(plugger) = self.plugger.as_mut() else { return };
+        let Some(plugger) = self.plugger.as_ref() else { return };
         let wanting: Vec<SlotId> = self
             .roster
             .slots()
             .iter()
             .filter(|s| s.lost_since.is_none() && !self.targets.contains_key(&s.id) && !plugger.is_pending(s.id))
             .filter(|s| self.failed.get(&s.id).is_none_or(|&t| now.duration_since(t) >= RETRY))
+            .filter(|s| !self.is_native(s.id))
             .map(|s| s.id)
             .collect();
+        let Some(plugger) = self.plugger.as_mut() else { return };
         for s in wanting {
             plugger.request(s);
         }
+        let mut viiper_failed = None;
         for (s, result) in plugger.finished() {
             match result {
                 Ok(serial) => self.plugged(s, serial, now),
                 Err(e) => {
+                    if self.bus_driver == VirtualDriver::Viiper {
+                        viiper_failed = Some(e.clone());
+                    }
                     self.failed.insert(s, now);
-                    self.bus_error = Some(e);
+                    self.bus_error = Some(Driver::Failed(e));
                     // Hidden by an earlier run of this slot: games must at least see the original.
                     let ids: Vec<String> = self
                         .roster
@@ -1253,24 +1412,29 @@ impl Core {
             }
             self.changed = true;
         }
+        // A VIIPER that starts but cannot attach a controller (a usbip-win2 it does not know)
+        // gives none at all: ViGEmBus takes over.
+        if let Some(e) = viiper_failed {
+            self.leave_viiper(e);
+        }
     }
 
     /// A virtual controller for `s` is ready: it gets the slot's input, rumble and player.
     fn plugged(&mut self, s: SlotId, serial: u32, now: Instant) {
         let Some(bus) = self.bus.clone() else { return };
-        // The controller was turned off or stayed away while it was being plugged in.
-        if self.roster.get(s).is_none() || self.targets.contains_key(&s) {
+        // The controller was turned off, stayed away or was kept native while it was being
+        // plugged in.
+        if self.roster.get(s).is_none() || self.targets.contains_key(&s) || self.is_native(s) {
             let _ = bus.unplug(&mut self.io, serial);
             return;
         }
         self.failed.remove(&s);
         let listener = Some(bus.listen(serial, self.feedback_tx.clone()));
-        let player = if PLAYER_SLOTS { None } else { self.free_player() };
         self.targets.insert(
             s,
             Target {
                 serial,
-                player,
+                player: None,
                 search: PLAYER_SLOTS.then(|| (xinput::marker(serial), now + SLOT_WAIT)),
                 next_search: now,
                 backoff: Duration::from_secs(1),
@@ -1285,9 +1449,9 @@ impl Core {
         let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
         for &d in &devices {
             self.hide(d);
-            if let (Some(i), Some(p)) = (player, self.phys.get(&d)) {
-                p.pad.set_player(i32::from(i));
-            }
+        }
+        if !PLAYER_SLOTS {
+            self.number_players();
         }
         self.resend(s);
     }
@@ -1296,7 +1460,7 @@ impl Core {
     /// where games look, and lights that player number on the physical controller.
     fn find_player_slots(&mut self, now: Instant) {
         if !PLAYER_SLOTS {
-            return self.number_players();
+            return;
         }
         let mut lit = Vec::new();
         let mut free = None;
@@ -1346,24 +1510,21 @@ impl Core {
         }
     }
 
-    /// The lowest player number no virtual controller has.
-    fn free_player(&self) -> Option<u8> {
-        (0..4).find(|&i| !self.targets.values().any(|t| t.player == Some(i)))
-    }
-
-    /// Without XInput, a virtual controller that came fifth takes a number when one frees up.
+    /// Without XInput, players are numbered in the order their virtual controllers were made,
+    /// with no limit, as games list them; when one goes, the later ones move up.
     fn number_players(&mut self) {
-        let mut waiting: Vec<(u32, SlotId)> =
-            self.targets.iter().filter(|(_, t)| t.player.is_none()).map(|(&s, t)| (t.serial, s)).collect();
-        waiting.sort();
-        for (_, s) in waiting {
-            let Some(i) = self.free_player() else { return };
-            if let Some(t) = self.targets.get_mut(&s) {
-                t.player = Some(i);
+        let serials: Vec<(SlotId, u32)> = self.targets.iter().map(|(&s, t)| (s, t.serial)).collect();
+        for &(s, serial) in &serials {
+            let place = serials.iter().filter(|&&(_, other)| other < serial).count();
+            let player = Some(u8::try_from(place).unwrap_or(u8::MAX));
+            let Some(t) = self.targets.get_mut(&s) else { continue };
+            if t.player == player {
+                continue;
             }
+            t.player = player;
             for d in self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default() {
                 if let Some(p) = self.phys.get(&d) {
-                    p.pad.set_player(i32::from(i));
+                    p.pad.set_player(place as i32);
                 }
             }
             self.changed = true;
@@ -1380,20 +1541,18 @@ impl Core {
         }
         // The feedback thread ends once its controller is gone.
         drop(t.listener);
+        if !PLAYER_SLOTS {
+            self.number_players();
+        }
     }
 
     fn snapshot(&self, now: Instant) -> Snapshot {
         let mut pads = Vec::new();
         for slot in self.roster.slots() {
             let target = self.targets.get(&slot.id);
-            let player = target.and_then(|t| t.player);
             let source = slot.source.and_then(|d| self.phys.get(&d));
             let any = source.or_else(|| slot.devices.iter().find_map(|d| self.phys.get(d)));
-            let role = match (slot.remaining(self.roster.grace(), now), target) {
-                (Some(remaining), _) => Role::Waiting { player, remaining },
-                (None, Some(_)) => Role::Virtual { player },
-                (None, None) => Role::Unavailable,
-            };
+            let role = slot_role(self.is_native(slot.id), slot.remaining(self.roster.grace(), now), target.map(|t| t.player));
             let mut links: Vec<Link> = source.map(|p| p.link).into_iter().collect();
             for d in &slot.devices {
                 if let Some(p) = self.phys.get(d)
@@ -1447,9 +1606,15 @@ impl Core {
         let vigem = match (&self.bus, &self.bus_error) {
             _ if !VIRTUAL_PADS => Driver::Unsupported,
             (Some(_), _) => Driver::Ready { version: self.bus_version.clone() },
-            (None, Some(e)) if e.contains("not installed") => Driver::Missing,
-            (None, Some(e)) => Driver::Failed(e.clone()),
+            (None, Some(e)) => e.clone(),
             (None, None) => Driver::Missing,
+        };
+        let viiper = match &self.viiper_error {
+            _ if !DRIVER_CHOICE || self.driver != VirtualDriver::Viiper => Driver::Unsupported,
+            Some(e) if e.contains("not installed") => Driver::Missing,
+            Some(e) => Driver::Failed(e.clone()),
+            None if self.bus.is_some() && self.bus_driver == VirtualDriver::Viiper => Driver::Ready { version: self.bus_version.clone() },
+            None => Driver::Missing,
         };
         Snapshot {
             pads,
@@ -1460,6 +1625,8 @@ impl Core {
             sdl_error: None,
             running: true,
             foreground: self.foreground.clone(),
+            bus: self.bus_driver,
+            viiper,
         }
     }
 
@@ -1495,24 +1662,59 @@ impl Core {
     }
 
     fn shutdown(&mut self) {
-        for p in self.phys.values() {
+        for p in self.phys.values().filter(|p| !(matches!(p.kind, Kind::Slot(_)) && native(&self.profiles, &p.model.store))) {
             p.pad.rumble(0, 0, 0);
         }
         for (_, _, c) in std::mem::take(&mut self.held) {
             self.keyboard.release(c);
         }
-        let slots: Vec<SlotId> = self.targets.keys().copied().collect();
-        for s in slots {
-            self.unplug(s);
-        }
-        // A plug under way finishes and is undone.
-        if let Some(mut p) = self.plugger.take() {
-            p.stop();
-        }
-        if let Some(bus) = self.bus.take() {
-            bus.cancel_all();
-        }
+        self.close_bus();
         self.hider.stop();
         self.phys.clear();
+    }
+}
+
+/// Whether the controllers kept under `store` are kept native.
+fn native(profiles: &HashMap<String, Profiles>, store: &str) -> bool {
+    profiles.get(store).is_some_and(|p| p.native)
+}
+
+/// What games see of a slot: the controller itself while it is kept native, otherwise its
+/// virtual controller (`target`, with its player), kept for `remaining` while the controller is
+/// away.
+fn slot_role(native: bool, remaining: Option<Duration>, target: Option<Option<u8>>) -> Role {
+    match (remaining, target) {
+        _ if native => Role::KeptNative,
+        (Some(remaining), player) => Role::Waiting { player: player.flatten(), remaining },
+        (None, Some(player)) => Role::Virtual { player },
+        (None, None) => Role::Unavailable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profile::Edit;
+
+    #[test]
+    fn only_a_store_kept_native_is_native() {
+        let mut profiles = HashMap::new();
+        assert!(!native(&profiles, "model:054c:0ce6"), "nothing saved is an Xbox controller");
+        let mut p = Profiles::default();
+        p.apply(Edit::Native(true));
+        profiles.insert("model:054c:0ce6".to_string(), p);
+        assert!(native(&profiles, "model:054c:0ce6"));
+        assert!(!native(&profiles, "serial:aa:bb"));
+    }
+
+    #[test]
+    fn a_native_slot_shows_as_native_whatever_else() {
+        let wait = Some(Duration::from_secs(3));
+        assert_eq!(slot_role(true, None, None), Role::KeptNative);
+        assert_eq!(slot_role(true, wait, Some(Some(1))), Role::KeptNative);
+        assert_eq!(slot_role(false, None, Some(Some(1))), Role::Virtual { player: Some(1) });
+        assert_eq!(slot_role(false, wait, Some(Some(1))), Role::Waiting { player: Some(1), remaining: Duration::from_secs(3) });
+        assert_eq!(slot_role(false, wait, None), Role::Waiting { player: None, remaining: Duration::from_secs(3) });
+        assert_eq!(slot_role(false, None, None), Role::Unavailable);
     }
 }

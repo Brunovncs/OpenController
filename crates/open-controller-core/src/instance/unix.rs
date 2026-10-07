@@ -75,9 +75,23 @@ pub fn signal(name: &str, what: &str) -> bool {
     UnixDatagram::unbound().and_then(|s| s.send_to(b"!", path(name, what))).is_ok()
 }
 
-/// Whether an instance holds the lock, including one still starting up.
+/// Whether an instance holds the lock, including one still starting up. Asking leaves no lock
+/// file behind.
 pub fn running(name: &str) -> bool {
-    try_lock(name).is_none()
+    match OpenOptions::new().write(true).open(path(name, "")) {
+        Ok(f) => (unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) }) != 0,
+        Err(_) => false,
+    }
+}
+
+/// Removes the first instance's signal sockets and lock file, on its way out and after everything
+/// else has stopped: the threads that listen for the signals never end, so nothing else would.
+pub fn remove_files(name: &str, signals: &[&str]) {
+    for what in signals {
+        let _ = std::fs::remove_file(path(name, what));
+    }
+    // Last, since a new start can take over as soon as the lock file is gone.
+    let _ = std::fs::remove_file(path(name, ""));
 }
 
 /// Waits until the running instance has exited, up to `timeout`. True if it did.
@@ -103,4 +117,24 @@ pub fn on_signal(event: Event, f: impl Fn() + Send + 'static) {
             }
         })
         .expect("could not start the signal thread");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leaving_removes_the_lock_and_signals() {
+        let name = format!("io.github.brunovncs.open-controller.test{}", std::process::id());
+        let Instance::First { _mutex, show } = claim(&name) else { panic!("not first") };
+        let quit = event(&name, "quit").expect("quit event");
+        assert!(running(&name));
+        remove_files(&name, &["show", "quit"]);
+        for what in ["show", "quit", ""] {
+            assert!(!path(&name, what).exists(), "{what:?} is left");
+        }
+        drop((_mutex, show, quit));
+        assert!(!running(&name));
+        assert!(!path(&name, "").exists(), "asking left a lock file");
+    }
 }

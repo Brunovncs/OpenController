@@ -14,7 +14,7 @@ It works with the several hundred controllers SDL knows and keeps out of the way
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-OpenController is open source (MIT) and in beta, at version 0.8.0. With so many controllers out
+OpenController is open source (MIT) and in beta, at version 0.8.1. With so many controllers out
 there, some will not work as they should yet and some features are still missing, so every report
 helps. If your controller is not recognised, a button does nothing or anything else goes wrong,
 feel free to [open an issue](https://github.com/Brunovncs/OpenController/issues); see
@@ -32,7 +32,7 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.8.0-windows-x64-setup.exe` and run it. It installs for your user only,
+Download `open-controller-0.8.1-windows-x64-setup.exe` and run it. It installs for your user only,
 without administrator rights, adds OpenController to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
@@ -40,7 +40,7 @@ do it, and it updates in place: the running copy quits first, and your settings,
 too. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.8.0-windows-x64.zip`, extract it anywhere
+To run it without installing, download `open-controller-0.8.1-windows-x64.zip`, extract it anywhere
 and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
 on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
 administrator rights.
@@ -52,6 +52,14 @@ games so a game that also understands a DualSense does not see it twice. ViGEmBu
 HidHide recommended. Settings, Requirements in the window shows whether each is installed and in
 which version, and installs or updates it when you click; the same page offers DsHidMini and
 BthPS3, which a DualShock 3 needs. Nothing is installed on its own.
+
+Settings, Advanced can switch the virtual controllers to [VIIPER](https://github.com/Alia5/VIIPER)
+instead. It is experimental and off by default, and ViGEmBus stays the recommended choice. VIIPER
+makes the same Xbox 360 controllers with [usbip-win2](https://github.com/vadimgrn/usbip-win2), a
+USB/IP driver, and a small server program that OpenController starts and stops. With VIIPER
+chosen, Requirements offers both: usbip-win2 needs administrator rights and a restart, and the
+server is unpacked next to OpenController. Switching makes the virtual controllers again, so close
+your games first. If VIIPER does not start, OpenController goes back to ViGEmBus and says so.
 
 To build and install from source instead, with Windows 10 or 11 and [Rust](https://rustup.rs):
 
@@ -65,22 +73,31 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.8.0-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
+Download `open-controller-0.8.1-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
 recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
 with an entry in your applications menu, and a udev rule, which asks for your password once. The
 rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
 reports of the controllers in the model table (their extra buttons, gyro and light), as Steam's
 own rules do; without it OpenController can do neither. `./install.sh --no-rule` skips it, and
-Settings, Requirements in the window installs it later through polkit. `./uninstall.sh` removes
-it again and asks whether to delete your settings too.
+Settings, Requirements in the window installs it later through polkit. Run with `sudo`, the script
+installs for the user who ran it. It stops with an error when the rule can't be installed or the
+kernel has no uinput, as on WSL. `./uninstall.sh` removes it all again and asks whether to delete
+your settings too.
 
-The window needs `libxkbcommon-x11` and Vulkan or OpenGL drivers, which desktops have. The resident
-process runs in the background without an icon of its own: the window is opened from the
-applications menu, and "Start when you sign in" adds an XDG autostart entry.
+The window needs `libxkbcommon-x11` (`libxkbcommon-x11-0` on Ubuntu and Debian, `libxkbcommon-x11`
+on Fedora and Arch) and Vulkan or OpenGL drivers, which desktops have; `install.sh` lists any
+library that is missing. The resident process runs in the background without an icon of its own:
+the window is opened from the applications menu, and "Start when you sign in" adds an XDG
+autostart entry.
+
+Games that read a PlayStation or Nintendo controller directly, as Steam Input and many SDL games
+do, still see it next to its Xbox controller, so a press can count twice. Turn off PlayStation and
+Nintendo support in Steam's controller settings if that happens. The touchpad of a PlayStation
+controller keeps moving the pointer, as it does without OpenController.
 
 ### macOS
 
-Download `open-controller-0.8.0-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
+Download `open-controller-0.8.1-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
 move OpenController to Applications. It is not notarised: the first time, open it with a
 right-click and Open. macOS lets no program create game controllers without an entitlement Apple
 grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
@@ -172,10 +189,19 @@ players.
 
 A controller with a gyro (DualShock 4, DualSense, Switch Pro, Joy-Cons, Steam Deck, 8BitDo pads in
 D-input mode) can aim by turning it: its rotation is added to the right stick, always, only while
-the left trigger is pulled (aiming down sights) or while a chosen button is held. A half turn a
-second is the stick all the way at 100 % sensitivity; a small deadzone keeps a still hand still, a
-filter smooths slow movement without delaying fast turns, and the stick keeps working. Each
-friend aims with their own controller, which a gyro mapped to the mouse would not allow.
+the left trigger is pulled (aiming down sights) or while a chosen button is held. That button can
+also work as a switch: one press turns the gyro on, the next turns it off. The game still gets the
+button. A half turn a second is the stick all the way at 100 % sensitivity; a small deadzone keeps
+a still hand still, a filter smooths slow movement without delaying fast turns, and the stick
+keeps working. Each friend aims with their own controller, which a gyro mapped to the mouse would
+not allow.
+
+The aim can be tuned further: a sensitivity of its own while the left trigger is pulled, a slower
+or faster up and down, and a button that pauses the gyro while held, to put the controller back
+without moving the aim. Under Advanced, acceleration makes fast turns go further so slow ones stay
+precise, steadying shrinks movements slower than a few degrees a second so a shaking hand holds
+still, and the gyro's anti-deadzone (12 % unless changed) sets the smallest push a slow turn gives.
+Profiles from older versions aim as they did.
 
 A worn stick that drifts can get a radial deadzone, and an anti-deadzone makes games react to the
 first movement past it. Both are off unless set: games apply their own.
@@ -200,6 +226,21 @@ nothing else, and the HID reports of the Lenovo Legion Go, Go 2 and Go S (Y1 to 
 Legion buttons and the wheel's click). They can become keys and macros; Xbox buttons need a
 virtual controller, which a built-in pad does not get. This comes from what other projects
 document about these machines and has not been tried on one yet.
+
+### Keeping a controller native
+
+"Keep native" on a controller's page takes OpenController out of the way for that controller. No
+Xbox controller is made for it, it is not hidden, and nothing is written to it: no light, no
+player number, no rumble. Games see the real controller, so a game that knows a DualSense gets
+its button prompts, adaptive triggers and, over the cable, haptic feedback. This is also the way
+to use a DS5Dongle, which shows a Bluetooth DualSense to the PC as a wired one, or a DualSense on
+Linux, where the kernel driver already passes almost everything on.
+
+Profiles, gyro aiming and remapped buttons do not apply while a controller is native. Close the
+game before switching: a game that is open does not notice the controller appear, and one that
+already opened it keeps it after it goes back to Xbox, so it would read it twice. A controller
+without a serial number shares its settings with every controller of its model, and so does this
+choice. With "Hide original controllers" off, native only removes the Xbox controller.
 
 ## Supported controllers
 
@@ -283,14 +324,25 @@ tree, and ignored. That slot is found where games look: ViGEmBus answers the que
 another XInput controller holds slot 0, so a new virtual controller shows a marker (four stick
 positions inside every game's deadzone) and XInput is read until one slot shows it.
 
+VIIPER, when chosen, is a separate program (`viiper.exe`, GPL-3) that OpenController starts on
+localhost only, inside a Job Object so it ends with OpenController, and talks to over its TCP API:
+one request to add each controller, then a stream with reports one way and rumble the other. Its
+controllers are told apart from real USB devices by their place under usbip-win2's virtual host
+controller and the name VIIPER gives them.
+
 On Linux each virtual controller is a uinput device shaped like the one the kernel's `xpad` driver
 makes for a real Xbox 360 controller (same ids, name, buttons and axis ranges), so SDL, Wine,
 Proton and native games take it for one; force-feedback effects a game uploads to it come back as
 rumble. Hiding takes an exclusive grab on the event nodes the kernel made for the physical
 controller, which Wine, Proton and most games read; OpenController reads it through its `hidraw`
-node, which the grab leaves alone. Grabs end with the process, so a crash leaves nothing hidden.
-Keys and macros go through a uinput keyboard of OpenController's own. Players are numbered in the
-order their virtual controllers were made, since Linux has no XInput slots to read back.
+node, which the grab leaves alone. A game that opens the `hidraw` node itself still sees the
+controller (see Limitations). The event nodes can appear a moment after the `hidraw` node, as a
+DualSense's do over Bluetooth, so a new controller is watched for a few seconds and each node is
+grabbed as it comes. Nodes the user may not open, such as the touchpad and motion sensors on most
+systems, are left alone. Grabs end with the process, so a crash leaves nothing hidden. Keys and
+macros go through a uinput keyboard of OpenController's own. Players are numbered in the order
+their virtual controllers were made, with no limit of four, since Linux has no XInput slots to
+read back; when one leaves, the ones after it move up, as games count them.
 
 The window talks to the resident process over a named pipe private to the user and the session
 (a Unix socket in the user's runtime directory on Linux and macOS), with JSON messages: snapshots one way (60 per second while it is open, so the input view is live),
@@ -353,14 +405,16 @@ start-up. SDL is built from source and linked statically, which needs CMake and 
 Without the Visual Studio build tools, the GNU toolchain works for this folder
 (`rustup override set stable-x86_64-pc-windows-gnu`) with a MinGW gcc on `PATH`.
 
-The 76 tests on Windows (68 on Linux and macOS, where the Windows drivers' do not apply) cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
+The 138 tests on Windows (117 on Linux, where the Windows drivers' do not apply, and fewer on macOS) cover the Xbox report mapping and the stick-noise filter, the slot roster (handoff,
 grace period, two connections of one controller), device identity and connection type, the
 ViGEmBus and HidHide request layouts and IOCTL codes, HidHide's list handling (other programs'
 entries survive) and its journal file, the bundled mappings, the table of known models and the
 extra buttons' names, families and drawings, the assignments (what an Xbox button adds to a
 report, macro limits, keys pressed and let go in order, extended keys, recorded keys), profiles
 (edits, limits, deleting the one in use, programs that switch them) and light colours, the stick
-deadzone, the gyro's aim and filter, the touchpad's halves, the handhelds' firmware names and HID
+deadzone, the gyro's aim and filter (aiming sensitivity, up and down, acceleration, steadying,
+anti-deadzone, the toggle and the pause button, and that the defaults aim as 0.8.0 did), the
+touchpad's halves, the handhelds' firmware names and HID
 reports, the XInput slot markers, the pinned
 driver installers and version checks, the update check (versions and release parsing), the
 settings file and a real pipe round trip. These talk to
@@ -372,6 +426,8 @@ cargo run -p open-controller-core --release --example latency   # poll loop and 
 cargo run -p open-controller-core --release --example loopback  # the whole engine, with a simulated controller
 cargo test -p open-controller-core -- --ignored hidhide         # hides a made-up device, shows it, and checks crash recovery
 cargo test -p open-controller-core -- --ignored download        # downloads a driver installer and checks it, without running it
+cargo test -p open-controller-core -- --ignored unpacks_the_viiper  # downloads VIIPER's server and unpacks it, without running it
+cargo run -p open-controller-core --release --example viiper    # VIIPER's experiments V1 to V5; needs usbip-win2 and its server
 ```
 
 `loopback` attaches an SDL virtual controller in the same process and checks, through XInput, that
@@ -379,8 +435,8 @@ it gets a slot and its player number, that stick, Y axis and A arrive, that a ba
 to Y presses Y and one assigned to a key (F24, which nothing uses) holds it while held, that
 switching to another profile applies at once and lets go of the old one's keys, that a click on
 the left half of its touchpad is a button of its own, that a profile naming the program in front
-takes over and gives way, that its gyro turns the right stick (always, or only with the left
-trigger pulled), that a stick deadzone centres a small movement, that a second controller and it
+takes over and gives way, that its gyro turns the right stick (always, only with the left trigger
+pulled, or switched on and off by a button, with another button pausing it), that a stick deadzone centres a small movement, that a second controller and it
 trade players with input reaching each other's slot, that rumble set by a "game" reaches it, that
 disconnecting and reconnecting keeps the slot, and that stopping unplugs it.
 
@@ -407,11 +463,16 @@ Edge into the `.ico` files.
   Proton are), and handheld buttons are left to Handheld Daemon or InputPlumber.
 - On macOS there are no virtual controllers, player numbers, gyro aiming or hiding; see Installing.
 - ViGEmBus is retired upstream: it is stable, but it gets no new versions.
+- VIIPER is experimental. usbip-win2 is a kernel driver too, so it moves the risk rather than
+  removing it, and VIIPER is pinned to one usbip-win2 version because their interface changed
+  between releases. Its server shows a VIIPER icon in the notification area while it runs;
+  quitting it there sends OpenController back to ViGEmBus.
 - XInput games see at most four controllers. A fifth one gets a virtual controller that only
   DirectInput, Windows.Gaming.Input and GameInput games can see; the window says so.
-- Everything is an Xbox 360 controller. Games that show PlayStation button prompts for a DualSense
-  will show Xbox ones, and the DualSense's adaptive triggers, touchpad and motion sensors are not
-  passed on.
+- Everything is an Xbox 360 controller unless it is kept native. Games that show PlayStation
+  button prompts for a DualSense will show Xbox ones, and the DualSense's adaptive triggers,
+  touchpad and motion sensors are not passed on. Keeping it native gives those back to the games
+  that support them, without OpenController's profiles (see Keeping a controller native).
 - Hiding needs HidHide, and a game that opened a controller before OpenController hid it keeps it
   until the game restarts. If Steam Input is on for PlayStation or Switch controllers, Steam reads
   them as well; turn it off for those controllers in Steam's settings.

@@ -1,6 +1,6 @@
 //! The core of OpenController: the engine that reads every connected controller through SDL 3
-//! and presents each one to games as a virtual Xbox 360 controller (ViGEmBus on Windows, uinput
-//! on Linux), hiding the original (HidHide, an evdev grab), and the protocol between the
+//! and presents each one to games as a virtual Xbox 360 controller (ViGEmBus on Windows, or the
+//! experimental VIIPER, and uinput on Linux), hiding the original (HidHide, an evdev grab), and the protocol between the
 //! resident process and the window. On macOS, which lets no program create controllers, it
 //! types keys for extra buttons and sets lights. What differs between systems sits behind
 //! `cfg` in [`platform`] and its modules; the mapping, device and roster logic is plain Rust and
@@ -33,6 +33,8 @@ pub mod update;
 #[cfg(windows)]
 pub mod bluetooth;
 #[cfg(windows)]
+mod bus;
+#[cfg(windows)]
 pub mod devnode;
 #[cfg(windows)]
 pub mod drivers;
@@ -40,6 +42,8 @@ pub mod drivers;
 pub mod hidhide;
 #[cfg(windows)]
 pub mod vigem;
+#[cfg(windows)]
+pub mod viiper;
 #[cfg(windows)]
 mod win;
 #[cfg(windows)]

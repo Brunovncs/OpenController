@@ -58,25 +58,32 @@ fn string_property(node: u32, key: &DEVPROPKEY) -> Option<String> {
     (ok == CR_SUCCESS).then(|| from_wide(&buf))
 }
 
-/// The device and its ancestors, nearest first, as (instance id, service).
-fn lineage(instance_id: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut node = locate(instance_id);
-    while let Some(n) = node {
-        if out.len() == MAX_DEPTH {
-            break;
-        }
-        out.push((id_of(n).unwrap_or_default(), string_property(n, &DEVPKEY_Device_Service).unwrap_or_default()));
-        node = parent(n);
-    }
-    out
+/// True when the device is one of the virtual controllers this or another program plugged in.
+/// Reading those back would loop input into itself.
+pub fn is_virtual(interface_path: &str) -> bool {
+    instance_id(interface_path).is_some_and(|id| is_virtual_instance(&id))
 }
 
-/// True when the device descends from ViGEmBus: one of the virtual controllers this or another
-/// program plugged in. Reading those back would loop input into itself.
-pub fn is_virtual(interface_path: &str) -> bool {
-    instance_id(interface_path).is_some_and(|id| lineage(&id).iter().any(|(_, service)| service.eq_ignore_ascii_case("ViGEmBus")))
+/// ViGEmBus's controllers descend from its bus. VIIPER's descend from usbip-win2's virtual host
+/// controller (`usbip2_ude`), as does any real USB device shared from another computer, so they
+/// are told apart by the name VIIPER's controller gives itself.
+fn is_virtual_instance(instance_id: &str) -> bool {
+    let mut viiper = false;
+    let mut node = locate(instance_id);
+    for _ in 0..MAX_DEPTH {
+        let Some(n) = node else { break };
+        let service = string_property(n, &DEVPKEY_Device_Service).unwrap_or_default();
+        if service.eq_ignore_ascii_case("ViGEmBus") || (viiper && service.eq_ignore_ascii_case("usbip2_ude")) {
+            return true;
+        }
+        viiper |= string_property(n, &DEVPKEY_Device_BusReportedDeviceDesc).is_some_and(|d| d.trim() == VIIPER_PRODUCT);
+        node = parent(n);
+    }
+    false
 }
+
+/// The product string of VIIPER's Xbox 360 controller (`device/xbox360/device.go`).
+const VIIPER_PRODUCT: &str = "VIIPER Controller";
 
 /// Bluetooth is told from the device path on Windows (`device::link`).
 pub fn is_bluetooth(_: &str) -> bool {
@@ -118,7 +125,7 @@ pub fn usb_product_name(vendor: u16, product: u16) -> Option<String> {
     present_ids("USB")
         .into_iter()
         .filter(|id| id.to_ascii_uppercase().starts_with(&prefix))
-        .filter(|id| !lineage(id).iter().any(|(_, service)| service.eq_ignore_ascii_case("ViGEmBus")))
+        .filter(|id| !is_virtual_instance(id))
         .find_map(|id| string_property(locate(&id)?, &DEVPKEY_Device_BusReportedDeviceDesc))
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty())

@@ -9,6 +9,7 @@ use gpui::{AnyElement, Context, IntoElement, ParentElement, StatefulInteractiveE
 use open_controller_core::drivers::{self, PACKAGES};
 pub use open_controller_core::drivers::{Component, Outcome};
 use open_controller_core::i18n::{Text, fill};
+use open_controller_core::platform::VirtualDriver;
 use open_controller_core::{Driver, Snapshot};
 use std::path::Path;
 
@@ -31,16 +32,18 @@ pub fn attention(snap: &Snapshot, text: &'static Text) -> Option<&'static str> {
         Some(text.vigem_missing)
     } else if snap.hiding && !matches!(snap.hidhide, Driver::Ready { .. }) {
         Some(text.hidhide_missing)
+    } else if matches!(snap.viiper, Driver::Missing | Driver::Failed(_)) {
+        Some(text.viiper_fallback)
     } else {
         None
     }
 }
 
-/// Whether a driver works, as far as can be told: the engine's own view for the two it uses,
-/// Programs and Features for the rest.
+/// Whether a driver works, as far as can be told: the engine's own view for the two it uses
+/// (ViGEmBus only while it makes the controllers), Programs and Features for the rest.
 fn state(c: Component, snap: &Snapshot, installed: Option<&String>) -> (bool, Option<String>) {
     let live = match c {
-        Component::ViGEmBus => Some(&snap.vigem),
+        Component::ViGEmBus if snap.bus == VirtualDriver::ViGEmBus => Some(&snap.vigem),
         Component::HidHide => Some(&snap.hidhide),
         _ => None,
     };
@@ -106,16 +109,10 @@ impl MainView {
         self.requirement(card, text)
     }
 
-    pub fn render_requirements(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    /// Drivers that go together, under a title saying what they are for.
+    fn driver_group(&self, heading: &'static str, desc: &'static str, cards: [gpui::Div; 2]) -> gpui::Div {
         let t = self.theme;
-        let text = self.model.read(cx).text;
-        let required = group().child(self.driver_card(Component::ViGEmBus, Need::Required, text.vigem_desc, cx)).child(self.driver_card(
-            Component::HidHide,
-            Need::Recommended,
-            text.hidhide_desc,
-            cx,
-        ));
-        let ps3 = card(&t)
+        card(&t)
             .flex()
             .flex_col()
             .gap(px(4.))
@@ -128,17 +125,41 @@ impl MainView {
                     .px(px(12.))
                     .pt(px(12.))
                     .pb(px(8.))
-                    .child(title(text.ps3_title, t.text))
-                    .child(caption(text.ps3_desc, t.text2)),
+                    .child(title(heading, t.text))
+                    .child(caption(desc, t.text2)),
             )
-            .child(self.driver_card(Component::DsHidMini, Need::Optional, text.dshidmini_desc, cx).border_0())
-            .child(self.driver_card(Component::BthPs3, Need::Optional, text.bthps3_desc, cx).border_0());
+            .children(cards.map(|c| c.border_0()))
+    }
+
+    pub fn render_requirements(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let t = self.theme;
+        let model = self.model.read(cx);
+        let (text, viiper) = (model.text, model.prefs.virtual_driver == VirtualDriver::Viiper);
+        let required = group().child(self.driver_card(Component::ViGEmBus, Need::Required, text.vigem_desc, cx)).child(self.driver_card(
+            Component::HidHide,
+            Need::Recommended,
+            text.hidhide_desc,
+            cx,
+        ));
+        // Only for whoever chose VIIPER in Advanced: everyone else never needs them.
+        let viiper = viiper.then(|| {
+            let cards = [
+                self.driver_card(Component::UsbipWin2, Need::Required, text.usbip_desc, cx),
+                self.driver_card(Component::Viiper, Need::Required, text.viiper_server_desc, cx),
+            ];
+            self.driver_group(text.viiper_title, text.viiper_desc, cards)
+        });
+        let ps3 = [
+            self.driver_card(Component::DsHidMini, Need::Optional, text.dshidmini_desc, cx),
+            self.driver_card(Component::BthPs3, Need::Optional, text.bthps3_desc, cx),
+        ];
         div()
             .flex()
             .flex_col()
             .child(required)
+            .children(viiper.map(|v| div().pt(px(12.)).child(v)))
             .child(div().h(px(12.)))
-            .child(ps3)
+            .child(self.driver_group(text.ps3_title, text.ps3_desc, ps3))
             .child(caption(text.install_note, t.text3).pt(px(10.)))
             .into_any_element()
     }

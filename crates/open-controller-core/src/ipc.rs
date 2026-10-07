@@ -5,6 +5,7 @@
 
 use crate::engine::{PadKey, Snapshot};
 use crate::i18n::Lang;
+use crate::platform::VirtualDriver;
 use crate::profile::Edit;
 use crate::report::Diagnosis;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(unix, path = "ipc/unix.rs")]
 mod pipe;
 
-pub use pipe::{Pipe, Reader, is_disconnect};
+pub use pipe::{Pipe, Reader, is_disconnect, remove_socket};
 
 /// What the resident process tells the window.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -42,6 +43,8 @@ pub enum ToTray {
     SwapPlayers(PadKey, PadKey),
     /// What is known about a controller, for a report on it.
     Diagnose(PadKey),
+    /// The driver that makes the virtual controllers (Windows).
+    SetVirtualDriver(VirtualDriver),
     Quit,
 }
 
@@ -53,6 +56,7 @@ pub struct Prefs {
     /// Ask GitHub for a newer version when the window opens.
     pub check_updates: bool,
     pub lang: Lang,
+    pub virtual_driver: VirtualDriver,
 }
 
 #[cfg(test)]
@@ -61,6 +65,10 @@ mod tests {
     use super::*;
     use crate::engine::Snapshot;
 
+    fn prefs() -> Prefs {
+        Prefs { hide_originals: true, autostart: false, check_updates: true, lang: Lang::Pt, virtual_driver: VirtualDriver::Viiper }
+    }
+
     #[test]
     fn messages_round_trip_over_a_real_pipe() {
         let name = format!("{}.test{}", pipe_name(), std::process::id());
@@ -68,7 +76,7 @@ mod tests {
         let server = std::thread::spawn(move || {
             let pipe = Pipe::create_at(&server_name).expect("create");
             pipe.accept().expect("accept");
-            pipe.send(&ToWindow::Prefs(Prefs { hide_originals: true, autostart: false, check_updates: true, lang: Lang::Pt })).unwrap();
+            pipe.send(&ToWindow::Prefs(prefs())).unwrap();
             // A large message, split across several reads.
             let big = Snapshot { sdl_error: Some("x".repeat(100_000)), ..Snapshot::default() };
             pipe.send(&ToWindow::Snapshot(big)).unwrap();
@@ -85,10 +93,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         };
         let mut r = client.reader();
-        assert_eq!(
-            r.recv::<ToWindow>().unwrap(),
-            ToWindow::Prefs(Prefs { hide_originals: true, autostart: false, check_updates: true, lang: Lang::Pt })
-        );
+        assert_eq!(r.recv::<ToWindow>().unwrap(), ToWindow::Prefs(prefs()));
         match r.recv::<ToWindow>().unwrap() {
             ToWindow::Snapshot(s) => assert_eq!(s.sdl_error.map(|e| e.len()), Some(100_000)),
             other => panic!("{other:?}"),

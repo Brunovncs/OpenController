@@ -67,6 +67,10 @@ Source: "{#Root}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Type: files; Name: "{userprograms}\Open Controller.lnk"
 Type: files; Name: "{userdesktop}\Open Controller.lnk"
 
+[UninstallDelete]
+; VIIPER's server, unpacked here by the app when the user installs it from Requirements.
+Type: filesandordirs; Name: "{app}\viiper"
+
 [Icons]
 Name: "{userprograms}\OpenController"; Filename: "{app}\open-controller.exe"; WorkingDir: "{app}"
 Name: "{userdesktop}\OpenController"; Filename: "{app}\open-controller.exe"; WorkingDir: "{app}"; Tasks: desktopicon

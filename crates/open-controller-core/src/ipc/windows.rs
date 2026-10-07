@@ -113,6 +113,9 @@ impl Io {
     }
 }
 
+/// The pipe goes away with the process, so there is no file to remove.
+pub fn remove_socket() {}
+
 /// One end of the pipe. Messages are sent from any thread; one thread reads.
 pub struct Pipe {
     handle: Handle,

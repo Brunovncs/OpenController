@@ -82,6 +82,11 @@ pub fn native(pad: &PadView) -> bool {
     matches!(pad.role, Role::Native { .. })
 }
 
+/// Whether it was chosen to stay native, so games read it and nothing of its profiles applies.
+pub fn kept_native(pad: &PadView) -> bool {
+    pad.role == Role::KeptNative
+}
+
 fn hint_text(text: &Text, h: Hint) -> &'static str {
     match h {
         Hint::EightBitDoDInput => text.hint_8bitdo,
@@ -93,6 +98,12 @@ fn hint_text(text: &Text, h: Hint) -> &'static str {
         Hint::FlydigiThirdParty => text.hint_flydigi,
         Hint::Switch2Unsupported => text.hint_switch2,
     }
+}
+
+/// On Linux, games may read PlayStation and Nintendo controllers through `hidraw` (the device rule
+/// lets them, as Steam's does), which hiding cannot reach.
+fn read_directly(pad: &PadView) -> bool {
+    cfg!(target_os = "linux") && matches!(pad.vendor, 0x054C | 0x057E) && matches!(pad.role, Role::Virtual { .. } | Role::Waiting { .. })
 }
 
 pub fn profile_label(text: &Text, pad: &PadView, i: usize) -> String {
@@ -150,7 +161,8 @@ impl MainView {
         let t = self.theme;
         let text = self.model.read(cx).text;
         let key = pad.key;
-        let assignable = pad.store.is_some();
+        let kept = kept_native(pad);
+        let assignable = pad.store.is_some() && !kept;
 
         let header = div()
             .flex()
@@ -179,7 +191,7 @@ impl MainView {
                 ),
             )
             .when(assignable, |d| d.child(self.profile_button(pad, text, cx)))
-            .when(pad.features.rumble || matches!(pad.role, Role::Native { .. }), |d| {
+            .when((pad.features.rumble || matches!(pad.role, Role::Native { .. })) && !kept, |d| {
                 d.child(
                     button("identify", text.identify, Kind::Standard, &t)
                         .on_click(cx.listener(move |this, _, _, cx| this.send(ToTray::Identify(key), cx))),
@@ -239,6 +251,7 @@ impl MainView {
             .flex()
             .flex_col()
             .child(header)
+            .when(matches!(key, PadKey::Slot(_)) && pad.store.is_some(), |d| d.child(self.native_row(pad, text, cx)))
             .when(unknown, |d| {
                 d.child(
                     div()
@@ -268,7 +281,7 @@ impl MainView {
                 )
             })
             .when(self.profile_menu && assignable, |d| d.child(self.profile_menu(pad, text, cx)))
-            .when(pad.in_use != pad.profiles.active, |d| {
+            .when(pad.in_use != pad.profiles.active && !kept, |d| {
                 d.child(
                     div()
                         .flex()
@@ -284,6 +297,38 @@ impl MainView {
                 )
             })
             .child(div().flex().items_start().gap(px(24.)).child(rail).child(div().flex_1().min_w(px(0.)).child(content)))
+            .into_any_element()
+    }
+
+    /// The switch between an Xbox controller and the controller itself, with what it changes.
+    fn native_row(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
+        let t = self.theme;
+        let key = pad.key;
+        let on = kept_native(pad);
+        let hiding = self.model.read(cx).snapshot.hiding;
+        let notes = [
+            on.then_some(text.native_profiles_off),
+            Some(text.native_close_game),
+            pad.store.as_deref().is_some_and(|s| s.starts_with("model:")).then_some(text.native_all_alike),
+            (!hiding).then_some(text.native_not_hidden),
+        ];
+        row(&t)
+            .id("native")
+            .mb(px(16.))
+            .cursor_pointer()
+            .when(on, |d| d.border_color(t.accent))
+            .hover(move |s| s.bg(t.layer_hover))
+            .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, Edit::Native(!on), cx)))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .gap(px(2.))
+                    .child(body(text.keep_native, t.text))
+                    .child(caption(notes.into_iter().flatten().collect::<Vec<_>>().join(" "), t.text2)),
+            )
+            .child(crate::widgets::switch(on, text.on, text.off, &t))
             .into_any_element()
     }
 
@@ -495,7 +540,7 @@ impl MainView {
             .flex_none()
             .overflow_hidden()
             .child(stage(&t).flex().justify_center().px(px(20.)).pt(px(28.)).pb(px(20.)).child(art::controller(pad, 1.1, &t)));
-        let hint = pad.hint.map(|h| {
+        let hint = pad.hint.map(|h| hint_text(text, h)).or_else(|| read_directly(pad).then_some(text.linux_direct_read)).map(|h| {
             div()
                 .flex()
                 .items_start()
@@ -505,7 +550,7 @@ impl MainView {
                 .rounded(px(radius::CARD))
                 .bg(t.accent_soft)
                 .child(icon(glyph::INFO, 16., t.accent).mt(px(2.)))
-                .child(body(hint_text(text, h), t.text).flex_1().min_w(px(0.)))
+                .child(body(h, t.text).flex_1().min_w(px(0.)))
         });
         div()
             .flex()
@@ -526,8 +571,8 @@ impl MainView {
     fn extras_column(&self, pad: &PadView, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> Div {
         let key = pad.key;
         let mut col = div().flex().flex_col().child(title(text.extra_buttons, t.text).pb(px(4.)));
-        if pad.extras.is_empty() {
-            let message = if matches!(pad.role, Role::Native { .. }) { text.no_extras_native } else { text.no_extras };
+        if pad.extras.is_empty() || kept_native(pad) {
+            let message = if matches!(pad.role, Role::Native { .. } | Role::KeptNative) { text.no_extras_native } else { text.no_extras };
             return col.child(caption(message, t.text2));
         }
         col = col.child(caption(text.extras_hint, t.text2).pb(px(12.)));
@@ -795,6 +840,7 @@ impl MainView {
             Role::Native { player: None } => text.native.into(),
             Role::Unmapped => text.unmapped.into(),
             Role::Unavailable => text.unavailable.into(),
+            Role::KeptNative => text.as_native.into(),
         };
         let note = match (&pad.role, pad.hidden) {
             (Role::Virtual { .. } | Role::Waiting { .. }, true) => Some(text.original_hidden),

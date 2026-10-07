@@ -37,6 +37,9 @@ pub fn restore(data_dir: &std::path::Path) -> i32 {
     }
 }
 
+/// A window that fails to start is only written to the log here.
+pub fn window_failed(_: i18n::Lang) {}
+
 struct MainState {
     control: Arc<Control>,
     tray: Option<Tray>,

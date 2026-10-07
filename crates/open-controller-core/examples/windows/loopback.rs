@@ -95,7 +95,8 @@ fn main() {
     let mut profiles = Profiles::default();
     profiles.apply(Edit::Bind { button: RIGHT_PADDLE1, action: Some(Action::Xbox(XboxButton::Y)) });
     profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord { mods: 0, key: VK_F24 })) });
-    let config = Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into() };
+    let config =
+        Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into(), driver: Default::default() };
     let engine = Engine::start(config, || {});
     wait_for("the engine", Duration::from_secs(10), || engine.snapshot().running.then_some(()));
     if !matches!(engine.snapshot().vigem, open_controller_core::Driver::Ready { .. }) {
@@ -237,7 +238,7 @@ fn main() {
             std::thread::sleep(Duration::from_millis(4));
         }
     };
-    profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Always, sensitivity: 100, invert_y: false }));
+    profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Always, ..Gyro::default() }));
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
     std::thread::sleep(Duration::from_millis(50));
     gyro(2.0, 150);
@@ -245,7 +246,7 @@ fn main() {
     gyro(0.0, 300);
     let still = xinput(slot).map(|s| s.Gamepad.sThumbRX).unwrap_or(1);
     check(turned < -20000 && still == 0, &format!("the gyro turns the right stick ({turned}), and a still controller leaves it centred"));
-    profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 100, invert_y: false }));
+    profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, ..Gyro::default() }));
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
     std::thread::sleep(Duration::from_millis(50));
     gyro(2.0, 150);
@@ -256,6 +257,36 @@ fn main() {
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFT_TRIGGER.0, 0) };
     gyro(0.0, 100);
     check(not_aiming == 0 && aiming < -20000, "with \"while aiming\", the gyro only works with the left trigger pulled");
+    let (rb, lb) = (SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER.0 as u8, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER.0 as u8);
+    profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Holding(rb), toggle: true, off_button: Some(lb), ..Gyro::default() }));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    std::thread::sleep(Duration::from_millis(50));
+    let press = |b: u8| {
+        button(b, true);
+        std::thread::sleep(Duration::from_millis(30));
+        button(b, false);
+        std::thread::sleep(Duration::from_millis(30));
+    };
+    let rx = || xinput(slot).map(|s| s.Gamepad.sThumbRX).unwrap_or(1);
+    gyro(2.0, 150);
+    let untoggled = rx();
+    press(rb);
+    gyro(2.0, 150);
+    let toggled = rx();
+    button(lb, true);
+    gyro(2.0, 150);
+    let paused = rx();
+    button(lb, false);
+    gyro(2.0, 150);
+    let resumed = rx();
+    press(rb);
+    gyro(2.0, 150);
+    let toggled_off = rx();
+    gyro(0.0, 100);
+    check(
+        untoggled == 0 && toggled < -20000 && paused == 0 && resumed < -20000 && toggled_off == 0,
+        &format!("a toggle turns the gyro on and off ({untoggled}, {toggled}, {toggled_off}), and the off button stops it while held ({paused})"),
+    );
     profiles.apply(Edit::Gyro(Gyro::default()));
 
     // A deadzone for a drifting stick, on the X axis alone (the radial deadzone counts both).

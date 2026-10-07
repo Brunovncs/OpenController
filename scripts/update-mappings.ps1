@@ -7,5 +7,7 @@ $commit = (git ls-remote $repo HEAD).Split()[0]
 $lines = $raw -split "`n" | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_ -match 'platform:Windows,' }
 $header = "# Windows entries of SDL_GameControllerDB ($repo),`n# commit $commit, zlib license. Refresh with scripts/update-mappings.ps1.`n"
 $out = Join-Path $PSScriptRoot '..\crates\open-controller-core\assets\gamecontrollerdb.txt'
-[IO.File]::WriteAllText($out, $header + ($lines -join "`n") + "`n")
+# OpenController's own lines stay at the end, from their comment on.
+$own = ([IO.File]::ReadAllText($out) -split "(?m)^(?=# OpenController's own)", 2)[1]
+[IO.File]::WriteAllText($out, $header + ($lines -join "`n") + "`n" + $own)
 Write-Host "$($lines.Count) mappings from $commit"

@@ -102,7 +102,8 @@ fn main() {
     profiles.apply(Edit::Bind { button: RIGHT_PADDLE1, action: Some(Action::Xbox(XboxButton::Y)) });
     profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord { mods: 0, key: VK_F24 })) });
     let dir = std::env::temp_dir().join("open-controller-loopback");
-    let engine = Engine::start(Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles)].into() }, || {});
+    let config = Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles)].into(), driver: Default::default() };
+    let engine = Engine::start(config, || {});
     wait_for("the engine", Duration::from_secs(10), || engine.snapshot().running.then_some(()));
     if !matches!(engine.snapshot().vigem, open_controller_core::Driver::Ready { .. }) {
         println!("uinput is not available: {:?}", engine.snapshot().vigem);

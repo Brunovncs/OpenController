@@ -36,6 +36,10 @@ pub enum GyroMode {
 }
 
 /// Aiming by tilting the controller: its rotation added to the right stick.
+///
+/// Fields added after 0.8.0 default to what 0.8.0 did, so an older file reads the same, and an
+/// older version reading a newer file skips them. The toggle is a field of its own rather than
+/// a mode for the same reason: a mode an older version does not know would lose the profiles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Gyro {
@@ -44,11 +48,61 @@ pub struct Gyro {
     /// stick all the way.
     pub sensitivity: u16,
     pub invert_y: bool,
+    /// The sensitivity while the left trigger is pulled, as when aiming down sights; `None` keeps
+    /// `sensitivity`. Not used in `GyroMode::Aiming`, where the trigger is always pulled.
+    pub aim_sensitivity: Option<u16>,
+    /// Up and down movement in percent of the sideways one.
+    pub y_scale: u16,
+    /// With `GyroMode::Holding`: a press turns the gyro on, the next one off.
+    pub toggle: bool,
+    /// A button that stops the gyro while held, to put the controller back without turning the
+    /// camera.
+    pub off_button: Option<u8>,
+    pub acceleration: Option<Acceleration>,
+    /// Below this speed, in degrees a second, movement is scaled down towards nothing, so a
+    /// shaking hand holds the aim still. 0 is off.
+    pub tightening: u16,
+    /// The smallest stick push a turn past the gyro's noise gives, in percent, so games react to
+    /// slow turns.
+    pub anti_deadzone: u8,
 }
 
 impl Default for Gyro {
     fn default() -> Self {
-        Gyro { mode: GyroMode::Off, sensitivity: 100, invert_y: false }
+        Gyro {
+            mode: GyroMode::Off,
+            sensitivity: 100,
+            invert_y: false,
+            aim_sensitivity: None,
+            y_scale: 100,
+            toggle: false,
+            off_button: None,
+            acceleration: None,
+            tightening: 0,
+            anti_deadzone: 12,
+        }
+    }
+}
+
+/// Faster turns, a higher sensitivity: slow turns stay precise and a flick turns far.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Acceleration {
+    /// The sensitivity at `to` and above, in percent of the sensitivity in use.
+    pub factor: u16,
+    /// Speeds in degrees a second: below `from` the sensitivity in use, rising to `factor` at `to`.
+    pub from: u16,
+    pub to: u16,
+}
+
+impl Acceleration {
+    pub const LIGHT: Acceleration = Acceleration { factor: 150, from: 60, to: 180 };
+    pub const STRONG: Acceleration = Acceleration { factor: 200, from: 40, to: 160 };
+}
+
+impl Default for Acceleration {
+    fn default() -> Self {
+        Acceleration::LIGHT
     }
 }
 
@@ -100,6 +154,9 @@ impl Default for Profile {
 pub struct Profiles {
     pub list: Vec<Profile>,
     pub active: usize,
+    /// Left as it is for games: no Xbox controller is made for it and it is not hidden, so
+    /// none of the profiles apply. A version that does not know this field reads it as off.
+    pub native: bool,
 }
 
 impl Default for Profiles {
@@ -131,11 +188,13 @@ pub enum Edit {
     Rename(usize, String),
     Delete(usize),
     Select(usize),
+    /// Keeps the controller native, or makes it an Xbox controller again.
+    Native(bool),
 }
 
 impl Profiles {
     pub fn new(first: String) -> Profiles {
-        Profiles { list: vec![Profile { name: first, ..Profile::default() }], active: 0 }
+        Profiles { list: vec![Profile { name: first, ..Profile::default() }], active: 0, native: false }
     }
 
     pub fn active(&self) -> &Profile {
@@ -164,7 +223,7 @@ impl Profiles {
 
     /// Whether this is what a controller has before anything is changed, and need not be kept.
     pub fn is_default(&self) -> bool {
-        self.list.len() == 1 && self.list[0] == Profile::default()
+        !self.native && self.list.len() == 1 && self.list[0] == Profile::default()
     }
 
     pub fn apply(&mut self, edit: Edit) {
@@ -221,6 +280,7 @@ impl Profiles {
             Edit::Delete(_) => {}
             Edit::Select(i) if i < self.list.len() => self.active = i,
             Edit::Select(_) => {}
+            Edit::Native(on) => self.native = on,
         }
     }
 
@@ -265,7 +325,24 @@ fn clean_gyro(g: Gyro) -> Gyro {
         GyroMode::Holding(b) if b >= 64 => GyroMode::Off,
         m => m,
     };
-    Gyro { sensitivity: g.sensitivity.clamp(25, 400), mode, ..g }
+    // Buttons are bits of a u64; the button that holds the gyro on cannot also stop it.
+    let off_button = g.off_button.filter(|&b| b < 64 && mode != GyroMode::Holding(b));
+    let acceleration = g
+        .acceleration
+        .map(|a| Acceleration { factor: a.factor.clamp(100, 400), from: a.from.min(300), to: a.to.min(600) })
+        .filter(|a| a.to >= a.from + 10);
+    Gyro {
+        mode,
+        sensitivity: g.sensitivity.clamp(25, 400),
+        invert_y: g.invert_y,
+        aim_sensitivity: g.aim_sensitivity.map(|s| s.clamp(25, 400)),
+        y_scale: g.y_scale.clamp(25, 200),
+        toggle: g.toggle,
+        off_button,
+        acceleration,
+        tightening: g.tightening.min(30),
+        anti_deadzone: g.anti_deadzone.min(40),
+    }
 }
 
 fn clean_sticks(s: Sticks) -> Sticks {
@@ -337,7 +414,7 @@ mod tests {
         assert_eq!(p.list.len(), MAX_PROFILES);
         p.apply(Edit::Rename(0, format!(" {}\n ", "x".repeat(80))));
         assert_eq!(p.list[0].name.len(), MAX_NAME);
-        let bad = Profiles { list: vec![], active: 9 }.sanitised();
+        let bad = Profiles { list: vec![], active: 9, native: false }.sanitised();
         assert_eq!((bad.list.len(), bad.active), (1, 0));
     }
 
@@ -363,11 +440,53 @@ mod tests {
     fn new_settings_are_clamped_and_count_as_changes() {
         let mut p = Profiles::default();
         assert!(p.is_default());
-        p.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 5000, invert_y: true }));
+        p.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 5000, invert_y: true, ..Gyro::default() }));
         assert_eq!(p.active().gyro.sensitivity, 400);
         assert!(!p.is_default());
         p.apply(Edit::Sticks(Sticks { deadzone: 90, anti_deadzone: 15 }));
         assert_eq!(p.active().sticks, Sticks { deadzone: 40, anti_deadzone: 15 });
+    }
+
+    #[test]
+    fn native_is_kept_and_counts_as_a_change() {
+        let mut p = Profiles::default();
+        p.apply(Edit::Native(true));
+        assert!(p.native && !p.is_default(), "a native controller must be saved");
+        let p = p.sanitised();
+        assert!(p.native, "sanitising keeps it");
+        let mut p = p;
+        p.apply(Edit::Native(false));
+        assert!(p.is_default());
+    }
+
+    #[test]
+    fn a_file_without_native_reads_as_xbox() {
+        let p: Profiles = serde_json::from_str(r#"{"list": [{"name": ""}], "active": 0}"#).unwrap();
+        assert!(!p.native);
+        assert!(p.is_default());
+    }
+
+    /// What 0.8.0 does with a file a newer version wrote: the field it does not know is skipped,
+    /// so the controller goes back to being an Xbox controller and keeps its profiles.
+    #[test]
+    fn an_older_version_ignores_native() {
+        #[derive(Deserialize)]
+        #[serde(default)]
+        struct Before {
+            list: Vec<Profile>,
+            active: usize,
+        }
+        impl Default for Before {
+            fn default() -> Self {
+                Before { list: vec![Profile::default()], active: 0 }
+            }
+        }
+        let mut p = Profiles::new("Racing".into());
+        p.apply(Edit::Native(true));
+        let text = serde_json::to_string(&p).unwrap();
+        assert!(text.contains("\"native\":true"), "{text}");
+        let old: Before = serde_json::from_str(&text).unwrap();
+        assert_eq!((old.list[0].name.as_str(), old.active), ("Racing", 0));
     }
 
     #[test]
@@ -388,5 +507,71 @@ mod tests {
         let p = p.sanitised();
         assert_eq!(p.list[0].bindings.keys().copied().collect::<Vec<_>>(), vec![17]);
         assert_eq!(p.list[0].gyro.mode, GyroMode::Off);
+    }
+
+    #[test]
+    fn gyro_settings_are_clamped() {
+        let g = clean_gyro(Gyro {
+            mode: GyroMode::Holding(4),
+            sensitivity: 1,
+            invert_y: false,
+            aim_sensitivity: Some(9000),
+            y_scale: 5,
+            toggle: true,
+            off_button: Some(4),
+            acceleration: Some(Acceleration { factor: 50, from: 200, to: 205 }),
+            tightening: 200,
+            anti_deadzone: 90,
+        });
+        assert_eq!((g.sensitivity, g.aim_sensitivity, g.y_scale), (25, Some(400), 25));
+        assert_eq!((g.tightening, g.anti_deadzone), (30, 40));
+        assert_eq!(g.off_button, None, "the button that holds the gyro on cannot also stop it");
+        assert_eq!(g.acceleration, None, "an acceleration that ends before it starts is dropped");
+        let g = clean_gyro(Gyro {
+            off_button: Some(5),
+            acceleration: Some(Acceleration { factor: 900, from: 20, to: 2000 }),
+            ..Gyro::default()
+        });
+        assert_eq!(g.off_button, Some(5));
+        assert_eq!(g.acceleration, Some(Acceleration { factor: 400, from: 20, to: 600 }));
+        assert_eq!(clean_gyro(Gyro { off_button: Some(64), ..Gyro::default() }).off_button, None);
+        assert_eq!(clean_gyro(Gyro::default()), Gyro::default());
+    }
+
+    #[test]
+    fn a_profile_from_0_8_0_is_unchanged() {
+        let old = r#"{"list": [{"name": "", "gyro": {"mode": "Off", "sensitivity": 100, "invert_y": false}}], "active": 0}"#;
+        let p: Profiles = serde_json::from_str::<Profiles>(old).unwrap().sanitised();
+        assert!(p.is_default(), "the new gyro settings start as 0.8.0 behaved");
+        let old = r#"{"list": [{"gyro": {"mode": {"Holding": 9}, "sensitivity": 150, "invert_y": true}}]}"#;
+        let g = serde_json::from_str::<Profiles>(old).unwrap().sanitised().list[0].gyro;
+        assert_eq!(g, Gyro { mode: GyroMode::Holding(9), sensitivity: 150, invert_y: true, ..Gyro::default() });
+    }
+
+    #[test]
+    fn an_older_version_reads_the_new_gyro_settings() {
+        // What 0.8.0 knows of the gyro: it skips the fields it does not know.
+        #[derive(Deserialize)]
+        struct Old {
+            mode: GyroMode,
+            sensitivity: u16,
+            invert_y: bool,
+        }
+        let g = Gyro {
+            mode: GyroMode::Holding(9),
+            sensitivity: 150,
+            invert_y: true,
+            aim_sensitivity: Some(75),
+            y_scale: 50,
+            toggle: true,
+            off_button: Some(10),
+            acceleration: Some(Acceleration::STRONG),
+            tightening: 10,
+            anti_deadzone: 6,
+        };
+        let old: Old = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        assert_eq!((old.mode, old.sensitivity, old.invert_y), (GyroMode::Holding(9), 150, true));
+        let back: Gyro = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        assert_eq!(back, g);
     }
 }

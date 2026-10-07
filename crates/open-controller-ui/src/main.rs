@@ -7,6 +7,7 @@
 mod art;
 mod demo;
 mod detail;
+mod frame;
 mod home;
 mod icons;
 mod keys;
@@ -73,6 +74,10 @@ impl Model {
             self.demo_profiles.entry(store).or_insert_with(|| current.unwrap_or_default()).apply(edit);
             return self.refresh_demo(cx);
         }
+        if self.demo && matches!(req, ToTray::SetVirtualDriver(_)) {
+            // Shown in the window only: the resident process's controllers stay as they are.
+            return;
+        }
         if self.demo
             && let ToTray::Diagnose(key) = req
         {
@@ -125,6 +130,15 @@ fn main() {
             "--smoke" => smoke = true,
             _ => {}
         }
+    }
+    #[cfg(target_os = "linux")]
+    if !has_display() {
+        let running = connect(!smoke).is_some();
+        eprintln!("open-controller-ui: no graphical session to open the window in (DISPLAY and WAYLAND_DISPLAY are not set).");
+        if running {
+            eprintln!("OpenController keeps running in the background, so your controllers keep working.");
+        }
+        std::process::exit(1);
     }
     let Instance::First { _mutex, show } = instance::claim(APP_NAME) else { return };
     let (tx, rx) = async_channel::unbounded::<Event>();
@@ -184,8 +198,14 @@ fn main() {
         });
         let Some(window) = open_window(model.clone(), cx) else {
             eprintln!("open-controller-ui: could not open a window");
+            leave();
             std::process::exit(1);
         };
+        cx.on_app_quit(|_| {
+            leave();
+            async {}
+        })
+        .detach();
 
         cx.spawn(async move |cx| {
             while let Ok(ev) = rx.recv().await {
@@ -226,12 +246,24 @@ fn main() {
             cx.spawn(async move |cx| {
                 cx.background_executor().timer(Duration::from_millis(1500)).await;
                 println!("smoke: window drawn");
+                leave();
                 std::process::exit(0);
             })
             .detach();
         }
         cx.activate(true);
     });
+}
+
+/// Removes this window's lock and signal socket from the user's runtime directory, on its way out.
+fn leave() {
+    instance::remove_files(APP_NAME, &["show"]);
+}
+
+/// Whether there is a desktop to open the window on: the same test GPUI makes on Linux.
+#[cfg(target_os = "linux")]
+fn has_display() -> bool {
+    ["WAYLAND_DISPLAY", "DISPLAY"].iter().any(|v| std::env::var_os(v).is_some_and(|d| !d.is_empty()))
 }
 
 /// `OPEN_CONTROLLER_LANG=en` or `pt` shows the window in that language whatever was picked, for
@@ -248,7 +280,8 @@ fn open_window(model: Entity<Model>, cx: &mut App) -> Option<WindowHandle<MainVi
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(1160.), px(800.)), cx))),
         titlebar: Some(TitlebarOptions { title: Some("OpenController".into()), ..Default::default() }),
-        app_id: Some("open-controller".into()),
+        // The Wayland app id and the X11 class: the .desktop file's name, so the dock shows its icon.
+        app_id: Some("io.github.brunovncs.open-controller".into()),
         window_min_size: Some(size(px(720.), px(520.))),
         window_background: WindowBackgroundAppearance::Opaque,
         ..Default::default()

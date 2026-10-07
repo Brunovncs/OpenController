@@ -14,6 +14,12 @@ pub(super) fn pipe_name() -> String {
     runtime_dir().join("open-controller.sock").to_string_lossy().into_owned()
 }
 
+/// Removes the resident process's socket on its way out: the listening end lives in a thread
+/// that never ends, so its `Drop` does not run.
+pub fn remove_socket() {
+    let _ = std::fs::remove_file(pipe_name());
+}
+
 pub struct Pipe {
     listener: Option<(UnixListener, PathBuf)>,
     /// The connection: the client's own, or the server's current client.

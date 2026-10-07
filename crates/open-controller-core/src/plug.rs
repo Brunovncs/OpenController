@@ -94,7 +94,7 @@ mod tests {
     #[test]
     #[ignore]
     fn plug_on_the_bus_without_blocking() {
-        let bus = Arc::new(Bus::connect().expect("ViGEmBus"));
+        let bus = Arc::new(Bus::connect(crate::platform::VirtualDriver::ViGEmBus).expect("ViGEmBus"));
         let mut plugger = Plugger::start(bus.clone());
         let asked = Instant::now();
         plugger.request(SlotId(1));

@@ -3,6 +3,7 @@
 //! in front read from the X server.
 
 pub mod devnode;
+pub mod ff;
 pub mod grab;
 pub mod setup;
 pub mod uinput;

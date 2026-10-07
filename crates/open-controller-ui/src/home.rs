@@ -56,6 +56,7 @@ pub fn status(pad: &PadView, text: &Text) -> String {
         Role::Waiting { remaining, .. } => fill(text.reconnecting, remaining.as_secs() + 1),
         Role::Unmapped => text.unmapped.to_string(),
         Role::Unavailable => text.unavailable.to_string(),
+        Role::KeptNative => text.kept_native.to_string(),
     }
 }
 
@@ -179,7 +180,7 @@ impl MainView {
                     .child(caption(status(pad, text), if away { t.text3 } else { t.text2 }).min_w(px(0.)).truncate()),
             );
         // Controllers with a virtual controller can trade players by dragging one onto another.
-        let swappable = matches!(key, PadKey::Slot(_));
+        let swappable = matches!(key, PadKey::Slot(_)) && pad.role != Role::KeptNative;
         let dragged = DraggedPad { key, name: pad.name.clone(), theme: t };
         div()
             .id(("tile", i))
@@ -304,7 +305,7 @@ impl MainView {
         let connect = BLUETOOTH_SETTINGS.filter(|_| !snap.pads.is_empty()).map(|url| {
             icon_label_button("connect", glyph::ADD, text.connect_tile, Kind::Standard, &t).on_click(move |_, _, cx| cx.open_url(url))
         });
-        let swap_hint = snap.pads.iter().filter(|p| matches!(p.key, PadKey::Slot(_))).count() >= 2;
+        let swap_hint = snap.pads.iter().filter(|p| matches!(p.key, PadKey::Slot(_)) && p.role != Role::KeptNative).count() >= 2;
 
         div()
             .flex()

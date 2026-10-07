@@ -139,10 +139,30 @@ program coming to the front, so opening the window mid-game keeps the game's pro
 ## Gyro, sticks and touchpad
 
 The gyro is read only while a profile uses it (SDL turns the sensor's reports on and off), at the
-controller's own rate, on the input thread. Yaw and pitch, in radians per second, go through a
-one-euro filter (a low-pass whose cutoff rises with speed: a still hand is still, a flick is not
-delayed), a 0.03 rad/s deadzone and a 12 % anti-deadzone, so games with their own stick deadzone
-still react to a slow turn, and are added to the right stick. The stick deadzone is radial, so a
+controller's own rate, on the input thread. Whether it moves the stick is `motion::gyro_active`, a
+pure function of the profile, this report and the one before: a toggle flips when its button is
+down in this report and was up in the last. Its state lives with the device and goes back to off
+when the profile in use changes. The pause button wins over every mode but plain holding, where
+letting go already stops the gyro.
+
+Yaw and pitch, in radians per second, go through a one-euro filter (a low-pass whose cutoff rises
+with speed: a still hand is still, a flick is not delayed). Their combined speed then sets the
+sensitivity: the aiming one while the left trigger is pulled (not in the aiming mode, where it
+always is), raised towards the acceleration's factor between its two speeds. Below the steadying
+speed both axes shrink in proportion, so a tremble falls under the deadzone and a slow turn still
+gets through. Last come a fixed 0.03 rad/s deadzone, there only for sensor noise, and the
+anti-deadzone (12 % unless changed), so games with their own stick deadzone still react to a slow
+turn; the vertical scale multiplies the pitch's gain after the deadzone, so it does not move the
+noise threshold. The result is added to the right stick.
+
+All of it is kept as integers, because `Profile` and `Settings` derive `Eq`. Fields added in 0.8.1
+default to what 0.8.0 did, so an old profile is still a default one, and an older version reading
+a newer file skips them. That is also why the toggle is a `bool` next to `GyroMode::Holding`
+rather than a mode of its own: a mode an older version does not know fails the whole controller's
+profiles. The acceleration is a factor of the sensitivity in use rather than a sensitivity, so
+it follows when the sensitivity or the aiming one changes.
+
+The stick deadzone is radial, so a
 diagonal is not cut short, and off by default. The touchpad's halves and two-finger touch are
 worked out from SDL's finger positions on every report and carried as buttons past SDL's own
 (26 to 28), which made `PadState::buttons` 64 bits wide; a handheld's own buttons take 29 to 40.
@@ -169,6 +189,87 @@ install silently once allowed; an update runs the installer's own wizard, since 
 restart halfway. Nothing is installed without a click: these are kernel drivers, two of them need a
 restart, and HidHide changes which devices other programs see. ViGEmBus is retired upstream at
 1.22.0, so its pin will not move.
+
+## VIIPER, an experimental second driver
+
+ViGEmBus is retired and gets no fixes, and DS4Windows 5 moved to
+[VIIPER](https://github.com/Alia5/VIIPER), so 0.8.1 offers it as an option on Windows: off by
+default, labelled experimental in the window, chosen in Settings, Advanced. ViGEmBus stays the
+default and the recommendation. VIIPER does not remove kernel risk, it moves it: its controllers
+are attached by usbip-win2, a kernel driver too.
+
+**How it works.** VIIPER's server (`viiper.exe`, Go, GPL-3) emulates USB devices and serves them
+over USB/IP; usbip-win2 attaches them to a virtual host controller (service `usbip2_ude`), where
+Windows finds a wired Xbox 360 controller (`USB\VID_045E&PID_028E\296013F`) and gives it the
+usual xusb22 driver. OpenController never links VIIPER's code: it starts the server as a separate
+program, which also keeps OpenController MIT (VIIPER's author confirmed this reading in its issue
+17). The server is started with `--api.addr` and `--usb.addr` on 127.0.0.1 and two free ports, so
+it is not reachable from the network and does not collide with another VIIPER (DS4Windows'
+listens on 3241 and 3242). It runs inside a Job Object with "kill on close": when OpenController
+exits or crashes, Windows ends the server, USB/IP drops the connection and the controllers go.
+Its update check is turned off, and `VIIPER_*` variables in the environment are not passed on.
+
+**The protocol** (`internal/server/api` at v0.8.2). A request is `path[ payload]\0` on a new TCP
+connection, answered by one line of JSON, or of RFC 7807 problem JSON on failure, and a close; no
+password on localhost. OpenController uses `ping`, `bus/create`, `bus/{bus}/add {"type":"xbox360"}`
+(which answers only after usbip-win2 attached the device, or with 409 if it could not) and
+`bus/{bus}/remove {device}`. A device's stream opens with `bus/{bus}/{device}\0` and then carries
+20-byte reports (the `XUSB_REPORT` fields with the buttons widened to 32 bits, then six reserved
+bytes) and 2-byte rumble back: large motor, then small. The server removes a device whose stream
+is not open within its handler timeout, counted from before the attach, and a bus left empty
+after that long, so a 404 on add makes the bus again. The timeout is 3 s: short, so a lost
+connection does not leave a controller behind for long, but long enough to cover the attach.
+OpenController speaks this directly (`viiper.rs`, about 300 lines) instead of using the
+`viiper-client` crate: the crate has no timeouts anywhere, so a stuck server would freeze the
+engine, and it brings about 20 cryptography crates for the password handshake that localhost
+does not use.
+
+**The same contract as ViGEmBus.** On Windows the engine's `Bus` is an enum of the two
+(`bus.rs`), chosen at run time; Linux and macOS keep theirs.
+
+| ViGEmBus (`vigem.rs`) | VIIPER (`viiper.rs`) |
+|---|---|
+| `connect`: open the bus device | start the server, `ping`, `bus/create`. Not installed: no `viiper.exe` or no usbip-win2 host controller. The exe must have the SHA-256 this version pins |
+| driver version from the bus device | the version `ping` gives |
+| `plug_x360`: lowest free serial, wait for "ready" | `add`, then open the stream; lowest free serial, kept by OpenController (every VIIPER pad has the same USB serial) |
+| `unplug` | close the stream, `remove` |
+| `submit`: IOCTL | write 20 bytes to the stream, with a 100 ms write timeout; a stream that fails is not used again |
+| `listen`: pending IOCTL per controller | a thread reading the stream's rumble, which checks every 100 ms whether it was closed here (on Windows, closing a socket does not wake a read already waiting on it) |
+| `cancel_all` | close every stream |
+
+**Not reading itself back.** A VIIPER controller descends from `usbip2_ude`, but so would a real
+USB device shared from another computer, so `devnode::is_virtual` also wants the product string
+VIIPER gives its controller, "VIIPER Controller".
+
+**Falling back.** VIIPER gets one try per choice. If the server does not start, if it cannot attach
+a controller (a usbip-win2 version it does not know answers 409), if the server ends (its own
+notification-area icon has a Quit) or drops a stream, the engine closes the bus, shows the
+original controllers again, and makes the virtual controllers with ViGEmBus. The snapshot says
+which driver is in use and why VIIPER is not; the home screen and Settings say so. Choosing VIIPER
+again, or installing what it was missing, tries it again. Switching drivers by hand does the same
+dance, which is why the window asks to close games first: a game keeps the controllers it opened.
+
+**Settings and downgrade.** `virtual_driver` is a field of `settings.json` with a default, and its
+type reads any value it does not know as ViGEmBus instead of failing, so a newer file never costs
+the controllers' profiles. 0.8.0 ignores the field; a downgrade simply runs ViGEmBus.
+
+**Installing.** usbip-win2 0.9.8.1 is an Inno Setup installer run as administrator
+(`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`); it never reports that Windows has to restart, so it
+is always taken to need one, and it restarts the USB 3 hubs while it installs, which the card says.
+The server is VIIPER 0.8.2's zip, unpacked with Windows' own `tar` into `viiper\` next to
+OpenController with its `licenses.txt`, without elevation. Both are pinned with their SHA-256,
+with separate ARM64 downloads, since a driver on ARM64 Windows has to be native. The usbip-win2
+pin matters most: VIIPER talks to its host controller through an IOCTL whose layout changed in
+almost every release (VIIPER issue 34).
+
+**Not measured yet.** `examples/windows/viiper.rs` runs the experiments that say how far VIIPER
+can be trusted: V1, time from adding a controller to XInput showing it; V2, two and four
+controllers at once with one USB serial; V3, how long a controller outlives a killed program, with
+the server in its Job Object and with the server left running; V4, report-to-XInput delay next to
+ViGEmBus; V5, opening usbip-win2's host controller without administrator rights. Known risks:
+attach failures (VIIPER issue 31), a Defender false positive on the Go binary (issue 20),
+usbip-win2's integrity check timing out and its filter service left disabled at boot (DS4Windows
+issues 118 and 126), and a bugcheck reported with two virtual Xbox controllers sharing one GIP id.
 
 ## The icon
 
@@ -238,6 +339,36 @@ configuration is global and shared with other programs:
 - Every change is read back and checked.
 - None of this requires administrator rights.
 - Inverse mode, where the program list means the opposite, is reported and left alone.
+
+## Keeping a controller native
+
+A controller can be kept native from its page: games read it as it is, which is what a game with
+DualSense support, a DS5Dongle or a Linux kernel driver wants. The choice is a `native` field of
+the controller's `Profiles`, next to its profiles rather than in one, because it means "map
+nothing" for every profile. It is kept under the same key, so a controller without a serial
+shares it with its whole model. An older version skips the field it does not know and goes back
+to Xbox, the safe state.
+
+The slot stays in the roster with its identity and model, instead of the controller being
+reclassified as an XInput-style native device. That keeps its page open across the switch, gives
+the window a settings key to switch back with, and keeps key bindings from firing. The engine has
+one question, `is_native(slot)`, asked wherever it would touch the slot: plugging a virtual
+controller in (and taking back one that finishes plugging after the switch), hiding, the light,
+the player number, the gyro, rumble, swapping players, identifying, forwarding input and typing
+keys. The snapshot shows the slot as `KeptNative`. A native controller that leaves is dropped at
+once, as there is no virtual controller to keep for it.
+
+Going native, in this order: rumble stops and the gyro is turned off while the controller is
+still ours, the virtual controller gets a neutral report and is unplugged, and every device of the
+slot is shown again (on Linux, its grabs are let go). After that nothing is written to it. The
+flag is in the profiles before any of this, so no later pass plugs a virtual controller back in.
+Coming back, the flag clears, the next pass plugs a virtual controller, which hides the devices
+before it forwards anything, and the light, player number and gyro are set again. Quitting shows
+everything, as always. SDL keeps the controller open the whole time, to show its input in the
+window; whether SDL writes to it on its own is checked with a real controller.
+
+Switching does not reach a game that is already open: hiding only stops new opens, and a game
+looks for controllers when it chooses to. The page says to close the game first.
 
 ## Linux and macOS
 

@@ -66,6 +66,9 @@ pub fn wait_gone(name: &str, timeout: Duration) -> bool {
     false
 }
 
+/// Named objects go away with the process, so there are no files to remove.
+pub fn remove_files(_: &str, _: &[&str]) {}
+
 /// Calls `f` each time the event is signalled.
 pub fn on_signal(event: Handle, f: impl Fn() + Send + 'static) {
     std::thread::Builder::new()

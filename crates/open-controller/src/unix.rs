@@ -3,6 +3,8 @@
 
 use crate::{Args, Control, Msg, foreground, open_window};
 use crossbeam_channel::{Receiver, Sender, unbounded};
+use open_controller_core::i18n::{self, Lang};
+use std::process::Stdio;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -23,6 +25,16 @@ pub struct MainLoop(Receiver<Msg>);
 /// Nothing is left hidden by a run that was killed: grabs end with the process.
 pub fn restore(_: &std::path::Path) -> i32 {
     0
+}
+
+/// Tells the user the window did not open, with a desktop notification where `notify-send`
+/// exists, since a program started from the applications menu has nowhere to print.
+pub fn window_failed(lang: Lang) {
+    let _ = std::process::Command::new("notify-send")
+        .args(["--app-name=OpenController", "--icon=io.github.brunovncs.open-controller", "OpenController", i18n::text(lang).window_failed])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 /// Blocks the stop signals in every thread to come, and turns them into a quit message on a

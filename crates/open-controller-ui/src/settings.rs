@@ -4,13 +4,13 @@
 use crate::requirements;
 use crate::theme::icon as glyph;
 use crate::ui::MainView;
-use crate::widgets::{Kind, body, button, caption, display, group, icon_button, row, section, segmented, switch};
+use crate::widgets::{Kind, body, button, caption, chip, display, group, icon_button, info_tip, row, section, segmented, switch};
 use gpui::prelude::FluentBuilder;
-use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, Window, div, px};
-use open_controller_core::Snapshot;
-use open_controller_core::i18n::{self, Lang, Text};
+use gpui::{AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, Window, div, px};
+use open_controller_core::i18n::{self, Lang, Text, fill};
 use open_controller_core::ipc::ToTray;
-use open_controller_core::platform::VIRTUAL_PADS;
+use open_controller_core::platform::{DRIVER_CHOICE, VIRTUAL_PADS, VirtualDriver};
+use open_controller_core::{Driver, Snapshot};
 
 fn drivers_line(snap: &Snapshot) -> String {
     let mut parts = vec![format!("OpenController {}", env!("CARGO_PKG_VERSION"))];
@@ -29,6 +29,51 @@ impl MainView {
             cx.notify();
         });
         self.send(ToTray::SetLanguage(lang), cx);
+    }
+
+    fn set_virtual_driver(&mut self, driver: VirtualDriver, cx: &mut Context<Self>) {
+        self.model.update(cx, |m, cx| {
+            m.prefs.virtual_driver = driver;
+            cx.notify();
+        });
+        self.send(ToTray::SetVirtualDriver(driver), cx);
+    }
+
+    /// The driver that makes the virtual controllers: ViGEmBus, or the experimental VIIPER.
+    fn advanced(&self, snap: &Snapshot, chosen: VirtualDriver, text: &'static Text, cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        let viiper = chosen == VirtualDriver::Viiper;
+        let note = match &snap.viiper {
+            _ if !viiper => None,
+            Driver::Missing => Some(text.viiper_missing.to_string()),
+            Driver::Failed(e) => Some(fill(text.viiper_failed, e)),
+            _ => None,
+        };
+        let label = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(body(text.virtual_driver, t.text))
+            .child(info_tip("driver-tip", text.virtual_driver_tip, &t))
+            .when(viiper, |d| d.child(chip(text.experimental, t.caution, t.caution.opacity(0.14))));
+        let choice = segmented(
+            "driver",
+            vec![(VirtualDriver::ViGEmBus, text.driver_vigem.into()), (VirtualDriver::Viiper, text.driver_viiper.into())],
+            chosen,
+            &t,
+            cx,
+            |this, d, cx| this.set_virtual_driver(d, cx),
+        );
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                row(&t)
+                    .child(div().flex().flex_col().flex_1().gap(px(2.)).child(label).child(caption(text.virtual_driver_hint, t.text2)))
+                    .child(choice),
+            )
+            .child(caption(text.driver_switch_warning, t.text2).pt(px(10.)))
+            .when_some(note, |d, n| d.child(caption(n, t.caution).pt(px(4.))))
     }
 
     pub fn render_settings(&mut self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -99,6 +144,7 @@ impl MainView {
             .child(section(text.requirements, &t))
             .child(caption(requirements::hint(text), t.text2).pb(px(12.)))
             .child(self.render_requirements(cx))
+            .when(DRIVER_CHOICE, |d| d.child(section(text.advanced, &t)).child(self.advanced(&snap, prefs.virtual_driver, text, cx)))
             .child(section(text.about, &t))
             .child(about)
             .into_any_element()

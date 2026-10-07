@@ -3,9 +3,13 @@
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::{null, null_mut};
+use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
+    CM_GET_DEVICE_INTERFACE_LIST_PRESENT, CM_Get_Device_Interface_List_SizeW, CM_Get_Device_Interface_ListW, CR_SUCCESS,
+};
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_IO_PENDING, GetLastError, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::IO::{DeviceIoControl, GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Threading::CreateEventW;
+use windows_sys::core::GUID;
 
 pub fn wide(s: impl AsRef<OsStr>) -> Vec<u16> {
     s.as_ref().encode_wide().chain(Some(0)).collect()
@@ -20,6 +24,21 @@ pub fn from_wide(buf: &[u16]) -> String {
 /// A `REG_MULTI_SZ`-style list: NUL-separated strings ending in an empty one.
 pub fn from_multi_sz(buf: &[u16]) -> Vec<String> {
     buf.split(|&c| c == 0).take_while(|s| !s.is_empty()).map(String::from_utf16_lossy).collect()
+}
+
+/// The paths of the present devices that expose a device interface: a driver's control device.
+pub fn interface_paths(class: &GUID) -> Vec<String> {
+    unsafe {
+        let mut len = 0u32;
+        if CM_Get_Device_Interface_List_SizeW(&mut len, class, null(), CM_GET_DEVICE_INTERFACE_LIST_PRESENT) != CR_SUCCESS {
+            return Vec::new();
+        }
+        let mut buf = vec![0u16; len as usize];
+        if CM_Get_Device_Interface_ListW(class, null(), buf.as_mut_ptr(), len, CM_GET_DEVICE_INTERFACE_LIST_PRESENT) != CR_SUCCESS {
+            return Vec::new();
+        }
+        from_multi_sz(&buf)
+    }
 }
 
 pub fn to_multi_sz(items: &[String]) -> Vec<u16> {

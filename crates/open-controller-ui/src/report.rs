@@ -17,6 +17,7 @@ use gpui::{
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::mapping::{PadState, axis};
+use open_controller_core::platform::VirtualDriver;
 use open_controller_core::rating::{self, Rating};
 use open_controller_core::report::{self, Diagnosis, Submission};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
@@ -176,6 +177,7 @@ fn driver(d: &Driver) -> String {
         Driver::Missing => "missing".into(),
         Driver::Failed(e) => format!("failed: {e}"),
         Driver::Unsupported => "not used here".into(),
+        Driver::NoKernelSupport => "no uinput in this kernel".into(),
     }
 }
 
@@ -200,7 +202,8 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
     let _ = writeln!(s, "Features: {:?}", p.features);
     let _ = writeln!(
         s,
-        "Drivers: ViGEmBus {} · HidHide {} · hiding {}",
+        "Drivers: {} {} · HidHide {} · hiding {}",
+        if snapshot.bus == VirtualDriver::Viiper { "VIIPER" } else { "ViGEmBus" },
         driver(&snapshot.vigem),
         driver(&snapshot.hidhide),
         if snapshot.hiding { "on" } else { "off" }

@@ -9,10 +9,11 @@ use crate::widgets::{caption, icon_button, strong};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent, ModifiersChangedEvent,
-    ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowAppearance, div, img, px,
+    MouseButton, ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowAppearance, div, img, px,
 };
 use open_controller_core::binding::{self, Action, Step};
 use open_controller_core::ipc::ToTray;
+use open_controller_core::platform::VirtualDriver;
 use open_controller_core::profile::Edit;
 use open_controller_core::{PadKey, PadView};
 use std::collections::HashMap;
@@ -94,10 +95,17 @@ pub struct MainView {
     pub picker: Option<Vec<String>>,
     /// The report on a controller, while its dialog is open.
     pub report: Option<crate::report::Report>,
+    /// Whether the gyro's advanced settings are shown, and whether its custom acceleration was
+    /// picked (it stays picked when its values match a preset).
+    pub gyro_advanced: bool,
+    pub gyro_custom: bool,
     /// The app's icon, in its version drawn for small sizes, for the bar on top.
     brand: Arc<Image>,
     /// Extra buttons held on the open controller in the last snapshot, to notice a new press.
     held: u64,
+    /// The bar on top was pressed where the window draws its own frame: moving the mouse now
+    /// moves the window.
+    pub moving: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -129,8 +137,11 @@ impl MainView {
             update: Default::default(),
             picker: None,
             report: None,
+            gyro_advanced: false,
+            gyro_custom: false,
             brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
             held: 0,
+            moving: false,
             _subscriptions: vec![observe, theme_change],
         };
         view.read_installed();
@@ -151,6 +162,7 @@ impl MainView {
         self.profile_menu = false;
         self.renaming = None;
         self.picker = None;
+        self.gyro_custom = false;
     }
 
     pub fn open(&mut self, key: PadKey, cx: &mut Context<Self>) {
@@ -203,6 +215,11 @@ impl MainView {
         cx.spawn(async move |this, cx| {
             let result = cx.background_executor().spawn(async move { requirements::install(c, &dir, silent) }).await;
             let _ = this.update(cx, |this, cx| {
+                // VIIPER, chosen but missing something, is tried again with what was installed.
+                let driver = this.model.read(cx).prefs.virtual_driver;
+                if result.is_ok() && driver == VirtualDriver::Viiper {
+                    this.send(ToTray::SetVirtualDriver(driver), cx);
+                }
                 this.installs.insert(
                     c,
                     match result {
@@ -382,8 +399,9 @@ impl MainView {
     }
 
     /// The bar across the top: where you are, and the way to the settings.
-    fn top_bar(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn top_bar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
+        let framed = crate::frame::tiling(window).is_some();
         let attention = self.needs_attention(cx);
         let on_settings = self.screen == Screen::Settings;
         let mark = img(self.brand.clone()).size(px(28.)).flex_none();
@@ -398,6 +416,7 @@ impl MainView {
             .cursor_pointer()
             .hover(move |s| s.bg(t.control))
             .on_click(cx.listener(|this, _, _, cx| this.home(cx)))
+            .when(framed, |d| d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
             .child(mark)
             .child(strong("OpenController", t.text))
             .child(caption(concat!("v", env!("CARGO_PKG_VERSION")), t.text2));
@@ -407,27 +426,20 @@ impl MainView {
                 .child(icon_button("settings", glyph::SETTINGS, &t).when(on_settings, |d| d.bg(t.control)).on_click(
                     cx.listener(|this, _, _, cx| if this.screen == Screen::Settings { this.home(cx) } else { this.settings(cx) }),
                 ))
-                .when(attention, |d| d.child(div().absolute().top(px(6.)).right(px(6.)).size(px(8.)).rounded_full().bg(t.caution)));
-        div()
+                .when(attention, |d| d.child(div().absolute().top(px(6.)).right(px(6.)).size(px(8.)).rounded_full().bg(t.caution)))
+                .when(framed, |d| d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()));
+        let bar = div().flex().flex_none().justify_center().h(px(56.)).border_b_1().border_color(t.stroke);
+        let row = div()
             .flex()
-            .flex_none()
-            .justify_center()
-            .h(px(56.))
-            .border_b_1()
-            .border_color(t.stroke)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .w_full()
-                    .max_w(px(layout::MAX_W))
-                    // The brand's own padding and the gear's hit area sit in the gutter.
-                    .px(px(layout::GUTTER - 6.))
-                    .child(home)
-                    .child(gear),
-            )
-            .into_any_element()
+            .items_center()
+            .justify_between()
+            .w_full()
+            .max_w(px(layout::MAX_W))
+            // The brand's own padding and the gear's hit area sit in the gutter.
+            .px(px(layout::GUTTER - 6.))
+            .child(home)
+            .child(gear);
+        self.title_bar(bar, row, window, cx).into_any_element()
     }
 }
 
@@ -450,7 +462,7 @@ impl Render for MainView {
             },
         };
         let report = self.render_report(cx);
-        div()
+        let page = div()
             .id("root")
             .relative()
             .track_focus(&self.focus)
@@ -462,7 +474,7 @@ impl Render for MainView {
             .bg(t.base)
             .text_color(t.text)
             .font_family(FONT)
-            .child(self.top_bar(cx))
+            .child(self.top_bar(window, cx))
             .children(self.update_bar(cx))
             .child(
                 div().id("scroll").flex_1().min_h(px(0.)).overflow_y_scroll().child(
@@ -473,6 +485,7 @@ impl Render for MainView {
                         .child(div().w_full().max_w(px(max_w)).px(px(layout::GUTTER)).pt(px(28.)).pb(px(40.)).child(content)),
                 ),
             )
-            .children(report)
+            .children(report);
+        crate::frame::frame(page.into_any_element(), &t, window)
     }
 }

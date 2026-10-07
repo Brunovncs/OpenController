@@ -47,6 +47,9 @@ pub mod icon {
     pub const CHECK: &str = "check";
     pub const BOLT: &str = "bolt";
     pub const CLOSE: &str = "close";
+    pub const MINIMIZE: &str = "minimize";
+    pub const MAXIMIZE: &str = "maximize";
+    pub const RESTORE: &str = "restore";
     pub const EDIT: &str = "edit";
     pub const OPEN: &str = "open";
     pub const MOTION: &str = "motion";

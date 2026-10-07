@@ -297,6 +297,11 @@ impl Cloak {
         contains(&self.covered, id)
     }
 
+    /// HidHide hides a device whole, at once: nothing to watch for afterwards.
+    pub fn follow_up(&mut self) -> Option<std::time::Duration> {
+        None
+    }
+
     /// Hides the devices from every program but the whitelisted ones.
     pub fn hide(&mut self, ids: &[String]) -> Result<(), CloakError> {
         let new: Vec<String> = ids.iter().filter(|id| !self.is_hidden(id)).cloned().collect();

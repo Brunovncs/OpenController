@@ -125,8 +125,12 @@ fn run(journal: &Path, requests: &Receiver<Request>, reports: &Sender<Report>) {
     let mut state = state_of(&first);
     let _ = reports.send(Report::State(state.clone()));
     let mut cloak = first.ok();
+    // What the engine asked to hide, and what of it is hidden.
+    let mut asked: HashSet<String> = HashSet::new();
     let mut hidden = HashSet::new();
     let mut retry_at = Instant::now() + RETRY;
+    // When to look again at controllers still being hidden (their nodes arrive one by one).
+    let mut look_at: Option<Instant> = None;
     loop {
         // Only a failure is worth retrying; a missing driver stays missing until a restart.
         let retrying = cloak.is_none() && matches!(state, Driver::Failed(_));
@@ -139,10 +143,26 @@ fn run(journal: &Path, requests: &Receiver<Request>, reports: &Sender<Report>) {
                 let _ = reports.send(Report::State(state.clone()));
             }
         }
-        let request = if retrying { requests.recv_timeout(RETRY) } else { requests.recv().map_err(|_| RecvTimeoutError::Disconnected) };
+        let wake = [retrying.then_some(retry_at), look_at].into_iter().flatten().min();
+        let request = match wake {
+            Some(at) => requests.recv_deadline(at),
+            None => requests.recv().map_err(|_| RecvTimeoutError::Disconnected),
+        };
         let request = match request {
             Ok(r) => r,
-            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Timeout) => {
+                if let Some(c) = cloak.as_mut()
+                    && look_at.is_some_and(|at| Instant::now() >= at)
+                {
+                    look_at = c.follow_up().map(|d| Instant::now() + d);
+                    let now: HashSet<String> = asked.iter().filter(|id| c.is_hidden(id)).cloned().collect();
+                    if now != hidden {
+                        hidden = now;
+                        let _ = reports.send(Report::Hidden(hidden.clone()));
+                    }
+                }
+                continue;
+            }
             Err(RecvTimeoutError::Disconnected) => Request::Stop,
         };
         // Without HidHide there is nothing to change; the engine asks again once it opens.
@@ -155,15 +175,19 @@ fn run(journal: &Path, requests: &Receiver<Request>, reports: &Sender<Report>) {
         let result = match &request {
             Request::Hide(ids) => {
                 let r = c.hide(ids);
+                asked.extend(ids.iter().cloned());
                 hidden.extend(ids.iter().filter(|id| c.is_hidden(id)).cloned());
+                look_at = c.follow_up().map(|d| Instant::now() + d);
                 r
             }
             Request::Reveal(ids) => {
                 let r = c.reveal(ids);
+                asked.retain(|id| !ids.contains(id));
                 hidden.retain(|id| !ids.contains(id));
                 r
             }
             Request::RevealAll | Request::Stop => {
+                asked.clear();
                 hidden.clear();
                 c.reveal_all()
             }

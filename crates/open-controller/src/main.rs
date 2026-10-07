@@ -22,6 +22,7 @@ mod windows;
 use open_controller_core::i18n::Lang;
 use open_controller_core::instance::{self, Instance};
 use open_controller_core::ipc::{Prefs, ToTray};
+use open_controller_core::platform::VirtualDriver;
 use open_controller_core::profile::{Edit, Profiles};
 use open_controller_core::{Command, Config, Engine};
 use server::Notify;
@@ -60,9 +61,12 @@ impl Control {
     }
 
     pub fn prefs(&self) -> Prefs {
-        let (hide, updates, lang) =
-            self.settings.lock().map(|s| (s.hide_originals, s.check_updates, s.language)).unwrap_or((true, true, Lang::En));
-        Prefs { hide_originals: hide, autostart: autostart::enabled(), check_updates: updates, lang }
+        let (hide, updates, lang, driver) = self
+            .settings
+            .lock()
+            .map(|s| (s.hide_originals, s.check_updates, s.language, s.virtual_driver))
+            .unwrap_or((true, true, Lang::En, VirtualDriver::ViGEmBus));
+        Prefs { hide_originals: hide, autostart: autostart::enabled(), check_updates: updates, lang, virtual_driver: driver }
     }
 
     pub fn lang(&self) -> Lang {
@@ -106,6 +110,13 @@ impl Control {
                     s.save(&self.data_dir);
                 }
             }
+            ToTray::SetVirtualDriver(driver) => {
+                if let Ok(mut s) = self.settings.lock() {
+                    s.virtual_driver = driver;
+                    s.save(&self.data_dir);
+                }
+                self.engine.send(Command::SetVirtualDriver(driver));
+            }
             ToTray::Identify(key) => return self.engine.send(Command::Identify(key)),
             ToTray::PowerOff(key) => return self.engine.send(Command::PowerOff(key)),
             ToTray::SwapPlayers(a, b) => return self.engine.send(Command::SwapPlayers(a, b)),
@@ -148,13 +159,31 @@ fn parse_args() -> Args {
     args
 }
 
-/// Starts the window, which sits next to this executable.
+/// Starts the window, which sits next to this executable, and waits for it on a thread of its
+/// own, so a window that fails right away (a library missing on Linux) is reported, not left
+/// as a zombie.
 pub fn open_window() {
     let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) else { return };
     let exe = dir.join(format!("open-controller-ui{}", std::env::consts::EXE_SUFFIX));
-    if let Err(e) = std::process::Command::new(exe).spawn() {
-        eprintln!("open-controller: could not start the window: {e}");
-    }
+    let mut child = match std::process::Command::new(exe).spawn() {
+        Ok(c) => c,
+        Err(e) => return eprintln!("open-controller: could not start the window: {e}"),
+    };
+    let started = Instant::now();
+    let _ = std::thread::Builder::new().name("window".into()).spawn(move || {
+        let Ok(status) = child.wait() else { return };
+        if !status.success() && started.elapsed() < Duration::from_secs(10) {
+            eprintln!("open-controller: the window closed right after starting ({status})");
+            sys::window_failed(CONTROL.get().map(|c| c.lang()).unwrap_or_default());
+        }
+    });
+}
+
+/// Removes what this instance keeps in the user's runtime directory: the window's socket and
+/// the signals' sockets and lock.
+fn leave() {
+    open_controller_core::ipc::remove_socket();
+    instance::remove_files(APP_NAME, &["show", "quit"]);
 }
 
 /// Reachable from the window procedure and the foreground watcher without borrowing anything.
@@ -232,11 +261,13 @@ fn main() {
         data_dir: data_dir.clone(),
         hide: settings.hide_originals,
         profiles: settings.controllers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        driver: settings.virtual_driver,
     };
     let engine = Engine::start(config, on_change);
     if args.smoke {
         let code = smoke(&engine, &data_dir);
         engine.stop();
+        leave();
         std::process::exit(code);
     }
     let control = Arc::new(Control { engine, settings: Mutex::new(settings), data_dir, notify: notify.clone(), waker });
@@ -252,4 +283,5 @@ fn main() {
     sys::run(&control, main_loop, &args);
     // Unplugs the virtual controllers and shows the hidden ones again.
     control.engine.stop();
+    leave();
 }

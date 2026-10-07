@@ -4,8 +4,8 @@
 use crate::theme::{DISPLAY_FONT, FONT, Theme, radius, text};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    Context, Div, ElementId, FontWeight, Hsla, InteractiveElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, div, linear_color_stop, linear_gradient, px,
+    AppContext, Context, Div, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window, div, linear_color_stop, linear_gradient, px,
 };
 
 pub fn caption(s: impl Into<SharedString>, color: Hsla) -> Div {
@@ -36,6 +36,30 @@ pub fn display(s: impl Into<SharedString>, color: Hsla) -> Div {
 
 pub fn icon(name: &'static str, size: f32, color: Hsla) -> Div {
     div().flex_none().size(px(size)).child(gpui::img(crate::icons::image(name, color)).size(px(size)))
+}
+
+/// An info mark that explains more when the pointer rests on it.
+pub fn info_tip(id: impl Into<ElementId>, tip: &'static str, t: &Theme) -> Stateful<Div> {
+    let t = *t;
+    icon(crate::theme::icon::INFO, 16., t.text2).id(id).tooltip(move |_, cx| cx.new(|_| Tip { text: tip, theme: t }).into())
+}
+
+struct Tip {
+    text: &'static str,
+    theme: Theme,
+}
+
+impl Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        card(&self.theme)
+            .bg(self.theme.control)
+            .border_color(self.theme.stroke_strong)
+            .font_family(FONT)
+            .max_w(px(320.))
+            .px(px(12.))
+            .py(px(8.))
+            .child(caption(self.text, self.theme.text))
+    }
 }
 
 /// A section title above a group of cards.

@@ -6,4 +6,4 @@ Exec=open-controller-ui
 Icon=io.github.brunovncs.open-controller
 Categories=Game;Utility;
 Keywords=controller;gamepad;dualsense;xbox;8bitdo;
-StartupWMClass=open-controller-ui
+StartupWMClass=io.github.brunovncs.open-controller

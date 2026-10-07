@@ -6,7 +6,7 @@
 
 use crate::models::MODELS;
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::io::Write;
 
 pub const RULE_PATH: &str = "/etc/udev/rules.d/70-open-controller.rules";
 /// Loads uinput at boot on systems that build it as a module and load it on demand only.
@@ -50,30 +50,57 @@ pub fn rule_state() -> RuleState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Installed,
+    /// The password dialog was dismissed.
     Cancelled,
+    /// The password could not be asked: no polkit agent is running, or polkit refused.
+    NoAuthorization,
+    /// The rule is in place, but the kernel has no uinput, so no controller can be made.
+    NoUinput,
+}
+
+/// Exit codes of the setup script, clear of those of `sh` (126, 127) and `pkexec`.
+const NO_UINPUT: i32 = 3;
+const NOT_WRITTEN: i32 = 4;
+const NOT_APPLIED: i32 = 5;
+
+/// What runs as root: the rule comes in on standard input, so no file another user could swap
+/// stands between this program and root.
+fn script() -> String {
+    format!(
+        "umask 022; cat > {RULE_PATH}.new && mv -f {RULE_PATH}.new {RULE_PATH} && printf 'uinput\\n' > {MODULES_PATH} || exit {NOT_WRITTEN}; \
+         modprobe uinput 2>/dev/null; \
+         udevadm control --reload-rules && udevadm trigger || exit {NOT_APPLIED}; \
+         [ -e /dev/uinput ] || exit {NO_UINPUT}"
+    )
+}
+
+fn outcome(code: Option<i32>) -> Result<Outcome, String> {
+    match code {
+        Some(0) => Ok(Outcome::Installed),
+        Some(NO_UINPUT) => Ok(Outcome::NoUinput),
+        Some(126) => Ok(Outcome::Cancelled),
+        Some(127) => Ok(Outcome::NoAuthorization),
+        Some(NOT_WRITTEN) => Err("the rule could not be written".into()),
+        Some(NOT_APPLIED) => Err("udev did not reload the rules".into()),
+        other => Err(format!("the setup ended with code {}", other.unwrap_or(-1))),
+    }
 }
 
 /// Writes the rule as root through polkit, which asks for the password, and applies it to the
 /// devices already connected.
-pub fn install_rule(dir: &Path) -> Result<Outcome, String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let rule_file = dir.join("70-open-controller.rules");
-    let modules_file = dir.join("open-controller.conf");
-    std::fs::write(&rule_file, rule()).map_err(|e| e.to_string())?;
-    std::fs::write(&modules_file, "uinput\n").map_err(|e| e.to_string())?;
-    let script = format!(
-        "install -m 0644 '{}' {RULE_PATH} && install -m 0644 '{}' {MODULES_PATH} && \
-         (modprobe uinput || true) && udevadm control --reload-rules && udevadm trigger",
-        rule_file.display(),
-        modules_file.display()
-    );
-    let status = std::process::Command::new("pkexec").args(["sh", "-c", &script]).status().map_err(|e| format!("pkexec: {e}"))?;
-    match status.code() {
-        Some(0) => Ok(Outcome::Installed),
-        // Dismissed, or not authorised.
-        Some(126 | 127) => Ok(Outcome::Cancelled),
-        other => Err(format!("the setup ended with code {}", other.unwrap_or(-1))),
+pub fn install_rule() -> Result<Outcome, String> {
+    let child = std::process::Command::new("pkexec").args(["/bin/sh", "-c", &script()]).stdin(std::process::Stdio::piped()).spawn();
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Outcome::NoAuthorization),
+        Err(e) => return Err(format!("pkexec: {e}")),
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        // Fails when pkexec ends without running the script; its exit code says why.
+        let _ = stdin.write_all(rule().as_bytes());
     }
+    let status = child.wait().map_err(|e| format!("pkexec: {e}"))?;
+    outcome(status.code())
 }
 
 #[cfg(test)]
@@ -89,5 +116,16 @@ mod tests {
         assert!(!r.contains("2DC8:3106"));
         assert!(r.contains("KERNELS==\"*:0F0D:00C1.*\""));
         assert!(r.lines().all(|l| l.starts_with('#') || l.contains("TAG+=\"uaccess\"")));
+    }
+
+    #[test]
+    fn setup_results() {
+        assert_eq!(outcome(Some(0)), Ok(Outcome::Installed));
+        assert_eq!(outcome(Some(126)), Ok(Outcome::Cancelled));
+        assert_eq!(outcome(Some(127)), Ok(Outcome::NoAuthorization));
+        assert_eq!(outcome(Some(NO_UINPUT)), Ok(Outcome::NoUinput));
+        assert!(outcome(Some(NOT_WRITTEN)).is_err());
+        assert!(outcome(None).is_err());
+        assert!(!script().contains("/tmp"), "the rule comes in on standard input");
     }
 }

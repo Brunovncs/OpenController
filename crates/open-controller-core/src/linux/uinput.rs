@@ -4,6 +4,7 @@
 //! uploads and plays, read on a thread per controller.
 
 use super::ioc::{io, iow, iowr};
+use crate::engine::Driver;
 use crate::mapping::{XusbReport, xusb};
 use crossbeam_channel::Sender;
 use std::collections::HashMap;
@@ -12,6 +13,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -83,21 +85,59 @@ const AXES: [(u16, i32, i32, i32, i32); 8] = [
 
 #[derive(Debug)]
 pub enum BusError {
-    /// The kernel was built without uinput.
-    Missing,
+    /// The kernel has no uinput, built in or as a module (WSL, some custom kernels): nothing
+    /// to set up.
+    NoKernelSupport,
+    /// uinput is a module that is not loaded yet; setting up device access loads it.
+    NotLoaded,
     /// `/dev/uinput` is there but this user may not open it: the device rule is not installed.
     NoAccess,
     Os(std::io::Error),
 }
 
+impl BusError {
+    /// How the settings show it.
+    pub fn driver(&self) -> Driver {
+        match self {
+            BusError::NoKernelSupport => Driver::NoKernelSupport,
+            BusError::NotLoaded | BusError::NoAccess => Driver::Missing,
+            BusError::Os(_) => Driver::Failed(self.to_string()),
+        }
+    }
+}
+
 impl std::fmt::Display for BusError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            BusError::Missing => f.write_str("uinput is not installed in this kernel"),
+            BusError::NoKernelSupport => f.write_str("this kernel has no uinput"),
+            BusError::NotLoaded => f.write_str("the uinput module is not loaded"),
             BusError::NoAccess => f.write_str("the device rule is not installed: no access to /dev/uinput"),
             BusError::Os(e) => write!(f, "uinput: {e}"),
         }
     }
+}
+
+/// Without `/dev/uinput`: whether the running kernel has uinput as a module that is not loaded,
+/// or has none at all. When the module lists cannot be read, the module is assumed, so the user
+/// is still offered the setup, which says so if loading fails.
+fn absent() -> BusError {
+    let release = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
+    let release = release.trim();
+    let dirs = ["/lib/modules", "/usr/lib/modules", "/run/booted-system/kernel-modules/lib/modules"];
+    let lists: Vec<String> = dirs
+        .iter()
+        .flat_map(|d| ["modules.dep", "modules.builtin"].map(|f| Path::new(d).join(release).join(f)))
+        .filter_map(|p| std::fs::read_to_string(p).ok())
+        .collect();
+    absent_from(Path::new("/sys/module/uinput").exists(), &lists)
+}
+
+fn absent_from(loaded: bool, lists: &[String]) -> BusError {
+    let listed = lists.iter().flat_map(|s| s.lines()).any(|l| {
+        let module = l.split(':').next().unwrap_or_default();
+        module.rsplit('/').next().unwrap_or_default().starts_with("uinput.ko")
+    });
+    if loaded || listed || lists.is_empty() { BusError::NotLoaded } else { BusError::NoKernelSupport }
 }
 
 /// Rumble the game asked of a virtual controller, as XInput motor speeds.
@@ -138,7 +178,7 @@ pub struct Bus {
 
 fn open() -> Result<File, BusError> {
     OpenOptions::new().read(true).write(true).custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC).open(PATH).map_err(|e| match e.kind() {
-        ErrorKind::NotFound => BusError::Missing,
+        ErrorKind::NotFound => absent(),
         ErrorKind::PermissionDenied => BusError::NoAccess,
         _ => BusError::Os(e),
     })
@@ -385,6 +425,20 @@ mod tests {
         assert_eq!(UI_END_FF_UPLOAD, 0x4068_55C9);
         assert_eq!(UI_BEGIN_FF_ERASE, 0xC00C_55CA);
         assert_eq!(UI_END_FF_ERASE, 0x400C_55CB);
+    }
+
+    #[test]
+    fn a_kernel_without_uinput_is_told_from_a_module_not_loaded() {
+        let module = "kernel/drivers/input/misc/uinput.ko.zst:\nkernel/drivers/hid/uhid.ko.zst:\n".to_string();
+        let builtin = "kernel/drivers/input/misc/uinput.ko\n".to_string();
+        let other = "kernel/drivers/hid/uhid.ko:\nkernel/drivers/input/misc/uinput2.ko:\n".to_string();
+        assert!(matches!(absent_from(false, &[module]), BusError::NotLoaded));
+        assert!(matches!(absent_from(false, &[other.clone(), builtin]), BusError::NotLoaded));
+        assert!(matches!(absent_from(false, std::slice::from_ref(&other)), BusError::NoKernelSupport));
+        assert!(matches!(absent_from(true, &[other]), BusError::NotLoaded));
+        assert!(matches!(absent_from(false, &[]), BusError::NotLoaded), "no module lists to go by");
+        assert_eq!(BusError::NoKernelSupport.driver(), Driver::NoKernelSupport);
+        assert_eq!(BusError::NoAccess.driver(), Driver::Missing);
     }
 
     #[test]

@@ -7,15 +7,12 @@
 
 use crate::mapping::XusbReport;
 pub use crate::win::Overlapped;
-use crate::win::{Handle, bytes_of, bytes_of_mut, ctl_code, from_multi_sz, wide};
+use crate::win::{Handle, bytes_of, bytes_of_mut, ctl_code, interface_paths, wide};
 use crossbeam_channel::Sender;
 use std::ptr::null;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_GET_DEVICE_INTERFACE_LIST_PRESENT, CM_Get_Device_Interface_List_SizeW, CM_Get_Device_Interface_ListW, CR_SUCCESS,
-};
 use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_DEVICE_HARDWARE_ERROR, ERROR_FILE_NOT_FOUND, ERROR_INVALID_PARAMETER, ERROR_OPERATION_ABORTED, GENERIC_READ,
     GENERIC_WRITE,
@@ -114,6 +111,16 @@ impl std::fmt::Display for BusError {
     }
 }
 
+impl BusError {
+    /// How the settings show it.
+    pub fn driver(&self) -> crate::engine::Driver {
+        match self {
+            BusError::NotInstalled => crate::engine::Driver::Missing,
+            _ => crate::engine::Driver::Failed(self.to_string()),
+        }
+    }
+}
+
 /// Rumble the game asked of a virtual controller, as XInput motor speeds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Feedback {
@@ -128,33 +135,10 @@ pub struct Bus {
     pub path: String,
 }
 
-fn interface_paths() -> Vec<String> {
-    unsafe {
-        let mut len = 0u32;
-        if CM_Get_Device_Interface_List_SizeW(&mut len, &GUID_DEVINTERFACE_BUSENUM_VIGEM, null(), CM_GET_DEVICE_INTERFACE_LIST_PRESENT)
-            != CR_SUCCESS
-        {
-            return Vec::new();
-        }
-        let mut buf = vec![0u16; len as usize];
-        if CM_Get_Device_Interface_ListW(
-            &GUID_DEVINTERFACE_BUSENUM_VIGEM,
-            null(),
-            buf.as_mut_ptr(),
-            len,
-            CM_GET_DEVICE_INTERFACE_LIST_PRESENT,
-        ) != CR_SUCCESS
-        {
-            return Vec::new();
-        }
-        from_multi_sz(&buf)
-    }
-}
-
 impl Bus {
     pub fn connect() -> Result<Bus, BusError> {
         let mut last = BusError::NotInstalled;
-        for path in interface_paths() {
+        for path in interface_paths(&GUID_DEVINTERFACE_BUSENUM_VIGEM) {
             let raw = unsafe {
                 CreateFileW(
                     wide(&path).as_ptr(),

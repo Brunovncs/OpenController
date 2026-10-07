@@ -88,7 +88,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     edge.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, player_lights: true, ..Features::default() };
     edge.can_power_off = true;
     edge.profiles.apply(Edit::Light(Light::Color([120, 0, 255])));
-    edge.profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 150, invert_y: false }));
+    edge.profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 150, ..Gyro::default() }));
 
     let mut switch = pad(PadKey::Slot(3), "Nintendo Switch Pro Controller", Brand::Nintendo, Family::SwitchPro, (0x057E, 0x2009));
     switch.links = vec![Link::Usb, Link::Bluetooth];
@@ -113,18 +113,34 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     xbox.hidden = false;
     xbox.features = Features { rumble: true, ..Features::default() };
 
+    // Kept native for a game that knows it, its settings shared by every Edge (no serial over USB).
+    let mut native =
+        pad(PadKey::Slot(6), "DualSense Edge Wireless Controller", Brand::PlayStation, Family::DualSenseEdge, (0x054C, 0x0DF2));
+    native.power = Power::Charging(Some(70));
+    native.role = Role::KeptNative;
+    native.extras = vec![extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::MISC1, extras::TOUCHPAD];
+    native.features = Features { touchpad: true, motion: true, rumble: true, trigger_rumble: true, light_bar: true, player_lights: true };
+    native.store = Some("model:054c:0df2".into());
+    native.profiles.apply(Edit::Native(true));
+
     let mut ds4 = pad(PadKey::Slot(4), "PS4 Controller", Brand::PlayStation, Family::DualShock4, (0x054C, 0x09CC));
     ds4.links = vec![Link::Dongle];
     ds4.role = Role::Waiting { player: None, remaining: Duration::from_secs(9) };
     ds4.extras = vec![extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT, extras::TOUCH_TWO];
     ds4.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, ..Features::default() };
 
-    let mut pads = vec![eightbitdo, edge, switch, joycons, xbox, ds4];
+    let mut pads = vec![eightbitdo, edge, switch, native, joycons, xbox, ds4];
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
             p.profiles = edited.clone();
         }
         p.in_use = p.profiles.active;
+        // As the engine does: no virtual controller while it is kept native, one again after.
+        match (p.profiles.native, &p.role) {
+            (true, _) if matches!(p.key, PadKey::Slot(_)) => (p.role, p.hidden) = (Role::KeptNative, false),
+            (false, Role::KeptNative) => (p.role, p.hidden) = (Role::Virtual { player: None }, true),
+            _ => {}
+        }
     }
     // Players traded in the window, as the engine would.
     for &(a, b) in swaps {
@@ -148,6 +164,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
         sdl_error: None,
         running: real.running,
         foreground: String::new(),
+        ..Snapshot::default()
     }
 }
 

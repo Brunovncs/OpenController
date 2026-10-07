@@ -4,7 +4,8 @@
 //! and DualSense over USB, Bluetooth and the Sony receiver, Switch Pro and Joy-Con, Xbox pads
 //! over XInput, and hundreds of generic pads through the bundled mapping database. Everything
 //! here must run on the one thread that called [`Sdl::init`]: SDL reports hot-plugging only to
-//! that thread, and keeping all calls there avoids contention on its joystick lock.
+//! that thread, and keeping all calls there avoids contention on its joystick lock. Rumble is
+//! the exception: each controller gets it from a thread of its own (see [`Rumbler`]).
 
 use crate::device::{PadType, Power, SdlConnection};
 use crate::extras::{Features, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO};
@@ -14,8 +15,17 @@ use crate::report::{Facts, model_path};
 use sdl3_sys::everything::*;
 use std::ffi::{CStr, c_char};
 use std::marker::PhantomData;
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 static MAPPINGS: &str = include_str!("../assets/gamecontrollerdb.txt");
+
+/// A rumble request that takes this long means a controller that hardly answers (one behind a
+/// stuck uinput driver takes 30 s): it gets no more, so it cannot hold SDL up again.
+const RUMBLE_STALL: Duration = Duration::from_secs(5);
+/// Rumble threads of closed controllers, which must be done before SDL quits.
+static LEAVING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
 
 fn text(p: *const c_char) -> Option<String> {
     (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()).filter(|s| !s.is_empty())
@@ -157,7 +167,126 @@ impl Sdl {
 
     pub fn open(&self, id: u32) -> Option<Gamepad> {
         let gp = unsafe { SDL_OpenGamepad(SDL_JoystickID(id)) };
-        (!gp.is_null()).then_some(Gamepad { gp })
+        (!gp.is_null()).then(|| {
+            let path = text(unsafe { SDL_GetGamepadPath(gp) }).unwrap_or_default();
+            Gamepad { gp, rumbler: Rumbler::start(SDL_JoystickID(id), path) }
+        })
+    }
+}
+
+#[derive(Default)]
+struct RumbleRequest {
+    /// The latest rumble asked for and not sent yet: low, high, milliseconds.
+    want: Option<(u16, u16, u32)>,
+    stop: bool,
+}
+
+/// Sends one controller's rumble from a thread of its own, so a controller slow to take it
+/// never holds up the input thread. Only the latest request waits; older ones are dropped.
+struct Rumbler {
+    shared: Arc<(Mutex<RumbleRequest>, Condvar)>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Rumbler {
+    fn start(id: SDL_JoystickID, path: String) -> Rumbler {
+        let shared = Arc::new((Mutex::new(RumbleRequest::default()), Condvar::new()));
+        let theirs = shared.clone();
+        let thread = std::thread::Builder::new().name("open-controller-rumble".into()).spawn(move || Rumbler::run(id, &path, &theirs)).ok();
+        Rumbler { shared, thread }
+    }
+
+    fn run(id: SDL_JoystickID, path: &str, shared: &(Mutex<RumbleRequest>, Condvar)) {
+        let (lock, wake) = shared;
+        let mut route = Route::of(path);
+        let mut stalled = false;
+        loop {
+            let (low, high, ms) = {
+                let Ok(mut r) = lock.lock() else { return };
+                loop {
+                    if let Some(w) = r.want.take() {
+                        break w;
+                    }
+                    if r.stop {
+                        return;
+                    }
+                    let Ok(next) = wake.wait(r) else { return };
+                    r = next;
+                }
+            };
+            if stalled {
+                continue;
+            }
+            let asked = Instant::now();
+            route.send(id, low, high, ms);
+            stalled = asked.elapsed() >= RUMBLE_STALL;
+        }
+    }
+
+    fn send(&self, low: u16, high: u16, ms: u32) {
+        let (lock, wake) = &*self.shared;
+        if let Ok(mut r) = lock.lock() {
+            r.want = Some((low, high, ms));
+            wake.notify_one();
+        }
+    }
+}
+
+/// How a controller's rumble gets to it.
+enum Route {
+    Sdl,
+    /// Straight to the event node of a controller another program makes through uinput, which
+    /// SDL would wait on with every controller held (see `linux::ff`).
+    #[cfg(target_os = "linux")]
+    Node(crate::linux::ff::Rumble),
+}
+
+impl Route {
+    #[cfg(target_os = "linux")]
+    fn of(path: &str) -> Route {
+        use crate::linux::ff;
+        match ff::is_userspace(path).then(|| ff::Rumble::open(path)).flatten() {
+            Some(r) => Route::Node(r),
+            None => Route::Sdl,
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn of(_: &str) -> Route {
+        Route::Sdl
+    }
+
+    fn send(&mut self, id: SDL_JoystickID, low: u16, high: u16, ms: u32) {
+        match self {
+            // The gamepad may have been closed meanwhile: SDL then finds no gamepad for the id,
+            // or refuses the pointer, as it checks every object it is given.
+            Route::Sdl => unsafe {
+                let gp = SDL_GetGamepadFromID(id);
+                if !gp.is_null() {
+                    SDL_RumbleGamepad(gp, low, high, ms);
+                }
+            },
+            #[cfg(target_os = "linux")]
+            Route::Node(r) => {
+                let _ = r.set(low, high, ms);
+            }
+        }
+    }
+}
+
+impl Drop for Rumbler {
+    /// Not waited for here: the input thread must not wait on a controller that does not answer.
+    /// SDL quits only once every rumble thread is done.
+    fn drop(&mut self) {
+        let (lock, wake) = &*self.shared;
+        if let Ok(mut r) = lock.lock() {
+            r.stop = true;
+            wake.notify_one();
+        }
+        if let (Some(t), Ok(mut leaving)) = (self.thread.take(), LEAVING.lock()) {
+            leaving.retain(|t| !t.is_finished());
+            leaving.push(t);
+        }
     }
 }
 
@@ -199,12 +328,17 @@ unsafe fn joystick_counts(js: *mut SDL_Joystick, f: &mut Facts) {
 
 impl Drop for Sdl {
     fn drop(&mut self) {
+        let leaving = LEAVING.lock().map(|mut l| std::mem::take(&mut *l)).unwrap_or_default();
+        for t in leaving {
+            let _ = t.join();
+        }
         unsafe { SDL_Quit() };
     }
 }
 
 pub struct Gamepad {
     gp: *mut SDL_Gamepad,
+    rumbler: Rumbler,
 }
 
 const BUTTONS: u32 = button::COUNT;
@@ -381,9 +515,10 @@ impl Gamepad {
     }
 
     /// `low` drives the large (left) motor and `high` the small one. SDL stops the rumble after
-    /// `ms`, at most 65535, so a steady rumble has to be renewed.
+    /// `ms`, at most 65535, so a steady rumble has to be renewed. Sent from the controller's own
+    /// rumble thread; this returns at once.
     pub fn rumble(&self, low: u16, high: u16, ms: u32) {
-        unsafe { SDL_RumbleGamepad(self.gp, low, high, ms) };
+        self.rumbler.send(low, high, ms);
     }
 
     /// Lights the player number on controllers that show one (DualSense, Switch) and picks the
@@ -440,11 +575,28 @@ mod tests {
         assert_eq!(axis::COUNT as i32, SDL_GAMEPAD_AXIS_COUNT.0);
     }
 
+    /// The Linux lines OpenController adds itself: PlayStation controllers read through
+    /// `hid-playstation`'s event node, at versions SDL's own database has no line for.
+    const LINUX_LINES: [&str; 4] = [
+        "030000004c050000e60c000000810000",
+        "030000004c050000f20d000000810000",
+        "030000004c050000f20d000011810000",
+        "050000004c050000f20d000000810000",
+    ];
+
     #[test]
-    fn mappings_are_windows_only_and_well_formed() {
+    fn mappings_are_windows_only_but_for_known_linux_lines_and_well_formed() {
         let lines: Vec<&str> = MAPPINGS.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).collect();
         assert!(lines.len() > 500);
         let guid = |l: &str| l.split(',').next().map(|g| g.len() == 32 || g == "xinput").unwrap_or(false);
-        assert!(lines.iter().all(|l| l.ends_with("platform:Windows,") && guid(l)), "{:?}", lines.iter().find(|l| !guid(l)));
+        assert!(lines.iter().all(|l| guid(l)), "{:?}", lines.iter().find(|l| !guid(l)));
+        let linux: Vec<&str> = lines.iter().filter(|l| !l.ends_with("platform:Windows,")).copied().collect();
+        assert!(linux.iter().all(|l| l.ends_with("platform:Linux,")), "{linux:?}");
+        let ids: Vec<&str> = linux.iter().filter_map(|l| l.split(',').next()).collect();
+        assert_eq!(ids, LINUX_LINES);
+        // The Xbox layout hid-playstation's buttons and axes come in.
+        let layout = "a:b0,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b11,\
+                      lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b12,righttrigger:a5,rightx:a3,righty:a4,start:b9,x:b3,y:b2,";
+        assert!(linux.iter().all(|l| l.contains(layout)), "{linux:?}");
     }
 }
