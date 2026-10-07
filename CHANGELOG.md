@@ -3,6 +3,11 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+On macOS, closing the window now ends it, as on Windows and Linux. Only the small part that keeps
+your controllers working stays in the background.
+
 ## 0.8.0
 
 A controller that misbehaves, or that OpenController does not know, can now be reported from the

@@ -22,8 +22,8 @@ mod updates;
 mod widgets;
 
 use gpui::{
-    App, AppContext, Bounds, Context, Entity, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowOptions, px,
-    size,
+    App, AppContext, Bounds, Context, Entity, QuitMode, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowHandle,
+    WindowOptions, px, size,
 };
 use open_controller_core::Snapshot;
 use open_controller_core::i18n::{self, Lang, Text};
@@ -162,7 +162,9 @@ fn main() {
     let forced_lang = forced_lang();
     prefs.lang = forced_lang.unwrap_or(prefs.lang);
 
-    gpui_platform::application().run(move |cx: &mut App| {
+    // The resident process does the work, so closing the window ends this one on macOS too, where
+    // GPUI would otherwise keep it running with no window.
+    gpui_platform::application().with_quit_mode(QuitMode::LastWindowClosed).run(move |cx: &mut App| {
         text_field::bind_keys(cx);
         let text = i18n::text(prefs.lang);
         let connected = pipe.is_some();

@@ -4,3 +4,7 @@ __pycache__/
 
 # Notes for AI assistants, kept on this machine only
 CLAUDE.local.md
+
+# Private planning and research
+/docs/native-mode/
+PLANO*.md
