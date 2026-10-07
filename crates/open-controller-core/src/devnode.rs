@@ -8,7 +8,8 @@ use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Locate_DevNodeW, CR_SUCCESS,
 };
 use windows_sys::Win32::Devices::Properties::{
-    DEVPKEY_Device_BusReportedDeviceDesc, DEVPKEY_Device_DriverVersion, DEVPKEY_Device_InstanceId, DEVPKEY_Device_Service,
+    DEVPKEY_Device_BusReportedDeviceDesc, DEVPKEY_Device_DriverVersion, DEVPKEY_Device_HardwareIds, DEVPKEY_Device_InstanceId,
+    DEVPKEY_Device_Service,
 };
 use windows_sys::Win32::Foundation::DEVPROPKEY;
 
@@ -121,4 +122,47 @@ pub fn usb_product_name(vendor: u16, product: u16) -> Option<String> {
         .find_map(|id| string_property(locate(&id)?, &DEVPKEY_Device_BusReportedDeviceDesc))
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty())
+}
+
+/// An instance id without its last part, which can hold a serial number or a Bluetooth address:
+/// `USB\VID_054C&PID_09CC\<serial>` is kept as `USB\VID_054C&PID_09CC`.
+fn model_part(id: &str) -> String {
+    id.splitn(3, '\\').take(2).collect::<Vec<_>>().join("\\")
+}
+
+/// The device behind an interface path and its ancestors up to the USB or Bluetooth device, as
+/// Device Manager names them, for a report on a controller: hardware id (with the revision),
+/// the name the device gives itself and the driver. Nothing that tells one unit from another.
+pub fn ancestry(interface_path: &str) -> Vec<String> {
+    let Some(id) = instance_id(interface_path) else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut node = locate(&id);
+    while let Some(n) = node {
+        let id = id_of(n).unwrap_or_default();
+        let upper = id.to_ascii_uppercase();
+        if out.len() == 6 || upper.starts_with("USB\\ROOT_HUB") || upper.starts_with("PCI\\") || upper.starts_with("ACPI\\") {
+            break;
+        }
+        let mut hw = [0u16; 512];
+        let mut size = size_of_val(&hw) as u32;
+        let mut ty = 0u32;
+        let first_hw = (unsafe { CM_Get_DevNode_PropertyW(n, &DEVPKEY_Device_HardwareIds, &mut ty, hw.as_mut_ptr().cast(), &mut size, 0) }
+            == CR_SUCCESS)
+            .then(|| from_multi_sz(&hw).into_iter().next())
+            .flatten();
+        let mut line = first_hw.unwrap_or_else(|| model_part(&id));
+        if let Some(d) = string_property(n, &DEVPKEY_Device_BusReportedDeviceDesc).filter(|d| !d.trim().is_empty()) {
+            line.push_str(&format!(" \"{}\"", d.trim()));
+        }
+        if let Some(s) = string_property(n, &DEVPKEY_Device_Service).filter(|s| !s.is_empty()) {
+            line.push_str(&format!(" [{s}]"));
+        }
+        out.push(line);
+        // A composite device's interface (`&MI_`) sits under the device itself, which says more.
+        if (upper.starts_with("USB\\") && !upper.contains("&MI_")) || upper.starts_with("BTH") {
+            break;
+        }
+        node = parent(n);
+    }
+    out
 }

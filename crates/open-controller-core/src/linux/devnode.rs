@@ -68,6 +68,10 @@ pub fn usb_product_name(_: u16, _: u16) -> Option<String> {
     None
 }
 
+pub fn ancestry(_: &str) -> Vec<String> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

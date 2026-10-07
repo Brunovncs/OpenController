@@ -6,16 +6,20 @@ use crate::Control;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use open_controller_core::Command;
 use open_controller_core::ipc::{Pipe, ToTray, ToWindow};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const SNAPSHOT: u8 = 1;
 const PREFS: u8 = 2;
+const OUTBOX: u8 = 4;
 
 /// What changed since the window was last told, and a wake-up for the sender.
 pub struct Notify {
     pending: AtomicU8,
+    /// Answers to the window's questions, sent by the same thread as everything else so no two
+    /// messages interleave on the pipe.
+    outbox: Mutex<Vec<ToWindow>>,
     tx: Sender<()>,
     rx: Receiver<()>,
 }
@@ -23,7 +27,7 @@ pub struct Notify {
 impl Default for Notify {
     fn default() -> Self {
         let (tx, rx) = bounded(1);
-        Notify { pending: AtomicU8::new(0), tx, rx }
+        Notify { pending: AtomicU8::new(0), outbox: Mutex::new(Vec::new()), tx, rx }
     }
 }
 
@@ -80,6 +84,14 @@ fn serve(pipe: &Pipe, control: &Control, notify: &Notify) {
         s.spawn(|| {
             let mut reader = pipe.reader();
             while let Ok(req) = reader.recv::<ToTray>() {
+                if let ToTray::Diagnose(key) = req {
+                    let d = control.engine.diagnose(key).map(Box::new);
+                    if let Ok(mut o) = notify.outbox.lock() {
+                        o.push(ToWindow::Diagnosis(key, d));
+                    }
+                    notify.mark(OUTBOX);
+                    continue;
+                }
                 control.apply(req);
             }
             gone.store(true, Ordering::Release);
@@ -94,6 +106,12 @@ fn serve(pipe: &Pipe, control: &Control, notify: &Notify) {
             }
             if sent.is_ok() && what & SNAPSHOT != 0 {
                 sent = pipe.send(&ToWindow::Snapshot(control.engine.snapshot()));
+            }
+            if sent.is_ok() && what & OUTBOX != 0 {
+                let out = notify.outbox.lock().map(|mut o| std::mem::take(&mut *o)).unwrap_or_default();
+                for m in out {
+                    sent = sent.and_then(|_| pipe.send(&m));
+                }
             }
             if sent.is_err() {
                 // Ends the reader's pending read too.

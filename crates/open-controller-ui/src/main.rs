@@ -11,8 +11,10 @@ mod home;
 mod icons;
 mod keys;
 mod programs;
+mod report;
 mod requirements;
 mod settings;
+mod text_field;
 mod theme;
 mod tuning;
 mod ui;
@@ -45,6 +47,8 @@ pub struct Model {
     pub text: &'static Text,
     /// False when the resident process could not be reached.
     pub connected: bool,
+    /// The resident process's answer about a controller, for the report on it.
+    pub diagnosis: Option<(open_controller_core::PadKey, Option<Box<open_controller_core::report::Diagnosis>>)>,
     pipe: Option<Arc<Pipe>>,
     demo: bool,
     /// `--demo`: changes made in the window stay in it, so the example controllers never reach
@@ -68,6 +72,13 @@ impl Model {
             let current = self.snapshot.pads.iter().find(|p| p.store.as_ref() == Some(&store)).map(|p| p.profiles.clone());
             self.demo_profiles.entry(store).or_insert_with(|| current.unwrap_or_default()).apply(edit);
             return self.refresh_demo(cx);
+        }
+        if self.demo
+            && let ToTray::Diagnose(key) = req
+        {
+            // The demo's controllers exist only here: what SDL would say is made up from them.
+            self.diagnosis = Some((key, self.snapshot.pads.iter().find(|p| p.key == key).map(|p| Box::new(demo::diagnosis(p)))));
+            return cx.notify();
         }
         if let Some(p) = &self.pipe {
             let _ = p.send(&req);
@@ -152,6 +163,7 @@ fn main() {
     prefs.lang = forced_lang.unwrap_or(prefs.lang);
 
     gpui_platform::application().run(move |cx: &mut App| {
+        text_field::bind_keys(cx);
         let text = i18n::text(prefs.lang);
         let connected = pipe.is_some();
         let last_real = Snapshot::default();
@@ -161,6 +173,7 @@ fn main() {
             prefs,
             text,
             connected,
+            diagnosis: None,
             pipe,
             demo,
             demo_profiles: HashMap::new(),
@@ -183,6 +196,10 @@ fn main() {
                             m.snapshot = Arc::new(s);
                             cx.notify();
                         }
+                    }),
+                    Event::FromTray(ToWindow::Diagnosis(key, d)) => model.update(cx, |m, cx| {
+                        m.diagnosis = Some((key, d));
+                        cx.notify();
                     }),
                     Event::FromTray(ToWindow::Prefs(mut p)) => model.update(cx, |m, cx| {
                         p.lang = forced_lang.unwrap_or(p.lang);

@@ -6,6 +6,7 @@
 use crate::engine::{PadKey, Snapshot};
 use crate::i18n::Lang;
 use crate::profile::Edit;
+use crate::report::Diagnosis;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(windows, path = "ipc/windows.rs")]
@@ -19,6 +20,8 @@ pub use pipe::{Pipe, Reader, is_disconnect};
 pub enum ToWindow {
     Snapshot(Snapshot),
     Prefs(Prefs),
+    /// The answer to [`ToTray::Diagnose`]; `None` when the controller is gone.
+    Diagnosis(PadKey, Option<Box<Diagnosis>>),
 }
 
 /// What the window asks of the resident process.
@@ -37,6 +40,8 @@ pub enum ToTray {
     },
     /// Two controllers trade players.
     SwapPlayers(PadKey, PadKey),
+    /// What is known about a controller, for a report on it.
+    Diagnose(PadKey),
     Quit,
 }
 

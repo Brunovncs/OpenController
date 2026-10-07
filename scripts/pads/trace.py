@@ -7,13 +7,16 @@ middle. Round parts become circles; others become smooth paths. Everything is mo
 
 Config:
   source, width, ink (darkest grey that is not a line), line (line width in pixels)
-  bumpers: [[x, y], [x, y]]          seeds of the left and right bumper
-  sticks:  [{seed, ring}]           seed inside the cap; ring: a grey ring is measured round it
+  bumpers: [[x, y], [x, y]]          seeds of the left and right bumper, or {seed, tone}, or {poly}
+  sticks:  [{seed, ring}]           seed inside the cap; ring: a grey ring is measured round it,
+                                    or [radius, width] gives it
   buttons: [{input, seed, circle?, label?, icon?, color?}]
   dpad:    {seed, center?}          the cross, split into four arms
-  touchpad, panels: [{seed, style}] regions drawn as they are
-  dots:    [[x, y]...]              small round lights, measured by seed
+  touchpad, panels: [{seed, style}] regions drawn as they are; {poly} gives the outline
+  dots:    [[x, y]...]              small round lights, measured by seed, or [x, y, r] given
   fit:     max content width and height on the grid (default 356 x 236)
+  triggers_only: true for a pad without bumpers: the shoulders given become the triggers, with
+           trigger_scale [1, 1] and trigger_rise 0
 """
 import json
 import math
@@ -210,7 +213,18 @@ for x, y in edge_pts:
     if ink[y, x] == 0 and outside[y, x] == 0:
         outside |= flood((x, y))
 solid = fill_holes(1 - outside)
-bumpers = [tone(s["seed"], s["tone"]) if isinstance(s, dict) else region(s) for s in cfg.get("bumpers", [])]
+
+
+def bumper(s):
+    if isinstance(s, dict) and "poly" in s:
+        # Drawn by hand: a dark shoulder on a dark body has no edge to flood to.
+        m = np.zeros_like(ink)
+        cv2.fillPoly(m, [np.array(s["poly"], np.int32)], 1)
+        return m
+    return tone(s["seed"], s["tone"]) if isinstance(s, dict) else region(s)
+
+
+bumpers = [bumper(s) for s in cfg.get("bumpers", [])]
 if "bumper_band" in cfg:
     # Shoulders drawn as part of the silhouette: what lies above the line, on each side.
     cut = int(cfg["bumper_band"])
@@ -270,6 +284,10 @@ if bumpers:
         sx, sy = cfg.get("trigger_scale", [0.62, 0.85])
         tr.append(path([(ox + (x - ox) * sx, cy + (y - cy) * sy - rise) for x, y in pts]))
     out["triggers"] = tr
+    if cfg.get("triggers_only"):
+        # A pad with triggers and no bumpers (the original Xbox controller): the shoulders given
+        # are the triggers themselves.
+        del out["bumpers"]
 
 sticks = []
 for st in cfg.get("sticks", []):
@@ -288,7 +306,12 @@ for st in cfg.get("sticks", []):
             wx, wy, wr = circle_of(region(st["well"]))
         entry["well"] = round(wr * s, 2)
         cv2.circle(overlay, (int(wx), int(wy)), int(wr), (0, 120, 0), 2)
-    if st.get("ring"):
+    if isinstance(st.get("ring"), list):
+        # A ring measured by hand: its middle radius and width, in source pixels.
+        rr, rw = st["ring"]
+        entry["ring"] = [round(rr * s, 2), round(rw * s, 2)]
+        cv2.circle(overlay, (int(x), int(y)), int(rr), (0, 200, 0), 2)
+    elif st.get("ring"):
         # A grey ring round the stick: its middle radius, from the grey pixels near it.
         ys, xs = np.nonzero((gray > cfg.get("ink", 110)) & (gray < 215))
         dist = np.hypot(xs - x, ys - y)
@@ -372,11 +395,20 @@ for p in cfg.get("panels", []):
     show(m, (0, 120, 120))
 out["panels"] = panels
 if "touchpad" in cfg:
-    m = region(cfg["touchpad"])
+    if isinstance(cfg["touchpad"], dict):
+        m = np.zeros_like(ink)
+        cv2.fillPoly(m, [np.array(cfg["touchpad"]["poly"], np.int32)], 1)
+    else:
+        m = region(cfg["touchpad"])
     out["touchpad"] = path(contour(m))
     show(m, (120, 0, 255))
 dots = []
 for sd in cfg.get("dots", []) + [("ink", p) for p in cfg.get("ink_dots", [])]:
+    if sd[0] != "ink" and len(sd) == 3:
+        # Measured by hand: its centre and radius.
+        dots.append(gcircle(*sd))
+        cv2.circle(overlay, (int(sd[0]), int(sd[1])), max(2, int(sd[2])), (255, 0, 120), 2)
+        continue
     if sd[0] == "ink":
         # A filled mark: the ink round the seed.
         m = flood(sd[1], ink.copy())

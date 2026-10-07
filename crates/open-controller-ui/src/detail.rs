@@ -6,6 +6,7 @@
 use crate::art;
 use crate::home::{links, power, status};
 use crate::keys;
+use crate::report;
 use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::{MainView, Section, Tab};
 use crate::widgets::{Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, row, stage, strong, title};
@@ -21,6 +22,7 @@ use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::keyboard;
 use open_controller_core::profile::{self, Edit, Light, MAX_PROFILES};
+use open_controller_core::rating::Rating;
 use open_controller_core::{PadKey, PadView, Role};
 
 /// Colours offered for the light bar.
@@ -166,7 +168,14 @@ impl MainView {
                         .gap(px(10.))
                         .child(caption(status(pad, text), t.text2))
                         .child(links(pad, text, &t))
-                        .children(power(pad, text, &t)),
+                        .children(power(pad, text, &t))
+                        .child(
+                            div()
+                                .id("rating")
+                                .cursor_pointer()
+                                .child(report::rating_chip(text, pad, &t))
+                                .on_click(cx.listener(|this, _, _, cx| this.show(Section::Info, cx))),
+                        ),
                 ),
             )
             .when(assignable, |d| d.child(self.profile_button(pad, text, cx)))
@@ -222,13 +231,42 @@ impl MainView {
             Section::Light => self.light_section(pad, text, cx),
             Section::Motion => self.motion_section(pad, text, cx),
             Section::Sticks => self.sticks_section(pad, text, cx),
-            Section::Info => self.info_section(pad, text),
+            Section::Info => self.info_section(pad, text, cx),
         };
+        let unknown = report::rating_of(pad) == Rating::Unknown;
 
         div()
             .flex()
             .flex_col()
             .child(header)
+            .when(unknown, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(12.))
+                        .mb(px(16.))
+                        .px(px(14.))
+                        .py(px(10.))
+                        .rounded(px(radius::CARD))
+                        .bg(t.accent_soft)
+                        .child(icon(glyph::INFO, 14., t.accent))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w(px(240.))
+                                .child(strong(text.unknown_title, t.text))
+                                .child(caption(text.unknown_body, t.text2)),
+                        )
+                        .child(
+                            button("unknown-send", text.unknown_send, Kind::Primary, &t)
+                                .on_click(cx.listener(move |this, _, w, cx| this.open_report(key, true, w, cx))),
+                        ),
+                )
+            })
             .when(self.profile_menu && assignable, |d| d.child(self.profile_menu(pad, text, cx)))
             .when(pad.in_use != pad.profiles.active, |d| {
                 d.child(
@@ -733,8 +771,10 @@ impl MainView {
             .into_any_element()
     }
 
-    fn info_section(&self, pad: &PadView, text: &'static Text) -> AnyElement {
+    fn info_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
+        let key = pad.key;
+        let rating = report::rating_of(pad);
         let f = pad.features;
         let features: Vec<&str> = [
             (f.touchpad, text.touchpad),
@@ -806,6 +846,23 @@ impl MainView {
                         .into_any_element(),
                 ))
             })
+            .child(line(
+                text.info_rating,
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(6.))
+                    .child(report::rating_chip(text, pad, &t))
+                    .child(caption(report::rating_hint(text, rating), t.text2))
+                    .into_any_element(),
+            ))
+            .child(
+                div().flex().justify_end().px(px(16.)).py(px(12.)).child(
+                    button("report", text.report_problem, Kind::Standard, &t)
+                        .on_click(cx.listener(move |this, _, w, cx| this.open_report(key, rating == Rating::Unknown, w, cx))),
+                ),
+            )
             .into_any_element()
     }
 

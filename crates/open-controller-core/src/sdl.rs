@@ -10,6 +10,7 @@ use crate::device::{PadType, Power, SdlConnection};
 use crate::extras::{Features, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO};
 use crate::mapping::{PadState, axis, button};
 use crate::motion::{Finger, touch_buttons};
+use crate::report::{Facts, model_path};
 use sdl3_sys::everything::*;
 use std::ffi::{CStr, c_char};
 use std::marker::PhantomData;
@@ -127,9 +128,72 @@ impl Sdl {
         }
     }
 
+    /// What SDL says about a joystick it has no gamepad mapping for, opened for a moment if it
+    /// is not open already.
+    pub fn joystick_facts(&self, id: u32) -> Facts {
+        let jid = SDL_JoystickID(id);
+        unsafe {
+            let open = SDL_GetJoystickFromID(jid);
+            let js = if open.is_null() { SDL_OpenJoystick(jid) } else { open };
+            let mut f = Facts {
+                vendor: SDL_GetJoystickVendorForID(jid),
+                product: SDL_GetJoystickProductForID(jid),
+                version: SDL_GetJoystickProductVersionForID(jid),
+                joystick_name: text(SDL_GetJoystickNameForID(jid)).unwrap_or_default(),
+                guid: guid_string(SDL_GetJoystickGUIDForID(jid)),
+                path: model_path(&text(SDL_GetJoystickPathForID(jid)).unwrap_or_default()),
+                joystick_type: joystick_type(SDL_GetJoystickTypeForID(jid)).into(),
+                ..Facts::default()
+            };
+            if !js.is_null() {
+                joystick_counts(js, &mut f);
+                if open.is_null() {
+                    SDL_CloseJoystick(js);
+                }
+            }
+            f
+        }
+    }
+
     pub fn open(&self, id: u32) -> Option<Gamepad> {
         let gp = unsafe { SDL_OpenGamepad(SDL_JoystickID(id)) };
         (!gp.is_null()).then_some(Gamepad { gp })
+    }
+}
+
+fn guid_string(g: SDL_GUID) -> String {
+    let mut buf = [0 as c_char; 33];
+    unsafe { SDL_GUIDToString(g, buf.as_mut_ptr(), buf.len() as i32) };
+    text(buf.as_ptr()).unwrap_or_default()
+}
+
+fn joystick_type(t: SDL_JoystickType) -> &'static str {
+    match t {
+        SDL_JOYSTICK_TYPE_GAMEPAD => "gamepad",
+        SDL_JOYSTICK_TYPE_WHEEL => "wheel",
+        SDL_JOYSTICK_TYPE_ARCADE_STICK => "arcade stick",
+        SDL_JOYSTICK_TYPE_FLIGHT_STICK => "flight stick",
+        SDL_JOYSTICK_TYPE_DANCE_PAD => "dance pad",
+        SDL_JOYSTICK_TYPE_GUITAR => "guitar",
+        SDL_JOYSTICK_TYPE_DRUM_KIT => "drum kit",
+        SDL_JOYSTICK_TYPE_ARCADE_PAD => "arcade pad",
+        SDL_JOYSTICK_TYPE_THROTTLE => "throttle",
+        _ => "unknown",
+    }
+}
+
+fn gamepad_type(t: SDL_GamepadType) -> String {
+    text(unsafe { SDL_GetGamepadStringForType(t) }).unwrap_or_else(|| "unknown".into())
+}
+
+/// # Safety
+/// `js` must be an open joystick.
+unsafe fn joystick_counts(js: *mut SDL_Joystick, f: &mut Facts) {
+    unsafe {
+        f.axes = SDL_GetNumJoystickAxes(js);
+        f.buttons = SDL_GetNumJoystickButtons(js);
+        f.hats = SDL_GetNumJoystickHats(js);
+        f.balls = SDL_GetNumJoystickBalls(js);
     }
 }
 
@@ -220,6 +284,56 @@ impl Gamepad {
                 light_bar: cap(SDL_PROP_GAMEPAD_CAP_RGB_LED_BOOLEAN),
                 player_lights: cap(SDL_PROP_GAMEPAD_CAP_PLAYER_LED_BOOLEAN),
             }
+        }
+    }
+
+    /// What SDL says about this controller, for a report on it.
+    pub fn facts(&self) -> Facts {
+        unsafe {
+            let js = SDL_GetGamepadJoystick(self.gp);
+            let mapping = SDL_GetGamepadMapping(self.gp);
+            let props = SDL_GetGamepadProperties(self.gp);
+            let caps = [
+                (SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, "rumble"),
+                (SDL_PROP_GAMEPAD_CAP_TRIGGER_RUMBLE_BOOLEAN, "trigger rumble"),
+                (SDL_PROP_GAMEPAD_CAP_RGB_LED_BOOLEAN, "light bar"),
+                (SDL_PROP_GAMEPAD_CAP_MONO_LED_BOOLEAN, "light"),
+                (SDL_PROP_GAMEPAD_CAP_PLAYER_LED_BOOLEAN, "player lights"),
+            ];
+            let mut f = Facts {
+                vendor: self.vendor(),
+                product: self.product(),
+                version: SDL_GetGamepadProductVersion(self.gp),
+                firmware: SDL_GetGamepadFirmwareVersion(self.gp),
+                joystick_name: if js.is_null() { String::new() } else { text(SDL_GetJoystickName(js)).unwrap_or_default() },
+                gamepad_name: text(SDL_GetGamepadName(self.gp)),
+                guid: if js.is_null() { String::new() } else { guid_string(SDL_GetJoystickGUID(js)) },
+                path: model_path(&self.path()),
+                gamepad_type: gamepad_type(SDL_GetGamepadType(self.gp)),
+                real_type: gamepad_type(SDL_GetRealGamepadType(self.gp)),
+                joystick_type: if js.is_null() { "unknown".into() } else { joystick_type(SDL_GetJoystickType(js)).into() },
+                connection: format!("{:?}", self.connection()).to_lowercase(),
+                mapping: text(mapping),
+                touchpads: SDL_GetNumGamepadTouchpads(self.gp),
+                sensors: [(SDL_SENSOR_GYRO, "gyro"), (SDL_SENSOR_ACCEL, "accelerometer")]
+                    .into_iter()
+                    .filter(|&(s, _)| SDL_GamepadHasSensor(self.gp, s))
+                    .map(|(_, n)| n.to_string())
+                    .collect(),
+                capabilities: caps
+                    .into_iter()
+                    .filter(|&(c, _)| SDL_GetBooleanProperty(props, c, false))
+                    .map(|(_, n)| n.to_string())
+                    .collect(),
+                ..Facts::default()
+            };
+            if !mapping.is_null() {
+                SDL_free(mapping.cast());
+            }
+            if !js.is_null() {
+                joystick_counts(js, &mut f);
+            }
+            f
         }
     }
 

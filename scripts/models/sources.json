@@ -1,0 +1,6823 @@
+{
+ "rows": [
+  {
+   "id": "0079:0011",
+   "name": "DragonRise USB Gamepad (SNES and Sega style pads, Retro-bit)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Retro-bit Official Sega Genesis/Saturn 8-Button Arcade Pad (USB)",
+    "Retro-bit Official Sega Genesis 8-Button 2.4 GHz Arcade Pad",
+    "Retro-bit Official Sega Saturn Control Pad (USB, wired)",
+    "DragonRise (generic) Generic \"USB Gamepad\" SNES/NES clone (Retrolink, Kiwitata, Vilrose, iNNEXT)",
+    "Retro Fighters BrawlerGEN (Genesis style)"
+   ],
+   "reported": [
+    "USB Gamepad"
+   ],
+   "modes": [
+    "2.4g dongle",
+    "usb",
+    "usb dinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Retro-Bit_Genesis_Saturn_8_Button_Arcade_Pad.cfg",
+    "https://github.com/misteraddons/inputlatency/blob/HEAD/docs/data/latency.json"
+   ]
+  },
+  {
+   "id": "0079:0016",
+   "name": "Retro Fighters D6 (Dreamcast style)",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Retro Fighters D6 (Dreamcast 6-button)"
+   ],
+   "reported": [
+    "Retro Fighters D6"
+   ],
+   "modes": [
+    "usb (alt firmware)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0079:0122",
+   "name": "Retro-bit Sega Saturn Bluetooth Control Pad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Retro-bit Official Sega Saturn Bluetooth Control Pad",
+    "GuliKit / ZD / Manba misc budget and enthusiast pads"
+   ],
+   "reported": [
+    "Retro Bit Bluetooth Controller",
+    "ZhiXu GuliKit D"
+   ],
+   "modes": [
+    "usb",
+    "usb / dinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Retro-Bit%20Saturn%20Bluetooth%20Controller%20DInput.cfg",
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0079:0126",
+   "name": "SNES style USB gamepad (DragonRise)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "DragonRise (generic) Generic \"USB Gamepad\" SNES/NES clone (Retrolink, Kiwitata, Vilrose, iNNEXT)"
+   ],
+   "reported": [
+    "iNNEXT SNES Gamepad"
+   ],
+   "modes": [
+    "usb (iNNEXT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/iNNEXT%20SNES%20Gamepad.cfg"
+   ]
+  },
+  {
+   "id": "0079:181c",
+   "name": "Mobapad Chitu HD",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Mobapad Chitu HD / C2 Lite"
+   ],
+   "reported": [
+    "Mobapad Chitu HD"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0079:1824",
+   "name": "Mayflash Saturn and Mega Drive adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash Sega Saturn / Mega Drive to USB adapters"
+   ],
+   "reported": [
+    "Mega Drive Controller"
+   ],
+   "modes": [
+    "Megadrive adapter (older)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0079:1845",
+   "name": "GameCube controller adapter",
+   "family": "GameCube",
+   "layout": null,
+   "models": [
+    "Nintendo GameCube controller via adapters"
+   ],
+   "reported": [
+    "NEXiLUX GameCube Adapter"
+   ],
+   "modes": [
+    "NEXiLUX GC adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0079:1847",
+   "name": "GameCube controller adapter",
+   "family": "GameCube",
+   "layout": null,
+   "models": [
+    "Nintendo GameCube controller via adapters"
+   ],
+   "reported": [
+    "GameCube Controller"
+   ],
+   "modes": [
+    "GC adapter clone"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0079:1879",
+   "name": "N64 controller to USB adapter",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Hyperkin / Mayflash N64 to USB adapters"
+   ],
+   "reported": [
+    "USB GamePad"
+   ],
+   "modes": [
+    "Mayflash N64 adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Mayflash_N64_USB_Adapter_Rev2.cfg"
+   ]
+  },
+  {
+   "id": "0079:187a",
+   "name": "Mayflash Saturn controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash Sega Saturn / Mega Drive to USB adapters"
+   ],
+   "reported": [
+    "Mayflash SS Controller Adapter"
+   ],
+   "modes": [
+    "SS adapter (new)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/misteraddons/inputlatency/blob/HEAD/docs/data/latency.json"
+   ]
+  },
+  {
+   "id": "0079:18ae",
+   "name": "Mayflash Mega Drive controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash Sega Saturn / Mega Drive to USB adapters"
+   ],
+   "reported": [
+    "Mega Drive Controller"
+   ],
+   "modes": [
+    "Megadrive adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0079:18af",
+   "name": "Mayflash Mega Drive controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash Sega Saturn / Mega Drive to USB adapters"
+   ],
+   "reported": [
+    "Mayflash Megadrive Controller Adapter"
+   ],
+   "modes": [
+    "Megadrive adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/misteraddons/inputlatency/blob/HEAD/docs/data/latency.json"
+   ]
+  },
+  {
+   "id": "0079:954e",
+   "name": "Hyperkin N64 controller adapter",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Hyperkin / Mayflash N64 to USB adapters"
+   ],
+   "reported": [
+    "Hyperkin Adapter"
+   ],
+   "modes": [
+    "Hyperkin N64 adapter (DragonRise)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Hyperkin%20Controller%20Adapter%20For%20N64.cfg"
+   ]
+  },
+  {
+   "id": "0411:00c6",
+   "name": "Buffalo Classic Famicom USB Gamepad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Buffalo iBuffalo Classic Famicom USB Gamepad (BGC-FC801)"
+   ],
+   "reported": [
+    "USB,2-axis 8-button gamepad"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/iBuffalo_BGCFC801.cfg"
+   ]
+  },
+  {
+   "id": "0428:4001",
+   "name": "Gravis GamePad Pro USB",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Gravis GamePad Pro USB and others"
+   ],
+   "reported": [
+    "Gravis GamePad Pro USB"
+   ],
+   "modes": [
+    "GamePad Pro USB"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Gravis_GamePad_Pro_USB.cfg"
+   ]
+  },
+  {
+   "id": "044f:b300",
+   "name": "Thrustmaster Firestorm Dual Power",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Thrustmaster Firestorm Dual Power"
+   ],
+   "modes": [
+    "Firestorm Dual Power"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "044f:b303",
+   "name": "Thrustmaster Firestorm Dual Analog 2",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Thrustmaster Firestorm Dual Analog 2"
+   ],
+   "modes": [
+    "FireStorm Dual Analog 2"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "044f:b304",
+   "name": "Thrustmaster Firestorm Dual Power 2",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "THRUSTMASTER FireStorm Dual Power 2"
+   ],
+   "modes": [
+    "Firestorm Dual Power 2"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Thrustmaster_FireStorm_Dual_Power_2.cfg"
+   ]
+  },
+  {
+   "id": "044f:b312",
+   "name": "Thrustmaster Vibrating Gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Thrustmaster Vibrating Gamepad"
+   ],
+   "modes": [
+    "Vibrating Gamepad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "044f:b320",
+   "name": "Thrustmaster Dual Trigger",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Dual Trigger"
+   ],
+   "modes": [
+    "Dual Trigger PC/PS2 2.0"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "044f:b323",
+   "name": "Thrustmaster Dual Trigger 3-in-1",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Thrustmaster Dual Trigger 3-in-1"
+   ],
+   "modes": [
+    "Dual Trigger 3-in-1 (PC mode)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Thrustmaster_Dual_Trigger_3-in-1.cfg"
+   ]
+  },
+  {
+   "id": "044f:b324",
+   "name": "Thrustmaster Dual Trigger 3-in-1 (PS3 mode)",
+   "family": "DualShock3",
+   "layout": null,
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Dual Trigger 3-in-1 (PS3 Mode)"
+   ],
+   "modes": [
+    "Dual Trigger 3-in-1 (PS3 mode)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "http://www.linux-usb.org/usb.ids"
+   ]
+  },
+  {
+   "id": "044f:d003",
+   "name": "Thrustmaster Run'N' Drive",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Thrustmaster Run N Drive PlayStation Controller"
+   ],
+   "modes": [
+    "Run N Drive"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "044f:d012",
+   "name": "Thrustmaster eSwap Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Thrustmaster eSwap X2 Pro / eSwap S Pro / eSwap Pro (Xbox)"
+   ],
+   "reported": [
+    "eSwap PRO Controller Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "044f:d013",
+   "name": "Thrustmaster eSwap S Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Thrustmaster eSwap X2 Pro / eSwap S Pro / eSwap Pro (Xbox)"
+   ],
+   "reported": [
+    "ESWAP S PRO CONTROLLER"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:044f-d013"
+   ]
+  },
+  {
+   "id": "044f:d016",
+   "name": "Thrustmaster eSwap Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Thrustmaster eSwap X2 Pro / eSwap S Pro / eSwap Pro (Xbox)"
+   ],
+   "reported": [
+    "eSwap PRO Controller Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:044f-d016"
+   ]
+  },
+  {
+   "id": "044f:d01a",
+   "name": "Thrustmaster eSwap X2 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Thrustmaster eSwap X2 Pro / eSwap S Pro / eSwap Pro (Xbox)"
+   ],
+   "reported": [
+    "eSwap X 2 PRO Controller Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/batocera-linux/batocera.linux/issues/12116"
+   ]
+  },
+  {
+   "id": "045e:0007",
+   "name": "Microsoft SideWinder Game Pad USB",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Microsoft SideWinder Game Pad USB / Plug & Play / Dual Strike / Freestyle Pro / Game Pad Pro"
+   ],
+   "reported": [
+    "Microsoft® SideWinder® Game Pad USB"
+   ],
+   "modes": [
+    "Game Pad USB"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/hid/Microsoft%28R%29Sidewinder%28R%29_Game_Pad_USB.cfg"
+   ]
+  },
+  {
+   "id": "045e:000e",
+   "name": "Microsoft SideWinder Freestyle Pro",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Microsoft SideWinder Game Pad USB / Plug & Play / Dual Strike / Freestyle Pro / Game Pad Pro"
+   ],
+   "reported": [
+    "Microsoft SideWinder Freestyle Pro"
+   ],
+   "modes": [
+    "Freestyle Pro"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "045e:0026",
+   "name": "Microsoft SideWinder Game Pad Pro",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Microsoft SideWinder Game Pad USB / Plug & Play / Dual Strike / Freestyle Pro / Game Pad Pro"
+   ],
+   "reported": [
+    "SideWinder GamePad Pro"
+   ],
+   "modes": [
+    "GamePad Pro"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "http://www.linux-usb.org/usb.ids"
+   ]
+  },
+  {
+   "id": "045e:0027",
+   "name": "Microsoft SideWinder Plug and Play Game Pad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Microsoft SideWinder Game Pad USB / Plug & Play / Dual Strike / Freestyle Pro / Game Pad Pro"
+   ],
+   "reported": [
+    "Microsoft® Microsoft® SideWinder® Plug & Play Game Pad"
+   ],
+   "modes": [
+    "Plug & Play Game Pad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Microsoft_SideWinder_Plug_Play_Game_Pad.cfg"
+   ]
+  },
+  {
+   "id": "045e:0028",
+   "name": "Microsoft SideWinder Dual Strike",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Microsoft SideWinder Game Pad USB / Plug & Play / Dual Strike / Freestyle Pro / Game Pad Pro"
+   ],
+   "reported": [
+    "Microsoft SideWinder Dual Strike USB version 1.0"
+   ],
+   "modes": [
+    "Dual Strike"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Microsoft_Sidewinder_Dual_Strike_USB_version_1.cfg"
+   ]
+  },
+  {
+   "id": "045e:0202",
+   "name": "Original Xbox Controller (Duke)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox (original) Duke / Controller S"
+   ],
+   "reported": [
+    "Microsoft X-Box pad v1 (US)"
+   ],
+   "modes": [
+    "Duke (US)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "045e:0285",
+   "name": "Original Xbox Controller S (Japan)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox (original) Duke / Controller S"
+   ],
+   "reported": [
+    "Microsoft X-Box pad (Japan)"
+   ],
+   "modes": [
+    "Controller S (Japan)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "045e:0287",
+   "name": "Original Xbox Controller S",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox (original) Duke / Controller S"
+   ],
+   "reported": [
+    "Microsoft Xbox Controller S"
+   ],
+   "modes": [
+    "Controller S"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "045e:0288",
+   "name": "Original Xbox Controller S v2",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox (original) Duke / Controller S"
+   ],
+   "reported": [
+    "Microsoft Xbox Controller S v2"
+   ],
+   "modes": [
+    "Controller S v2"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "045e:0289",
+   "name": "Original Xbox Controller (Duke v2)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox (original) Duke / Controller S"
+   ],
+   "reported": [
+    "Microsoft X-Box pad v2 (US)"
+   ],
+   "modes": [
+    "Controller S / Duke v2 (US)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "045e:02a1",
+   "name": "Xbox 360 Wireless Controller (receiver)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox 360 Wireless Controller via Wireless Receiver for Windows"
+   ],
+   "reported": [
+    "Microsoft Xbox 360 Wireless Controller with XUSB driver on Windows"
+   ],
+   "modes": [
+    "per-pad id on Windows XUSB driver"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "045e:02ff",
+   "name": "Xbox Wireless Controller",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox Wireless Controller (Series X|S, incl. 2025 refresh / \"Core\")"
+   ],
+   "reported": [
+    "Xbox Wireless Controller"
+   ],
+   "modes": [
+    "Windows XBOXGIP driver software PID"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/usb_ids.h"
+   ]
+  },
+  {
+   "id": "045e:0b1a",
+   "name": "Xbox Adaptive Joystick",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Microsoft Xbox Adaptive Joystick"
+   ],
+   "reported": [
+    "Xbox Adaptive Joystick"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/jfedor2/hid-remapper/issues/230"
+   ]
+  },
+  {
+   "id": "046d:c208",
+   "name": "Logitech WingMan Gamepad Extreme",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Logitech WingMan Gamepad / Gamepad Extreme / RumblePad / Action Pad / Cordless"
+   ],
+   "reported": [
+    "WingMan Gamepad Extreme"
+   ],
+   "modes": [
+    "WingMan Gamepad Extreme"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "http://www.linux-usb.org/usb.ids"
+   ]
+  },
+  {
+   "id": "046d:c209",
+   "name": "Logitech WingMan Gamepad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Logitech WingMan Gamepad / Gamepad Extreme / RumblePad / Action Pad / Cordless"
+   ],
+   "reported": [
+    "WingMan Gamepad"
+   ],
+   "modes": [
+    "WingMan Gamepad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "http://www.linux-usb.org/usb.ids"
+   ]
+  },
+  {
+   "id": "046d:c20a",
+   "name": "Logitech WingMan RumblePad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Logitech WingMan Gamepad / Gamepad Extreme / RumblePad / Action Pad / Cordless"
+   ],
+   "reported": [
+    "Logitech Inc. WingMan RumblePad"
+   ],
+   "modes": [
+    "WingMan RumblePad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Logitech_WingMan_RumblePad.cfg"
+   ]
+  },
+  {
+   "id": "046d:c20b",
+   "name": "Logitech WingMan Action Pad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Logitech WingMan Gamepad / Gamepad Extreme / RumblePad / Action Pad / Cordless"
+   ],
+   "reported": [
+    "Logitech WingMan Action Pad"
+   ],
+   "modes": [
+    "WingMan Action Pad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Logitech_WingMan_Action_Pad.cfg"
+   ]
+  },
+  {
+   "id": "046d:c211",
+   "name": "Logitech WingMan Cordless Gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Logitech WingMan Gamepad / Gamepad Extreme / RumblePad / Action Pad / Cordless"
+   ],
+   "reported": [
+    "Logitech WingMan Cordless"
+   ],
+   "modes": [
+    "WingMan Cordless (iTouch receiver)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "046d:c21a",
+   "name": "Logitech Precision Gamepad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Logitech Precision Gamepad"
+   ],
+   "reported": [
+    "Logitech Logitech(R) Precision(TM) Gamepad"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Logitech_Precision_Gamepad.cfg"
+   ]
+  },
+  {
+   "id": "046d:ca84",
+   "name": "Logitech Cordless Controller for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Logitech Xbox (original) Cordless Controller / Thunderpad"
+   ],
+   "reported": [
+    "Logitech Xbox Cordless Controller"
+   ],
+   "modes": [
+    "xbox protocol"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "046d:ca88",
+   "name": "Logitech Compact Controller for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Logitech Xbox (original) Cordless Controller / Thunderpad"
+   ],
+   "reported": [
+    "Logitech Compact Controller for Xbox"
+   ],
+   "modes": [
+    "xbox protocol"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "047d:4005",
+   "name": "Gravis Eliminator GamePad Pro",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Gravis GamePad Pro USB and others"
+   ],
+   "reported": [
+    "Gravis Eliminator Pro"
+   ],
+   "modes": [
+    "Eliminator Pro"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "047d:4007",
+   "name": "Gravis Xterminator Force",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Gravis GamePad Pro USB and others"
+   ],
+   "reported": [
+    "Gravis Xterminator Force"
+   ],
+   "modes": [
+    "Xterminator Force"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "047d:4008",
+   "name": "Gravis Destroyer Tiltpad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Gravis GamePad Pro USB and others"
+   ],
+   "reported": [
+    "Gravis Destroyer Tiltpad"
+   ],
+   "modes": [
+    "Destroyer Tiltpad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Gravis_Destroyer_Tiltpad.cfg"
+   ]
+  },
+  {
+   "id": "04d8:f064",
+   "name": "retroUSB NES RetroPort",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Tomee / Hyperkin / RetroUSB NES/SNES/Genesis original-controller to USB adapters"
+   ],
+   "reported": [
+    "retroUSB NES RetroPort"
+   ],
+   "modes": [
+    "RetroUSB NES RetroPort v2"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/RetroUSB-NES-RetroPort-v2.cfg"
+   ]
+  },
+  {
+   "id": "04d8:f6eb",
+   "name": "2600-daptor (Atari joystick adapter)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "2600-daptor 2600-daptor D9"
+   ],
+   "reported": [
+    "2600-daptor D9"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/misteraddons/inputlatency/blob/HEAD/docs/data/latency.json"
+   ]
+  },
+  {
+   "id": "054c:0cda",
+   "name": "PlayStation Classic Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Retro Fighters Defender (PlayStation style, OG and Bluetooth Edition)",
+    "Sony PlayStation Classic controller (SCPH-1000R pad)"
+   ],
+   "reported": [
+    "Controller",
+    "Sony Interactive Entertainment Controller"
+   ],
+   "modes": [
+    "OG, native USB mode (PS Classic identity)",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/PlayStation_Classic_Controller.cfg",
+    "https://github.com/nefarius/DsHidMini/blob/master/docs/PS3_USB_STARTUP.md"
+   ]
+  },
+  {
+   "id": "056e:2007",
+   "name": "Elecom Wii Classic controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash / Elecom / raphnet NES/SNES Classic and Wii Classic controller to USB adapters"
+   ],
+   "reported": [
+    "Elecom Wii Classic Gamepad Converter"
+   ],
+   "modes": [
+    "Elecom Wii Classic converter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/misteraddons/inputlatency/blob/HEAD/docs/data/latency.json"
+   ]
+  },
+  {
+   "id": "0583:2050",
+   "name": "PlayStation to USB adapter (PSX)",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "PSX"
+   ],
+   "modes": [
+    "Rockfire PX-205 PSX Bridge"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0583:2060",
+   "name": "iBuffalo Classic USB Gamepad (SNES style, Retroflag)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Buffalo iBuffalo Classic USB Gamepad (SNES, BSGP801)",
+    "Retroflag Classic USB Controller (SNES style) / Genesis USB Controller"
+   ],
+   "reported": [
+    "RetroFlag Wired Controller",
+    "USB,2-axis 8-button gamepad"
+   ],
+   "modes": [
+    "SNES style usb",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/iBuffalo_BSGP801.cfg",
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/RetroFlag_Classic_USB_Controller-M.cfg"
+   ]
+  },
+  {
+   "id": "05e3:0681",
+   "name": "GameCube controller adapter",
+   "family": "GameCube",
+   "layout": null,
+   "models": [
+    "Nintendo GameCube controller via adapters"
+   ],
+   "reported": [
+    "Austgame GameCube Adapter"
+   ],
+   "modes": [
+    "Austgame GC adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:0107",
+   "name": "Saitek P220",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek P220"
+   ],
+   "modes": [
+    "P220"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:0109",
+   "name": "Saitek P880",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "SAITEK P880"
+   ],
+   "modes": [
+    "P880"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Saitek_P880.cfg"
+   ]
+  },
+  {
+   "id": "06a3:040b",
+   "name": "Saitek P990 Dual Analog Pad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek P990 Dual Analog Pad"
+   ],
+   "modes": [
+    "P990 Dual Analog"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Saitek_P990.cfg"
+   ]
+  },
+  {
+   "id": "06a3:040c",
+   "name": "Saitek P2900",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek P2900"
+   ],
+   "modes": [
+    "P2900 Wireless"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:0510",
+   "name": "Saitek P150",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek P150"
+   ],
+   "modes": [
+    "P150"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:0621",
+   "name": "Saitek PS1000",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek PS1000 / PS2700 PlayStation-style PC pads"
+   ],
+   "reported": [
+    "Saitek PS1000 PlayStation Controller"
+   ],
+   "modes": [
+    "PS1000"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:5f0d",
+   "name": "Saitek P2600",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek P2600"
+   ],
+   "modes": [
+    "P2600 (alt)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:f518",
+   "name": "Saitek P3200",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek P3200"
+   ],
+   "modes": [
+    "P3200 Rumble (PC dinput)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:f620",
+   "name": "Saitek PS2700",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek PS1000 / PS2700 PlayStation-style PC pads"
+   ],
+   "reported": [
+    "Saitek PS2700 PlayStation Controller"
+   ],
+   "modes": [
+    "PS2700"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:f623",
+   "name": "Saitek Cyborg Gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek Cyborg"
+   ],
+   "modes": [
+    "Cyborg PlayStation pad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "06a3:ff0c",
+   "name": "Saitek Cyborg Force Rumble Pad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek PLC Cyborg Force Rumble Pad"
+   ],
+   "modes": [
+    "Cyborg Force Rumble Pad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/batocera-linux/batocera.linux/blob/master/package/batocera/emulationstation/batocera-emulationstation/controllers/es_input.cfg"
+   ]
+  },
+  {
+   "id": "06a3:ff0d",
+   "name": "Saitek P2600 Rumble Force Pad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek PLC Saitek P2600 Rumble Force Pad"
+   ],
+   "modes": [
+    "P2600 Rumble Force"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Saitek_PLC_P2600_Rumble_Force_Pad.cfg"
+   ]
+  },
+  {
+   "id": "0773:0106",
+   "name": "Sega Saturn style USB Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Various Sega Saturn USB pads (Retrolink, SLS, generic)"
+   ],
+   "reported": [
+    "Sega Saturn Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "07b5:0213",
+   "name": "Thrustmaster Firestorm Dual Analog 3",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Firestorm D3"
+   ],
+   "modes": [
+    "Firestorm D3"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "07b5:9903",
+   "name": "Thrustmaster Firestorm Digital 2",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Thrustmaster Firestorm Dual Power / Dual Analog / Dual Trigger / Digital"
+   ],
+   "reported": [
+    "Thrustmaster Firestorm Digital 2"
+   ],
+   "modes": [
+    "Firestorm Digital 2 (Mega World)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Thrustmaster_Firestorm_Digital_2.cfg"
+   ]
+  },
+  {
+   "id": "0810:e101",
+   "name": "Havit HV-G60 Gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Havit HV-G60 / HV-G69 / HV-G92"
+   ],
+   "reported": [
+    "Havit HV G60"
+   ],
+   "modes": [
+    "HV-G60 usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0810:e501",
+   "name": "SNES style USB gamepad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "DragonRise (generic) Generic \"USB Gamepad\" SNES/NES clone (Retrolink, Kiwitata, Vilrose, iNNEXT)",
+    "Hyperkin Trooper 2 / RetroN Sq / Competitor / GN6"
+   ],
+   "reported": [
+    "usb gamepad"
+   ],
+   "modes": [
+    "GN6 Genesis",
+    "usb (PCS chip, Hyperkin GN6 Genesis, Kiwitata)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/SNES%20USB%20Gamepad.cfg",
+    "https://github.com/misteraddons/inputlatency/blob/HEAD/docs/data/latency.json"
+   ]
+  },
+  {
+   "id": "081f:e401",
+   "name": "SNES style USB gamepad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "DragonRise (generic) Generic \"USB Gamepad\" SNES/NES clone (Retrolink, Kiwitata, Vilrose, iNNEXT)"
+   ],
+   "reported": [
+    "USB gamepad"
+   ],
+   "modes": [
+    "usb (Manta chip)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/USB_gamepad.cfg"
+   ]
+  },
+  {
+   "id": "0925:03e8",
+   "name": "Mayflash Wii Classic controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash / Elecom / raphnet NES/SNES Classic and Wii Classic controller to USB adapters"
+   ],
+   "reported": [
+    "Mayflash Wii Classic Adapter"
+   ],
+   "modes": [
+    "Mayflash Wii Classic adapter (old)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0925:1700",
+   "name": "PlayStation, Saturn and N64 to USB adapter",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "PS SS N64 Adapter"
+   ],
+   "modes": [
+    "PS/SS/N64 3-in-1 adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0925:8868",
+   "name": "PS2 to USB adapter",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "PS2 Controller"
+   ],
+   "modes": [
+    "WiseGroup PS2 adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0926:2526",
+   "name": "GameCube controller adapter",
+   "family": "GameCube",
+   "layout": null,
+   "models": [
+    "Nintendo GameCube controller via adapters"
+   ],
+   "reported": [
+    "GameCube Controller"
+   ],
+   "modes": [
+    "GC controller (USB)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0926:8888",
+   "name": "Cyber Gadget GameCube controller adapter",
+   "family": "GameCube",
+   "layout": null,
+   "models": [
+    "Nintendo GameCube controller via adapters"
+   ],
+   "reported": [
+    "Cyber Gadget GameCube Controller"
+   ],
+   "modes": [
+    "Cyber Gadget GC controller"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0955:b400",
+   "name": "NVIDIA Shield Controller (streaming)",
+   "family": "Shield",
+   "layout": null,
+   "models": [
+    "NVIDIA SHIELD Controller 2015 / 2017 and related"
+   ],
+   "reported": [
+    "NVIDIA Shield streaming controller"
+   ],
+   "modes": [
+    "GeForce/Shield virtual streaming controller"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "0ae4:0702",
+   "name": "Taito Egret II Mini Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Taito / Hori / Retro Games Mini-console pads: Egret II Mini, PC Engine/TurboGrafx Mini, THEC64"
+   ],
+   "reported": [
+    "Taito Egret II Mini Controller"
+   ],
+   "modes": [
+    "Egret II Mini Controller"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0ae4:0703",
+   "name": "Taito Egret II Mini Control Panel",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Taito / Hori / Retro Games Mini-console pads: Egret II Mini, PC Engine/TurboGrafx Mini, THEC64"
+   ],
+   "reported": [
+    "Taito Egret II Mini Control Panel"
+   ],
+   "modes": [
+    "Egret II Mini Control Panel"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0b43:0003",
+   "name": "EMS PS2 to USB adapter",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "EMS Production PS2 Adapter"
+   ],
+   "modes": [
+    "EMS Dual PSX-USB Adaptor"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0b43:0005",
+   "name": "EMS GameCube controller adapter",
+   "family": "GameCube",
+   "layout": null,
+   "models": [
+    "Nintendo GameCube controller via adapters"
+   ],
+   "reported": [
+    "GameCube Controller"
+   ],
+   "modes": [
+    "EMS GC adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0c12:0ef1",
+   "name": "Brook PS2 to USB adapter",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "Brook PS2 Adapter"
+   ],
+   "modes": [
+    "Brook PS2 adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0ca3:0024",
+   "name": "Sega Mega Drive Mini 6B Pad (or 8BitDo M30 2.4G)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Sega Mega Drive Mini 6B Control Pad / FightingPad 6B (Mini and Mini 2)",
+    "8BitDo M30 2.4G for Mega Drive/Genesis Mini (Sega licensed)"
+   ],
+   "reported": [
+    "6B controller",
+    "Sega Mega Drive Mini 6B Controller"
+   ],
+   "modes": [
+    "2.4g dongle",
+    "2.4g dongle (RetroArch 8Bitdo_M30_24G.cfg)",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/batocera-linux/batocera.linux/blob/master/package/batocera/emulationstation/batocera-emulationstation/controllers/es_input.cfg",
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_M30_24G.cfg",
+    "https://github.com/mdqinc/SDL_GameControllerDB/pull/951"
+   ]
+  },
+  {
+   "id": "0ca3:0025",
+   "name": "Sega Genesis Mini 3B Control Pad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Sega Genesis Mini 3-Button Control Pad (MK-16500)"
+   ],
+   "reported": [
+    "3B controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/SEGA_MD_3B_Controller_USB.cfg"
+   ]
+  },
+  {
+   "id": "0ca3:0027",
+   "name": "Sega Astro City Mini Control Pad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Sega Astro City Mini Control Pad (ACS-1002) and Arcade Stick"
+   ],
+   "reported": [
+    "Astro City Mini"
+   ],
+   "modes": [
+    "usb pad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0ca3:0028",
+   "name": "Sega Astro City Mini Arcade Stick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Sega Astro City Mini Control Pad (ACS-1002) and Arcade Stick"
+   ],
+   "reported": [
+    "Astro city mini Arcade stick"
+   ],
+   "modes": [
+    "usb arcade stick"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Astro%20city%20mini%20Arcade%20stick.cfg"
+   ]
+  },
+  {
+   "id": "0d22:0c20",
+   "name": "MSI Force GC20 V2",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "MSI Force GC30 V2 / GC20 V2 / GC300"
+   ],
+   "reported": [
+    "MSI GC20"
+   ],
+   "modes": [
+    "GC20 usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/o0Zz/sys-con/blob/master/src/app/config.ini"
+   ]
+  },
+  {
+   "id": "0d22:0c31",
+   "name": "MSI Force GC30 V2",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "MSI Force GC30 V2 / GC20 V2 / GC300"
+   ],
+   "reported": [
+    "MSI GC30 V2"
+   ],
+   "modes": [
+    "GC30 V2 usb cable"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/o0Zz/sys-con/blob/master/src/app/config.ini"
+   ]
+  },
+  {
+   "id": "0d22:0c33",
+   "name": "MSI Force GC30 V2 (wireless)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "MSI Force GC30 V2 / GC20 V2 / GC300"
+   ],
+   "reported": [
+    "MSI GC30 V2"
+   ],
+   "modes": [
+    "GC30 V2 2.4G"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/o0Zz/sys-con/blob/master/src/app/config.ini"
+   ]
+  },
+  {
+   "id": "0e6a:4011",
+   "name": "Atari CX40+ Wireless Joystick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Atari CX40+ Wireless Joystick"
+   ],
+   "reported": [
+    "Atari CX Controller"
+   ],
+   "modes": [
+    "2.4g dongle (USB-A)"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/pull/926"
+   ]
+  },
+  {
+   "id": "0e6f:0193",
+   "name": "Turtle Beach Rematch Wireless for Switch 2",
+   "family": "SwitchPro",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Switch 2 controllers (Rematch / Afterglow / Afterglow Wave)"
+   ],
+   "reported": [
+    "Turtle Beach Afterglow / Rematch Wireless RGB for Switch 2"
+   ],
+   "modes": [
+    "wireless (Switch 2 Pro protocol)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "0e6f:0196",
+   "name": "Turtle Beach Rematch Wired for Switch 2",
+   "family": "SwitchPro",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Switch 2 controllers (Rematch / Afterglow / Afterglow Wave)"
+   ],
+   "reported": [
+    "Turtle Beach Rematch Wired for Switch 2"
+   ],
+   "modes": [
+    "wired"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "0e6f:0197",
+   "name": "Turtle Beach Afterglow Wave Wired for Switch 2",
+   "family": "SwitchPro",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Switch 2 controllers (Rematch / Afterglow / Afterglow Wave)"
+   ],
+   "reported": [
+    "Turtle Beach Afterglow Wave Wired for Switch 2"
+   ],
+   "modes": [
+    "wired"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "0e6f:0198",
+   "name": "Turtle Beach Afterglow Wired for Switch 2",
+   "family": "SwitchPro",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Switch 2 controllers (Rematch / Afterglow / Afterglow Wave)"
+   ],
+   "reported": [
+    "Turtle Beach Afterglow Wired for Switch 2"
+   ],
+   "modes": [
+    "wired"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "0e6f:021a",
+   "name": "Victrix Pro BFG for PC (wired)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Victrix Pro BFG (Xbox / PC) and BFG Reloaded"
+   ],
+   "reported": [
+    "Victrix Pro BFG Wired Controller for PC"
+   ],
+   "modes": [
+    "usb PC"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-021a"
+   ]
+  },
+  {
+   "id": "0e6f:021d",
+   "name": "Victrix Pro BFG for PC (wireless)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Victrix Pro BFG (Xbox / PC) and BFG Reloaded"
+   ],
+   "reported": [
+    "Victrix Pro BFG Wireless Controller for PC"
+   ],
+   "modes": [
+    "2.4g PC"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-021d"
+   ]
+  },
+  {
+   "id": "0e6f:024b",
+   "name": "Victrix Pro BFG for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Victrix Pro BFG (Xbox / PC) and BFG Reloaded"
+   ],
+   "reported": [
+    "Victrix Pro BFG Wired Controller for Xbox"
+   ],
+   "modes": [
+    "usb Xbox (variant)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-024b"
+   ]
+  },
+  {
+   "id": "0e6f:0250",
+   "name": "Victrix Gambit Prime for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Victrix Gambit / Gambit Prime"
+   ],
+   "reported": [
+    "Victrix Gambit Prime Wired Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-0250"
+   ]
+  },
+  {
+   "id": "0e6f:02da",
+   "name": "PDP Afterglow for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Rematch Wired / Rematch Advanced (Xbox, PDP-era ids)"
+   ],
+   "reported": [
+    "PDP Xbox Series X Afterglow"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "0e6f:02db",
+   "name": "PDP Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Rematch Wired / Rematch Advanced (Xbox, PDP-era ids)"
+   ],
+   "reported": [
+    "PDP Wired Controller for Xbox Series X - Black"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-02db"
+   ]
+  },
+  {
+   "id": "0e6f:0304",
+   "name": "Turtle Beach Rematch Wired for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Rematch Wired / Rematch Advanced (Xbox, PDP-era ids)"
+   ],
+   "reported": [
+    "Rematch Xbox Wired Controller-Purple Fade"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-0304"
+   ]
+  },
+  {
+   "id": "0e6f:0306",
+   "name": "Turtle Beach Rematch Wired for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Rematch Wired / Rematch Advanced (Xbox, PDP-era ids)"
+   ],
+   "reported": [
+    "Rematch Xbox Wired Controller-Glitch Green"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-0306"
+   ]
+  },
+  {
+   "id": "0e6f:030b",
+   "name": "Turtle Beach Rematch Wired for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Rematch Wired / Rematch Advanced (Xbox, PDP-era ids)"
+   ],
+   "reported": [
+    "Rematch Xbox Wired Controller- Radial Black"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-030b"
+   ]
+  },
+  {
+   "id": "0e6f:032f",
+   "name": "Turtle Beach Rematch Advanced Wired for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Rematch Wired / Rematch Advanced (Xbox, PDP-era ids)"
+   ],
+   "reported": [
+    "Xbox Rematch GLOW Wired Advanced Controller - Jolt Green"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-032f"
+   ]
+  },
+  {
+   "id": "0e6f:033b",
+   "name": "Turtle Beach Rematch Advanced Wired for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Rematch Wired / Rematch Advanced (Xbox, PDP-era ids)"
+   ],
+   "reported": [
+    "Xbox Rematch Advanced Wired Controller- Titan Steel"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0e6f-033b"
+   ]
+  },
+  {
+   "id": "0e6f:1113",
+   "name": "Retrolink N64 style USB Controller",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Retrolink / Tomee / Saffun N64 USB controller clones"
+   ],
+   "reported": [
+    "N64 Controller"
+   ],
+   "modes": [
+    "Saffun N64 / GameCube (PDP vid spoof)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/JappaWakka/ZeldasAdventureRemastered/blob/e54a85cf4a7d1e172446c53632b4570041641710/ZeldasAdventure/scripts/__input_gamepad_set_type/__input_gamepad_set_type.gml"
+   ]
+  },
+  {
+   "id": "0e8f:0041",
+   "name": "PlaySega USB Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Sega (licensed) PlaySega USB controller (HL-F2412)"
+   ],
+   "reported": [
+    "playsega controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/PlaySega_Controller_USB.cfg"
+   ]
+  },
+  {
+   "id": "0e8f:0201",
+   "name": "SmartJoy Frag PS2 to USB adapter",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "SmartJoy Frag Xpad/PS2 adaptor"
+   ],
+   "modes": [
+    "SmartJoy Frag Xpad/PS2 adaptor"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/input/joystick/xpad.c"
+   ]
+  },
+  {
+   "id": "0e8f:3010",
+   "name": "HuiJia Saturn controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash Sega Saturn / Mega Drive to USB adapters"
+   ],
+   "reported": [
+    "HuiJia  USB GamePad"
+   ],
+   "modes": [
+    "Saturn adapter (old)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Mayflash-Sega-Saturn-to-USB-Adapter.cfg"
+   ]
+  },
+  {
+   "id": "0f00:0001",
+   "name": "NES style USB gamepad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "DragonRise (generic) Generic \"USB Gamepad\" SNES/NES clone (Retrolink, Kiwitata, Vilrose, iNNEXT)"
+   ],
+   "reported": [
+    "NES Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0f0d:0138",
+   "name": "HORI PC Engine Mini Pad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Taito / Hori / Retro Games Mini-console pads: Egret II Mini, PC Engine/TurboGrafx Mini, THEC64"
+   ],
+   "reported": [
+    "PCEngine PAD"
+   ],
+   "modes": [
+    "Hori PC Engine / TurboGrafx-16 Mini pad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/PCEngine%20PAD.cfg"
+   ]
+  },
+  {
+   "id": "0f0d:014f",
+   "name": "HORI HORIPAD Pro for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "HORI HORIPAD Pro for Xbox Series X|S"
+   ],
+   "reported": [
+    "HORIPAD Pro for Xbox Series X"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0f0d-014f"
+   ]
+  },
+  {
+   "id": "0f0d:0150",
+   "name": "HORI Fighting Commander OCTA for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "HORI Fighting Commander OCTA (Xbox / Pro / PC)"
+   ],
+   "reported": [
+    "HORI Fighting Commander OCTA for Xbox Series X"
+   ],
+   "modes": [
+    "usb (OCTA for Xbox Series X)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "0f0d:0165",
+   "name": "HORI Fighting Commander OCTA",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "HORI Fighting Commander OCTA (Xbox / Pro / PC)"
+   ],
+   "reported": [
+    "Fighting Commander OCTA"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0f0d-0165"
+   ]
+  },
+  {
+   "id": "0f0d:0185",
+   "name": "HORI Split Pad Pro",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "HORI Split Pad Pro / Split Pad Fit"
+   ],
+   "reported": [
+    "Hori Switch Split Pad Pro / Fit"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0f0d:01aa",
+   "name": "HORI Wireless HORIPAD for Steam (receiver)",
+   "family": "SteamDeck",
+   "layout": null,
+   "models": [
+    "HORI Wireless HORIPAD for Steam"
+   ],
+   "reported": [
+    "HORIPAD STEAM"
+   ],
+   "modes": [
+    "usb (variant)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0f0d-01aa"
+   ]
+  },
+  {
+   "id": "0f0d:01bb",
+   "name": "HORI Fighting Commander for PC",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "HORI Fighting Commander OCTA (Xbox / Pro / PC)"
+   ],
+   "reported": [
+    "Controller (HORI Fighting Commander PC)"
+   ],
+   "modes": [
+    "xinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig"
+   ]
+  },
+  {
+   "id": "0f0d:01be",
+   "name": "HORI Fighting Commander OCTA (PC)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "HORI Fighting Commander OCTA (Xbox / Pro / PC)"
+   ],
+   "reported": [
+    "PAD X PC XIP"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:0f0d-01be"
+   ]
+  },
+  {
+   "id": "0f0d:01c8",
+   "name": "HORI Fighting Commander OCTA Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "HORI Fighting Commander OCTA (Xbox / Pro / PC)"
+   ],
+   "reported": [
+    "HORI Fighting Commander OCTA Pro"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig"
+   ]
+  },
+  {
+   "id": "0f0d:0200",
+   "name": "HORI Split Pad Fit",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "HORI Split Pad Pro / Split Pad Fit"
+   ],
+   "reported": [
+    "Hori Split Pad Fit"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0f30:0110",
+   "name": "Saitek P480 Rumble",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek P480 Rumble"
+   ],
+   "modes": [
+    "P480 Rumble (Jess Tech)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "0f30:0112",
+   "name": "Saitek Dual Analog",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Saitek P880 / P990 / P2600 / P2900 / P3200 / Cyborg Rumble"
+   ],
+   "reported": [
+    "Saitek Dual Analog"
+   ],
+   "modes": [
+    "P380 Dual Analog (Jess Tech)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1038:1418",
+   "name": "SteelSeries Stratus XL",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "SteelSeries Stratus XL / Nimbus"
+   ],
+   "reported": [
+    "SteelSeries Stratus XL"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1038:1420",
+   "name": "SteelSeries Nimbus",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "SteelSeries Stratus XL / Nimbus"
+   ],
+   "reported": [
+    "SteelSeries Nimbus"
+   ],
+   "modes": [
+    "usb/bt"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1038:b360",
+   "name": "SteelSeries Nimbus or Stratus XL (Bluetooth)",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "SteelSeries Stratus XL / Nimbus"
+   ],
+   "reported": [
+    "SteelSeries Nimbus/Stratus XL"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "10f5:018f",
+   "name": "Turtle Beach Rematch for Switch",
+   "family": "SwitchPro",
+   "layout": null,
+   "models": [
+    "Turtle Beach / PDP Switch 2 controllers (Rematch / Afterglow / Afterglow Wave)"
+   ],
+   "reported": [
+    "Turtle Beach Rematch Nintendo Switch Controller"
+   ],
+   "modes": [
+    "bluetooth"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "10f5:7070",
+   "name": "Turtle Beach Stealth Ultra",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach Stealth Ultra"
+   ],
+   "reported": [
+    "Stealth Ultra"
+   ],
+   "modes": [
+    "2.4g dongle"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/ublue-os/bazzite/issues/4927"
+   ]
+  },
+  {
+   "id": "10f5:7101",
+   "name": "Turtle Beach Stealth Pivot",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach Stealth Pivot"
+   ],
+   "reported": [],
+   "modes": [
+    "2.4g dongle"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/paroj/xpad/issues/353"
+   ]
+  },
+  {
+   "id": "10f5:7114",
+   "name": "Turtle Beach Rematch Core for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach Rematch Core (wired, Xbox)"
+   ],
+   "reported": [
+    "Xbox Rematch Core Wired Controller"
+   ],
+   "modes": [
+    "usb (Ghost Black Camo/Orange)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:10f5-7114"
+   ]
+  },
+  {
+   "id": "10f5:7116",
+   "name": "Turtle Beach Rematch Core for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach Rematch Core (wired, Xbox)"
+   ],
+   "reported": [
+    "Xbox Rematch Core Wired Controller"
+   ],
+   "modes": [
+    "usb (White Green)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:10f5-7116"
+   ]
+  },
+  {
+   "id": "10f5:7117",
+   "name": "Turtle Beach Afterglow Wave Wired for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach Afterglow Wave Wired (Xbox)"
+   ],
+   "reported": [
+    "Xbox Afterglow Wave Wired Controller- Black"
+   ],
+   "modes": [
+    "usb (Black)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:10f5-7117"
+   ]
+  },
+  {
+   "id": "10f5:7122",
+   "name": "Turtle Beach Rematch Core for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Turtle Beach Rematch Core (wired, Xbox)"
+   ],
+   "reported": [
+    "Xbox Rematch Core Wired Controller- Black"
+   ],
+   "modes": [
+    "usb (Black)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/overthetop78/GW-GUI/blob/main/src/GWGUI.App/Constants/Input/GameInput/GameInputDeviceModelCatalog.cs"
+   ]
+  },
+  {
+   "id": "11c1:9101",
+   "name": "EasySMX ESM-9101",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "EasySMX X05 / X10 / ESM-9110 / ESM-9101",
+    "EasySMX X05 / X05 Pro / X10 / X15 / X20 / D05 / D10"
+   ],
+   "reported": [
+    "EasySMX"
+   ],
+   "modes": [
+    "dinput",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "11ff:3341",
+   "name": "PS2 to USB adapter",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "PS2 Controller"
+   ],
+   "modes": [
+    "PS2 adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1292:4643",
+   "name": "NES controller to USB adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Retro-bit Sega Genesis/Atari to USB adapter, NES to USB"
+   ],
+   "reported": [
+    "NES Controller"
+   ],
+   "modes": [
+    "NES to USB"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/misteraddons/inputlatency/blob/HEAD/docs/data/latency.json"
+   ]
+  },
+  {
+   "id": "1292:4745",
+   "name": "Genesis and Atari controller to USB adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Retro-bit / generic Atari/Genesis to USB adapter (Innex/Retro-bit \"GENESIS/ATARI Controller USB\")"
+   ],
+   "reported": [
+    "GENESIS/ATARI Controller USB"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/GENESIS_ATARI%20Controller%20USB.cfg"
+   ]
+  },
+  {
+   "id": "1292:4e47",
+   "name": "NeoGeo X Arcade Stick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "SNK NeoGeo mini pad / NeoGeo X / Arcade Stick Pro"
+   ],
+   "reported": [
+    "TOMMO NEOGEOX Arcade Stick"
+   ],
+   "modes": [
+    "NeoGeo X Arcade Stick (Tommo)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/TOMMO_NEOGEOX_Arcade_Stick.cfg"
+   ]
+  },
+  {
+   "id": "12bd:d013",
+   "name": "Retrolink Sega Saturn Classic USB Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Various Sega Saturn USB pads (Retrolink, SLS, generic)"
+   ],
+   "reported": [
+    "Retrolink Sega Saturn Classic Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "12bd:d015",
+   "name": "Retrolink SNES Classic USB Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "DragonRise (generic) Generic \"USB Gamepad\" SNES/NES clone (Retrolink, Kiwitata, Vilrose, iNNEXT)"
+   ],
+   "reported": [
+    "Retrolink SNES Controller"
+   ],
+   "modes": [
+    "usb (Gembird chip, Retrolink/Tomee SNES)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "12bd:e001",
+   "name": "Leadership USB PC gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Leadership Controle PC USB (6644 and siblings)"
+   ],
+   "reported": [
+    "Leadership"
+   ],
+   "modes": [
+    "dinput usb"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1532:0a43",
+   "name": "Razer Wolverine V3 Tournament Edition (Xbox mode)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Razer Wolverine V3 Tournament Edition"
+   ],
+   "reported": [
+    "Razer Wolverine V3 Tournament Edition for Xbox"
+   ],
+   "modes": [
+    "usb GIP"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/openrazer/openrazer/issues/2364"
+   ]
+  },
+  {
+   "id": "1532:0a45",
+   "name": "Razer Wolverine V3 Tournament Edition",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Razer Wolverine V3 Tournament Edition"
+   ],
+   "reported": [
+    "Razer Wolverine V3 Tournament Edition"
+   ],
+   "modes": [
+    "usb PC/XInput mode"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/Manolo15v/wolverine-identity/blob/main/HANDOFF.md"
+   ]
+  },
+  {
+   "id": "1532:0a4c",
+   "name": "Razer Wolverine V3 Pro for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Razer Wolverine V3 Pro (Xbox) / Wolverine V3 Pro 8K PC"
+   ],
+   "reported": [
+    "Razer Wolverine V3 Pro for Xbox"
+   ],
+   "modes": [
+    "usb (V3 Pro for Xbox, variant)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:1532-0a4c"
+   ]
+  },
+  {
+   "id": "16c0:05e1",
+   "name": "Ultimate Atari Fight Stick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "XinMoTek Ultimate Atari Fight Stick / XM-08 encoder"
+   ],
+   "reported": [
+    "Ultimate Atari Fight Stick"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1781:057e",
+   "name": "Sega Saturn style USB Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Various Sega Saturn USB pads (Retrolink, SLS, generic)"
+   ],
+   "reported": [
+    "Sega Saturn"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1949:0402",
+   "name": "Redragon Ceres G812 or Ipega gamepad",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Retro-bit Official Sega Saturn Bluetooth Control Pad",
+    "Redragon Ceres G812",
+    "GuliKit / ZD / Manba misc budget and enthusiast pads"
+   ],
+   "reported": [
+    "GamePad",
+    "Manba One",
+    "Redragon G812"
+   ],
+   "modes": [
+    "bluetooth",
+    "bluetooth (android/HID mode)",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Retro-Bit%20Saturn%20Bluetooth%20Controller.cfg",
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt",
+    "https://github.com/ndeadly/MissionControl/issues/974"
+   ]
+  },
+  {
+   "id": "1a34:f705",
+   "name": "HuiJia GameCube controller adapter",
+   "family": "GameCube",
+   "layout": null,
+   "models": [
+    "Nintendo GameCube controller via adapters"
+   ],
+   "reported": [
+    "HuiJia  USB GamePad"
+   ],
+   "modes": [
+    "HuiJia/Mayflash old GC adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Mayflash-GameCube-to-USB-Adapter.cfg"
+   ]
+  },
+  {
+   "id": "1b1c:3a03",
+   "name": "SCUF Valor Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "SCUF (Corsair) Valor Pro (wired, Xbox/PC)"
+   ],
+   "reported": [
+    "Corsair SCUF Valor Pro wired XBOX Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/paroj/xpad/issues/358"
+   ]
+  },
+  {
+   "id": "1b1c:3a0b",
+   "name": "SCUF Valor Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "SCUF (Corsair) Valor Pro (wired, Xbox/PC)"
+   ],
+   "reported": [],
+   "modes": [
+    "usb (other unit)"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/paroj/xpad/issues/358"
+   ]
+  },
+  {
+   "id": "1b1c:3a39",
+   "name": "SCUF Valor Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "SCUF (Corsair) Valor Pro (wired, Xbox/PC)"
+   ],
+   "reported": [],
+   "modes": [
+    "usb (Valor, non-Pro)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/paroj/xpad/issues/358"
+   ]
+  },
+  {
+   "id": "1c59:0024",
+   "name": "THEC64 Joystick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Taito / Hori / Retro Games Mini-console pads: Egret II Mini, PC Engine/TurboGrafx Mini, THEC64"
+   ],
+   "reported": [
+    "THEC64 Joystick"
+   ],
+   "modes": [
+    "THEC64 Joystick"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1c59:0026",
+   "name": "THEC64 Gamepad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Taito / Hori / Retro Games Mini-console pads: Egret II Mini, PC Engine/TurboGrafx Mini, THEC64"
+   ],
+   "reported": [
+    "THEGamepad"
+   ],
+   "modes": [
+    "THEGamepad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1c5a:0024",
+   "name": "Capcom Home Arcade (player 1)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Capcom / Koch Capcom Home Arcade sticks (and Replicade SF2 mini stick)"
+   ],
+   "reported": [
+    "CHA1     CHA1"
+   ],
+   "modes": [
+    "Home Arcade player 1"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/linuxraw/CHA1.cfg"
+   ]
+  },
+  {
+   "id": "1c5b:0024",
+   "name": "Capcom Home Arcade (player 1)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Capcom / Koch Capcom Home Arcade sticks (and Replicade SF2 mini stick)"
+   ],
+   "reported": [
+    "Capcom Home Arcade Controller"
+   ],
+   "modes": [
+    "Home Arcade"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1c5b:0025",
+   "name": "Capcom Home Arcade (player 2)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Capcom / Koch Capcom Home Arcade sticks (and Replicade SF2 mini stick)"
+   ],
+   "reported": [
+    "CHA2     CHA2"
+   ],
+   "modes": [
+    "Home Arcade player 2"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/linuxraw/CHA2.cfg"
+   ]
+  },
+  {
+   "id": "1d57:0020",
+   "name": "SNES controller to USB adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Tomee / Hyperkin / RetroUSB NES/SNES/Genesis original-controller to USB adapters"
+   ],
+   "reported": [
+    "SNES PC Game Pad"
+   ],
+   "modes": [
+    "Tomee SNES adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/SNES%20PC%20Game%20Pad%20%20%20.cfg"
+   ]
+  },
+  {
+   "id": "1d57:0021",
+   "name": "NES controller to USB adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Tomee / Hyperkin / RetroUSB NES/SNES/Genesis original-controller to USB adapters"
+   ],
+   "reported": [
+    "NES PC Game Pad     NES PC Game Pad"
+   ],
+   "modes": [
+    "Tomee NES adapter / Hyperkin SmartBoy"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Hyperkin_SmartBoy.cfg"
+   ]
+  },
+  {
+   "id": "1d79:0301",
+   "name": "Dual Box Wii Classic controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash / Elecom / raphnet NES/SNES Classic and Wii Classic controller to USB adapters"
+   ],
+   "reported": [
+    "Dual Box WII"
+   ],
+   "modes": [
+    "Mayflash Wii Classic adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/hid/Mayflash_Wii_Classic_Controller_Adapter.cfg"
+   ]
+  },
+  {
+   "id": "1dd8:000b",
+   "name": "Buffalo BSGP1601 Gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Buffalo iBuffalo BSGP1601 / BSGP1204 / AC02"
+   ],
+   "reported": [
+    "BUFFALO BSGP1601 Series"
+   ],
+   "modes": [
+    "BSGP1601"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/iBuffalo_BSGP1601.cfg"
+   ]
+  },
+  {
+   "id": "1dd8:000e",
+   "name": "iBuffalo AC02 Arcade Joystick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Buffalo iBuffalo BSGP1601 / BSGP1204 / AC02"
+   ],
+   "reported": [
+    "iBuffalo AC02 Arcade Joystick"
+   ],
+   "modes": [
+    "AC02 arcade stick"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1dd8:000f",
+   "name": "Buffalo BSGP1204 Gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Buffalo iBuffalo BSGP1601 / BSGP1204 / AC02"
+   ],
+   "reported": [
+    "iBuffalo BSGP1204 Series"
+   ],
+   "modes": [
+    "BSGP1204"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1dd8:0010",
+   "name": "Buffalo BSGP1204P Gamepad",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "Buffalo iBuffalo BSGP1601 / BSGP1204 / AC02"
+   ],
+   "reported": [
+    "iBuffalo BSGP1204P Series"
+   ],
+   "modes": [
+    "BSGP1204P"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "1f4f:0008",
+   "name": "NeoGeo Mini Pad (PS3 mode)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "SNK NeoGeo mini pad / NeoGeo X / Arcade Stick Pro"
+   ],
+   "reported": [
+    "NeoGeo PS3"
+   ],
+   "modes": [
+    "NeoGeo PS3 pad"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "20bc:5501",
+   "name": "NeoGeo Arcade Stick Pro",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "SNK NeoGeo mini pad / NeoGeo X / Arcade Stick Pro"
+   ],
+   "reported": [
+    "NeoGeo G1 Pro"
+   ],
+   "modes": [
+    "NEOGEO Arcade Stick Pro"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/JappaWakka/ZeldasAdventureRemastered/blob/e54a85cf4a7d1e172446c53632b4570041641710/ZeldasAdventure/scripts/__input_gamepad_set_type/__input_gamepad_set_type.gml"
+   ]
+  },
+  {
+   "id": "20bc:9100",
+   "name": "EasySMX Controller",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "EasySMX X05 / X10 / ESM-9110 / ESM-9101",
+    "EasySMX X05 / X05 Pro / X10 / X15 / X20 / D05 / D10"
+   ],
+   "reported": [
+    "EasySMX Controller"
+   ],
+   "modes": [
+    "dinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "20d6:2002",
+   "name": "PowerA Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Enhanced Wired / Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "EnWired Gray/White Inline"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "20d6:2005",
+   "name": "PowerA Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Enhanced Wired / Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Wired Controller Core - Black"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "20d6:2006",
+   "name": "PowerA Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Enhanced Wired / Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Wired Controller Core - White"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "20d6:2035",
+   "name": "PowerA Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Enhanced Wired / Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Wired Controller Black"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-2035"
+   ]
+  },
+  {
+   "id": "20d6:2036",
+   "name": "PowerA Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Enhanced Wired / Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Wired Controller White"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-2036"
+   ]
+  },
+  {
+   "id": "20d6:203c",
+   "name": "PowerA Advantage Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Advantage Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Advwired Controller Blue"
+   ],
+   "modes": [
+    "usb (Blue)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-203c"
+   ]
+  },
+  {
+   "id": "20d6:204a",
+   "name": "PowerA Advantage Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Advantage Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Advwired Controller Satin Fuchsia"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-204a"
+   ]
+  },
+  {
+   "id": "20d6:204f",
+   "name": "PowerA Advantage Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Advantage Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Advwired Controller Cyber Style"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-204f"
+   ]
+  },
+  {
+   "id": "20d6:205c",
+   "name": "PowerA Advantage Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Advantage Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Advwired Controller Disco Ball"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-205c"
+   ]
+  },
+  {
+   "id": "20d6:205f",
+   "name": "PowerA Advantage Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Advantage Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Advwired Controller Dragon & Phoenix"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-205f"
+   ]
+  },
+  {
+   "id": "20d6:2061",
+   "name": "PowerA Advantage Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Advantage Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Adv Plus Wired Controller Black"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-2061"
+   ]
+  },
+  {
+   "id": "20d6:2062",
+   "name": "PowerA Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Enhanced Wired / Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Wired Controller Black"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-2062"
+   ]
+  },
+  {
+   "id": "20d6:2063",
+   "name": "PowerA Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Enhanced Wired / Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Wired Controller White"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-2063"
+   ]
+  },
+  {
+   "id": "20d6:4004",
+   "name": "PowerA Fusion Pro 3",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Fusion Pro 3 / Fusion Pro 4 / Fusion Pro Wireless"
+   ],
+   "reported": [
+    "Xbox Series X Controller Fusion Pro 3"
+   ],
+   "modes": [
+    "usb (Fusion Pro 3)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-4004"
+   ]
+  },
+  {
+   "id": "20d6:4005",
+   "name": "PowerA Advantage Wired Controller for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Advantage Wired Controller (Xbox Series X|S)"
+   ],
+   "reported": [
+    "Xbox Series X Advwired Controller with Lumectra Black"
+   ],
+   "modes": [
+    "usb (Lumectra Black)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-4005"
+   ]
+  },
+  {
+   "id": "20d6:4007",
+   "name": "PowerA Fusion Pro 3",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Fusion Pro 3 / Fusion Pro 4 / Fusion Pro Wireless"
+   ],
+   "reported": [
+    "Xbox Series X Controller Fusion Pro 3 Midnight Shadow"
+   ],
+   "modes": [
+    "usb (Fusion Pro 3 Midnight Shadow)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-4007"
+   ]
+  },
+  {
+   "id": "20d6:4014",
+   "name": "PowerA Fusion Pro Wireless",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA Fusion Pro 3 / Fusion Pro 4 / Fusion Pro Wireless"
+   ],
+   "reported": [
+    "Xbox Series X Controller Fusion Pro Wireless"
+   ],
+   "modes": [
+    "2.4g/usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:20d6-4014"
+   ]
+  },
+  {
+   "id": "20d6:4026",
+   "name": "PowerA OPS Wireless Controller",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA OPS / OPS Pro (PC/cloud wireless)"
+   ],
+   "reported": [
+    "PowerA OPS Controller"
+   ],
+   "modes": [
+    "usb/2.4g"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "20d6:4033",
+   "name": "PowerA OPS Pro Wireless Controller",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "PowerA OPS / OPS Pro (PC/cloud wireless)"
+   ],
+   "reported": [
+    "PowerA OPS Pro Controller"
+   ],
+   "modes": [
+    "usb/2.4g"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "20d6:a710",
+   "name": "Mayflash Magic NS adapter",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Hyperkin / Mayflash N64 to USB adapters"
+   ],
+   "reported": [
+    "Mayflash Magic NS"
+   ],
+   "modes": [
+    "Mayflash N64 MF103 (switch mode, PowerA spoof)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/Zelda64Recomp/Zelda64Recomp/blob/dev/recompcontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "20d6:a720",
+   "name": "PowerA Advantage for Switch 2",
+   "family": "SwitchPro",
+   "layout": null,
+   "models": [
+    "PowerA Advantage for Switch 2 / Fusion Pro for Switch"
+   ],
+   "reported": [
+    "PowerA Advantage Nintendo Switch 2 Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "22ba:0107",
+   "name": "PS2 to USB adapter",
+   "family": "Ps2Adapter",
+   "layout": null,
+   "models": [
+    "Generic PS1/PS2 to USB adapters (Twin USB, Super Dual Box, etc.)"
+   ],
+   "reported": [
+    "Technology Innovation PS2 Adapter"
+   ],
+   "modes": [
+    "Technology Innovation PS2 adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2345:2104",
+   "name": "Machenike G5 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Machenike G5 Pro / G3 V2"
+   ],
+   "reported": [
+    "XBOX 360 For Windows"
+   ],
+   "modes": [
+    "xinput"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2345-2104"
+   ]
+  },
+  {
+   "id": "2345:e015",
+   "name": "Mobapad Chitu HD",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Mobapad Chitu HD / C2 Lite"
+   ],
+   "reported": [
+    "Mobapad Chitu HD"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2345:e07a",
+   "name": "EasySMX X05 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "EasySMX X05 / X05 Pro / X10 / X15 / X20 / D05 / D10"
+   ],
+   "reported": [
+    "EasySMX X05 Pro"
+   ],
+   "modes": [
+    "xinput (X05 Pro)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/sirlucjan/kernel-patches/blob/master/7.1/cachyos-fixes-patches-sep/0006-Input-xpad-add-support-for-EasySMX-05-Pro.patch"
+   ]
+  },
+  {
+   "id": "2563:0526",
+   "name": "Redragon Harrow G808 (Android mode, ShanWan)",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Redragon Harrow G808 / Harrow Pro G808-PRO",
+    "Redragon Harrow G808 (wired V2 / wireless)",
+    "Redragon Harrow Pro G808-PRO / G808-PRO V1"
+   ],
+   "reported": [
+    "Android Gamepad",
+    "ShanWan Gamepad (SDL DB names this id 'HJD X' / 'Uberwith Controller')"
+   ],
+   "modes": [
+    "android",
+    "android mode",
+    "dinput / generic HID (seen on Switch via sys-con)"
+   ],
+   "confidence": [
+    "confirmed",
+    "likely"
+   ],
+   "sources": [
+    "https://bbs.archlinux.org/viewtopic.php?id=294067",
+    "https://github.com/o0Zz/sys-con/issues/77 ; https://github.com/Ultra-NX/UltraNX/blob/main/config/sys-con/config.ini ('[2563-0526] ; Redragon Harrow G808')"
+   ]
+  },
+  {
+   "id": "27f8:0bbf",
+   "name": "Razer Kishi",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Razer Kishi Ultra / Kishi V2"
+   ],
+   "reported": [
+    "Razer Kishi"
+   ],
+   "modes": [
+    "usb (Kishi v1)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2836:0001",
+   "name": "OUYA Game Controller",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "OUYA OUYA Game Controller"
+   ],
+   "reported": [
+    "OUYA Controller"
+   ],
+   "modes": [
+    "bluetooth"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "289b:0005",
+   "name": "raphnet Saturn controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "raphnet Dreamcast / Saturn to USB adapters"
+   ],
+   "reported": [
+    "raphnet.net Saturn_Adapter_2.0"
+   ],
+   "modes": [
+    "Saturn v2.0"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/raphnet.net_Sega_Saturn_to_USB_Adapter_2_0.cfg"
+   ]
+  },
+  {
+   "id": "289b:0008",
+   "name": "raphnet Dreamcast controller adapter",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "raphnet Dreamcast / Saturn to USB adapters"
+   ],
+   "reported": [
+    "Raphnet Dreamcast Adapter"
+   ],
+   "modes": [
+    "Dreamcast v1"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "289b:0043",
+   "name": "raphnet Saturn controller adapter v3",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "raphnet Dreamcast / Saturn to USB adapters"
+   ],
+   "reported": [
+    "Saturn to USB v3.0"
+   ],
+   "modes": [
+    "Saturn v3"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Saturn%20to%20USB%20v3.0.cfg"
+   ]
+  },
+  {
+   "id": "289b:0080",
+   "name": "raphnet Wii Classic controller adapter",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Mayflash / Elecom / raphnet NES/SNES Classic and Wii Classic controller to USB adapters"
+   ],
+   "reported": [
+    "Raphnet Wii Classic Adapter V3"
+   ],
+   "modes": [
+    "raphnet Wii/NES Classic adapter v3"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "289b:00d0",
+   "name": "raphnet Dreamcast controller adapter",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "raphnet Dreamcast / Saturn to USB adapters"
+   ],
+   "reported": [
+    "Dreamcast to USB"
+   ],
+   "modes": [
+    "Dreamcast v2"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Raphnet%20Dreamcast%20Controller%20to%20USB%20Adapter%20%28v2%29.cfg"
+   ]
+  },
+  {
+   "id": "294b:3004",
+   "name": "Snakebyte Gamepad for Xbox Series",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Snakebyte Gamepad Pro X / Xbox Series"
+   ],
+   "reported": [
+    "Snakebyte Xbox Series Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "294b:3101",
+   "name": "Snakebyte Gamepad Pro X",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Snakebyte Gamepad Pro X / Xbox Series"
+   ],
+   "reported": [
+    "GAMEPAD PRO X"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:294b-3101"
+   ]
+  },
+  {
+   "id": "2dc8:1003",
+   "name": "8BitDo NES30 Arcade Stick",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo             8Bitdo NES30 Arcade"
+   ],
+   "modes": [
+    "NES30 Arcade (USB)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_Arcade_N30_USB.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:1080",
+   "name": "8BitDo NES30 Arcade Stick",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo NES30 Arcade"
+   ],
+   "modes": [
+    "NES30 Arcade (BT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_Arcade_N30_BT.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:2003",
+   "name": "8BitDo Ultimate C Wired for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate C Wired Controller for Xbox"
+   ],
+   "reported": [
+    "8BitDo Ultimate C Xbox Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2dc8:2007",
+   "name": "8BitDo Arcade Stick for Xbox",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Arcade Controller (leverless) / Arcade Stick"
+   ],
+   "reported": [
+    "8BitDo Arcade Stick for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-2007"
+   ]
+  },
+  {
+   "id": "2dc8:200b",
+   "name": "8BitDo Ultimate Mobile Gaming Controller",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Mobile Gaming Controller (and for Xbox)"
+   ],
+   "reported": [
+    "8BitDo Ultimate MG / for Xbox"
+   ],
+   "modes": [
+    "usb (Xbox edition)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig"
+   ]
+  },
+  {
+   "id": "2dc8:2015",
+   "name": "8BitDo Ultimate Wired for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Wired Controller for Xbox"
+   ],
+   "reported": [
+    "8BitDo Ultimate Wired Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-2015"
+   ]
+  },
+  {
+   "id": "2dc8:2019",
+   "name": "8BitDo Ultimate Mini Wired for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Mini Wired Controller for Xbox"
+   ],
+   "reported": [
+    "Ultimate Mini Wired Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-2019"
+   ]
+  },
+  {
+   "id": "2dc8:201b",
+   "name": "8BitDo Ultimate 3-mode for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate 3-mode Controller for Xbox"
+   ],
+   "reported": [
+    "Ultimate 3mode Xbox"
+   ],
+   "modes": [
+    "usb (variant)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-201b"
+   ]
+  },
+  {
+   "id": "2dc8:2025",
+   "name": "8BitDo Ultimate C Wired for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate C Wired Controller for Xbox"
+   ],
+   "reported": [
+    "8BitDo Ultimate C Wired Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-2025"
+   ]
+  },
+  {
+   "id": "2dc8:2027",
+   "name": "8BitDo Ultimate C Wired for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate C Wired Controller for Xbox"
+   ],
+   "reported": [
+    "8BitDo Ultimate C Wired Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig"
+   ]
+  },
+  {
+   "id": "2dc8:2030",
+   "name": "8BitDo Ultimate 3-mode for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate 3-mode Controller for Xbox"
+   ],
+   "reported": [
+    "Ultimate 3mode Xbox"
+   ],
+   "modes": [
+    "usb (variant)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-2030"
+   ]
+  },
+  {
+   "id": "2dc8:2810",
+   "name": "8BitDo FC30",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo FC30 GamePad"
+   ],
+   "modes": [
+    "F30 / FC30 (BT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_F30_P1_BT.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:2820",
+   "name": "8BitDo NES30",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo NES30 GamePad"
+   ],
+   "modes": [
+    "NES30 (BT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_N30_BT.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:2830",
+   "name": "8BitDo SFC30",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo SFC30 GamePad"
+   ],
+   "modes": [
+    "SFC30 (BT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_SF30_BT.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:2840",
+   "name": "8BitDo SNES30",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo SNES30 GamePad"
+   ],
+   "modes": [
+    "SNES30 (BT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_SN30_BT.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:3000",
+   "name": "8BitDo SN30 (wireless)",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo 8Bitdo SN30 Wireless Controller"
+   ],
+   "modes": [
+    "SN30 2.4G (USB)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_24G_SN30_USB.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:3001",
+   "name": "8BitDo SF30 (wireless)",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo 8Bitdo SF30 Wireless Controller"
+   ],
+   "modes": [
+    "SF30 2.4G (USB)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_24G_SF30_USB.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:3004",
+   "name": "8BitDo 64 Controller (2.4G)",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Bluetooth / Pro 2 / 64 extra ids"
+   ],
+   "reported": [
+    "64 2.4G Wireless Controller"
+   ],
+   "modes": [
+    "2.4g"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:3010",
+   "name": "8BitDo Pro 2 Wired Controller",
+   "family": "EightBitDoPro2",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Bluetooth / Pro 2 / 64 extra ids"
+   ],
+   "reported": [
+    "8BitDo Pro 2 Wired Controller"
+   ],
+   "modes": [
+    "usb wired"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-3010"
+   ]
+  },
+  {
+   "id": "2dc8:301a",
+   "name": "8BitDo Ultimate 2C (Bluetooth)",
+   "family": "EightBitDoUltimate2C",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate 2C Wireless / Wired / Bluetooth"
+   ],
+   "reported": [
+    "Ultimate 2C Bluetooth Controller"
+   ],
+   "modes": [
+    "bluetooth (Ultimate 2C Bluetooth Controller)"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:301e",
+   "name": "8BitDo Ultimate Mobile Gaming Controller",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Mobile Gaming Controller (and for Xbox)"
+   ],
+   "reported": [
+    "Ultimate Mobile Gaming Controller"
+   ],
+   "modes": [
+    "usb/bt"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:3101",
+   "name": "8BitDo Retro Receiver (SNES)",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8BitDo Receiver"
+   ],
+   "modes": [
+    "Retro Receiver"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2dc8:3102",
+   "name": "8BitDo Retro Receiver (NES)",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8BitDo Receiver"
+   ],
+   "modes": [
+    "Retro Receiver"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2dc8:3103",
+   "name": "8BitDo Retro Receiver (Genesis)",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8BitDo Receiver"
+   ],
+   "modes": [
+    "Retro Receiver"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2dc8:3104",
+   "name": "8BitDo Retro Receiver (PlayStation)",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8BitDo Receiver"
+   ],
+   "modes": [
+    "Retro Receiver"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2dc8:3207",
+   "name": "8BitDo Arcade Stick (receiver)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Arcade Controller (leverless) / Arcade Stick"
+   ],
+   "reported": [
+    "8BitDo Arcade Stick Receiver"
+   ],
+   "modes": [
+    "receiver"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2dc8-3207"
+   ]
+  },
+  {
+   "id": "2dc8:3830",
+   "name": "8BitDo N64 Gamepad",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo N64 GamePad"
+   ],
+   "modes": [
+    "Retro-bit x 8BitDo RB8-64 / N64 (BT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Retro-Bit_8Bitdo_RB8-64_BT.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:5001",
+   "name": "8BitDo M30 Modkit",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8BitDo M30 Modkit"
+   ],
+   "modes": [
+    "M30 Modkit (USB)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_M30_Modkit_USB.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:5101",
+   "name": "8BitDo M30 Modkit",
+   "family": "EightBitDo",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo M30 Modkit"
+   ],
+   "modes": [
+    "M30 Modkit (BT)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_M30_Modkit_BT.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:6007",
+   "name": "8BitDo Ultimate Wireless Controller",
+   "family": "EightBitDoUltimate",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Bluetooth / Pro 2 / 64 extra ids"
+   ],
+   "reported": [
+    "8BitDo Ultimate (Ultimate Wireless Controller)"
+   ],
+   "modes": [
+    "bluetooth/dinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2dc8:600a",
+   "name": "8BitDo Pro 3 (Bluetooth adapter)",
+   "family": "EightBitDoFour",
+   "layout": "Symmetric",
+   "models": [
+    "8BitDo Pro 3"
+   ],
+   "reported": [
+    "Pro 3 Bluetooth Adapter"
+   ],
+   "modes": [
+    "2.4g adapter"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:600b",
+   "name": "8BitDo Arcade Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Arcade Controller (leverless) / Arcade Stick"
+   ],
+   "reported": [
+    "Arcade Controller"
+   ],
+   "modes": [
+    "dinput/bt"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:600c",
+   "name": "8BitDo Arcade Controller (adapter)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Arcade Controller (leverless) / Arcade Stick"
+   ],
+   "reported": [
+    "Arcade Controller Adapter"
+   ],
+   "modes": [
+    "adapter"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:600d",
+   "name": "8BitDo Pro 3 (charging dock)",
+   "family": "EightBitDoFour",
+   "layout": "Symmetric",
+   "models": [
+    "8BitDo Pro 3"
+   ],
+   "reported": [
+    "Charging Dock for Pro 3S"
+   ],
+   "modes": [
+    "charging dock"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:600f",
+   "name": "8BitDo Ultimate 2 Bluetooth Controller",
+   "family": "EightBitDoFour",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate 2 Bluetooth Controller"
+   ],
+   "reported": [
+    "Ultimate 2 Bluetooth Controller"
+   ],
+   "modes": [
+    "bluetooth/switch"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:6011",
+   "name": "8BitDo Ultimate 2 Bluetooth (adapter)",
+   "family": "EightBitDoFour",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate 2 Bluetooth Controller"
+   ],
+   "reported": [
+    "Ultimate 2 Bluetooth Adapter"
+   ],
+   "modes": [
+    "adapter"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:6013",
+   "name": "8BitDo Ultimate 2 Wireless (adapter)",
+   "family": "EightBitDoFour",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate 2 Wireless"
+   ],
+   "reported": [
+    "Ultimate 2 Wireless Adapter"
+   ],
+   "modes": [
+    "2.4g adapter (config identity)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/README.md"
+   ]
+  },
+  {
+   "id": "2dc8:6103",
+   "name": "8BitDo Pro 2",
+   "family": "EightBitDoPro2",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate Bluetooth / Pro 2 / 64 extra ids"
+   ],
+   "reported": [
+    "8BitDo Pro 2"
+   ],
+   "modes": [
+    "bluetooth"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2dc8:9001",
+   "name": "8BitDo NES30 Pro",
+   "family": "EightBitDo",
+   "layout": "Symmetric",
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo NES30 Pro   8Bitdo NES30 Pro"
+   ],
+   "modes": [
+    "NES30 Pro (USB)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/8Bitdo_Pro_N30_USB.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:9002",
+   "name": "8BitDo N64 Gamepad",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Retro Receivers (SNES/NES/Genesis/PS classic) and legacy retro pads"
+   ],
+   "reported": [
+    "8Bitdo N64         8Bitdo N64"
+   ],
+   "modes": [
+    "Retro-bit x 8BitDo RB8-64 / N64 (USB)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/Retro-Bit_8Bitdo_RB8-64_USB.cfg"
+   ]
+  },
+  {
+   "id": "2dc8:901a",
+   "name": "8BitDo Arcade Stick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "8BitDo Arcade Controller (leverless) / Arcade Stick"
+   ],
+   "reported": [
+    "Arcade Stick"
+   ],
+   "modes": [
+    "arcade stick"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/bybrooklyn/openbitdo/blob/main/docs/spec/device_name_catalog.md"
+   ]
+  },
+  {
+   "id": "2dc8:901b",
+   "name": "8BitDo Ultimate 3-mode for Xbox",
+   "family": "EightBitDo",
+   "layout": null,
+   "models": [
+    "8BitDo Ultimate 3-mode Controller for Xbox"
+   ],
+   "reported": [
+    "8BitDo Ultimate 3mode Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig"
+   ]
+  },
+  {
+   "id": "2e24:0bff",
+   "name": "Hyperkin N64 controller adapter",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Hyperkin / Mayflash N64 to USB adapters"
+   ],
+   "reported": [
+    "Hyperkin N64 Adapter"
+   ],
+   "modes": [
+    "Hyperkin N64 adapter"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2e24:1124",
+   "name": "Hyperkin Competitor for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Hyperkin Competitor (wired, Xbox)"
+   ],
+   "reported": [
+    "Hyperkin Competitor"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:2e24-1124"
+   ]
+  },
+  {
+   "id": "2e24:1128",
+   "name": "Hyperkin Competitor",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Hyperkin Trooper 2 / RetroN Sq / Competitor / GN6",
+    "Hyperkin Competitor (wired, Xbox)"
+   ],
+   "reported": [
+    "Hyperkin Competitor"
+   ],
+   "modes": [
+    "Competitor",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2e24:1618",
+   "name": "Hyperkin Duke",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Hyperkin Trooper 2 / RetroN Sq / Competitor / GN6"
+   ],
+   "reported": [
+    "Hyperkin Duke"
+   ],
+   "modes": [
+    "Duke (Xbox One, 2nd id)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/controller_list.h"
+   ]
+  },
+  {
+   "id": "2e24:200a",
+   "name": "Hyperkin Scout Premium (SNES style)",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Hyperkin Scout Premium (SNES style, BT)"
+   ],
+   "reported": [
+    "Wireless Gamepad"
+   ],
+   "modes": [
+    "bluetooth"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Hyperkin%20Scout%20Premium%20Wireless%20BT.cfg"
+   ]
+  },
+  {
+   "id": "2e24:200b",
+   "name": "Hyperkin Admiral Premium (N64 style)",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Hyperkin Admiral Premium (N64 style, BT)"
+   ],
+   "reported": [
+    "Hyperkin Admiral N64 Controller"
+   ],
+   "modes": [
+    "bluetooth"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2e24:386a",
+   "name": "Hyperkin Trooper 2",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Hyperkin Trooper 2 / RetroN Sq / Competitor / GN6"
+   ],
+   "reported": [
+    "Hyperkin Trooper V2"
+   ],
+   "modes": [
+    "Trooper 2"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/udev/Hyperkin_Trooper_V2.cfg"
+   ]
+  },
+  {
+   "id": "2e24:486a",
+   "name": "Hyperkin RetroN Sq Controller",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Hyperkin Trooper 2 / RetroN Sq / Competitor / GN6"
+   ],
+   "reported": [
+    "Hyperkin RetroN Sq"
+   ],
+   "modes": [
+    "RetroN Sq"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2e95:434b",
+   "name": "SCUF Envision",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "SCUF (Corsair) Envision / Envision Pro / Envision Pro V2"
+   ],
+   "reported": [
+    "Scuf Envision"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2e95:434d",
+   "name": "SCUF Envision Pro",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "SCUF (Corsair) Envision / Envision Pro / Envision Pro V2"
+   ],
+   "reported": [
+    "Scuf Envision"
+   ],
+   "modes": [
+    "usb wired (Envision Pro)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/xsyetopz/OpenJoystickDriver/issues/33"
+   ]
+  },
+  {
+   "id": "2e95:434e",
+   "name": "SCUF Envision",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "SCUF (Corsair) Envision / Envision Pro / Envision Pro V2"
+   ],
+   "reported": [
+    "Scuf Envision"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2f24:0091",
+   "name": "EasySMX ESM-9101",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "EasySMX X05 / X10 / ESM-9110 / ESM-9101",
+    "EasySMX X05 / X05 Pro / X10 / X15 / X20 / D05 / D10"
+   ],
+   "reported": [
+    "EasySMX ESM-9101",
+    "EasySMX ESM-9101 / GAME FOR WINDOWS 1.02"
+   ],
+   "modes": [
+    "ESM-9101 dinput",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "2f24:00b7",
+   "name": "EasySMX X05 / X10 (Game for Windows)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "EasySMX X05 / X10 / ESM-9110 / ESM-9101"
+   ],
+   "reported": [
+    "Controller (ESM GAME FOR WINDOWS 1.02)"
+   ],
+   "modes": [
+    "ESM-9110 xinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/xinput/Controller%20(ESM%20GAME%20FOR%20WINDOWS%201.02).cfg"
+   ]
+  },
+  {
+   "id": "2f24:00f4",
+   "name": "Mayflash N64 controller adapter MF103",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Hyperkin / Mayflash N64 to USB adapters"
+   ],
+   "reported": [
+    "Controller (MAYFLASH N64 USB Adapter MF103)"
+   ],
+   "modes": [
+    "Mayflash N64 MF103 (xinput)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/xinput/Controller%20%28MAYFLASH%20N64%20USB%20Adapter%20MF103%29.cfg"
+   ]
+  },
+  {
+   "id": "2f24:00f5",
+   "name": "Mayflash N64 controller adapter MF103",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Hyperkin / Mayflash N64 to USB adapters"
+   ],
+   "reported": [
+    "MAYFLASH N64 USB Adapter MF103"
+   ],
+   "modes": [
+    "Mayflash N64 MF103 (dinput)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/android/MAYFLASH%20N64%20USB%20Adapter%20MF103.cfg"
+   ]
+  },
+  {
+   "id": "2f24:200a",
+   "name": "Hyperkin Scout",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Hyperkin Scout Premium (SNES style, BT)"
+   ],
+   "reported": [
+    "Hyperkin Scout"
+   ],
+   "modes": [
+    "variant"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3250:1001",
+   "name": "Atari VCS Classic Joystick",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Atari Atari VCS Classic Joystick"
+   ],
+   "reported": [
+    "Atari VCS Classic Controller",
+    "Classic Controller"
+   ],
+   "modes": [
+    "bluetooth",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/hid/Atari%20VCS%20Classic%20Controller.cfg",
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3250:1002",
+   "name": "Atari VCS Modern Controller",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Atari Atari VCS Modern Controller"
+   ],
+   "reported": [
+    "Atari VCS Modern Controller",
+    "Game Controller"
+   ],
+   "modes": [
+    "bluetooth",
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/hid/Atari%20VCS%20Modern%20Controller.cfg",
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3285:0305",
+   "name": "Nacon MG-X Pro",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Nacon MG-X Pro"
+   ],
+   "reported": [
+    "Nacon MGX Pro"
+   ],
+   "modes": [
+    "bluetooth"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3285:0634",
+   "name": "Nacon Revolution X",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Nacon Revolution X / Revolution X Unlimited"
+   ],
+   "reported": [
+    "Revolution X"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3285-0634"
+   ]
+  },
+  {
+   "id": "3285:0661",
+   "name": "Nacon Revolution 5 Pro (PC mode)",
+   "family": "Other",
+   "layout": "PlayStation",
+   "models": [
+    "Nacon Revolution 5 Pro"
+   ],
+   "reported": [
+    "REVOLUTION 5 PRO"
+   ],
+   "modes": [
+    "usb (mode unknown, PC?)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3285-0661"
+   ]
+  },
+  {
+   "id": "3285:0689",
+   "name": "Nacon Revolution X Unlimited",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "Nacon Revolution X / Revolution X Unlimited"
+   ],
+   "reported": [
+    "Nacon Revolution X Unlimited"
+   ],
+   "modes": [
+    "bluetooth / usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/usb_ids.h"
+   ]
+  },
+  {
+   "id": "3537:0575",
+   "name": "GameSir Cyclone 2",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Cyclone 2"
+   ],
+   "reported": [
+    "GameSir-Cyclone 2"
+   ],
+   "modes": [
+    "extras/macro mode"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-0575"
+   ]
+  },
+  {
+   "id": "3537:1001",
+   "name": "GameSir G7 for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 (original) / G7 HE"
+   ],
+   "reported": [
+    "GameSir-G7 Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1001"
+   ]
+  },
+  {
+   "id": "3537:1003",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [],
+   "modes": [
+    "usb (White Trimode)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/70-gamesir.rules"
+   ]
+  },
+  {
+   "id": "3537:1007",
+   "name": "GameSir receiver",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "GameSir-Dongle"
+   ],
+   "modes": [
+    "dongle"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1007"
+   ]
+  },
+  {
+   "id": "3537:100a",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [],
+   "modes": [
+    "transitional HID"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/RESEARCH.md"
+   ]
+  },
+  {
+   "id": "3537:100b",
+   "name": "GameSir Cyclone 2",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Cyclone 2"
+   ],
+   "reported": [
+    "GameSir Cyclone 2",
+    "Xbox 360 Controller for Windows"
+   ],
+   "modes": [
+    "usb",
+    "xinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/RESEARCH.md",
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3537:1012",
+   "name": "GameSir Kaleid (K1) for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "GameSir-K1 Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1012"
+   ]
+  },
+  {
+   "id": "3537:1022",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro",
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [
+    "GameSir G7 Pro",
+    "GameSir-G7 Pro"
+   ],
+   "modes": [
+    "usb",
+    "usb/2.4g native GIP"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3537:1023",
+   "name": "GameSir Cyclone Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "Cyclone Pro"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1023"
+   ]
+  },
+  {
+   "id": "3537:1032",
+   "name": "GameSir G7 Pro 8K",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro 8K PC"
+   ],
+   "reported": [],
+   "modes": [
+    "2.4g dongle (Royal2 edition, other unit)"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/issues/18"
+   ]
+  },
+  {
+   "id": "3537:1033",
+   "name": "GameSir G7 Pro 8K",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro 8K PC"
+   ],
+   "reported": [],
+   "modes": [
+    "2.4g dongle (Royal2 edition)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/issues/18"
+   ]
+  },
+  {
+   "id": "3537:103c",
+   "name": "GameSir Tarantula 8K",
+   "family": "Xbox",
+   "layout": "PlayStation",
+   "models": [
+    "GameSir Tarantula 8K / Tarantula Pro 8K"
+   ],
+   "reported": [
+    "GameSir-Tarantula 8K"
+   ],
+   "modes": [
+    "usb/2.4g/bt (Tarantula 8K)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/usb_ids.h"
+   ]
+  },
+  {
+   "id": "3537:103d",
+   "name": "GameSir Tarantula Pro 8K",
+   "family": "Xbox",
+   "layout": "PlayStation",
+   "models": [
+    "GameSir Tarantula 8K / Tarantula Pro 8K"
+   ],
+   "reported": [],
+   "modes": [
+    "PC/Xbox mode (Tarantula Pro 8K)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/RESEARCH.md"
+   ]
+  },
+  {
+   "id": "3537:1040",
+   "name": "GameSir Nova Lite (Xbox mode)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Nova Lite"
+   ],
+   "reported": [
+    "Xbox 360 Controller for Windows"
+   ],
+   "modes": [
+    "xinput"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/gamesir-g7/gamesir-g7-pro-controller-hub/blob/main/docs/VID_PID_WINDOWS.md"
+   ]
+  },
+  {
+   "id": "3537:1041",
+   "name": "GameSir Nova Lite",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Nova Lite"
+   ],
+   "reported": [
+    "GameSir Nova Lite",
+    "HID gamepad (Zikway)"
+   ],
+   "modes": [
+    "dinput",
+    "usb wired"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/gamesir-g7/gamesir-g7-pro-controller-hub/blob/main/docs/VID_PID_WINDOWS.md",
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3537:1053",
+   "name": "GameSir Cyclone 2",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Cyclone 2"
+   ],
+   "reported": [],
+   "modes": [
+    "xinput after a firmware flash"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/RESEARCH.md"
+   ]
+  },
+  {
+   "id": "3537:1056",
+   "name": "GameSir T7 for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir T7 (wired, Xbox)"
+   ],
+   "reported": [
+    "GameSir-T7 Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/ublue-os/bazzite/issues/2829"
+   ]
+  },
+  {
+   "id": "3537:1058",
+   "name": "GameSir Kaleid (K1)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "GameSir K1"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3537:105d",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [],
+   "modes": [
+    "config identity"
+   ],
+   "confidence": [
+    "likely"
+   ],
+   "sources": [
+    "https://github.com/xsyetopz/OpenJoystickDriver/blob/main/docs/testing/gamesir-family.md"
+   ]
+  },
+  {
+   "id": "3537:105e",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [
+    "GameSir-G7 Pro"
+   ],
+   "modes": [
+    "usb (Zenless Zone Zero edition)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-105e"
+   ]
+  },
+  {
+   "id": "3537:1065",
+   "name": "GameSir G7 HE for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 (original) / G7 HE"
+   ],
+   "reported": [
+    "GameSir-G7 HE Controller for Xbox"
+   ],
+   "modes": [
+    "usb (G7 HE)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1065"
+   ]
+  },
+  {
+   "id": "3537:1071",
+   "name": "GameSir G7 SE for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 SE (wired, Xbox)"
+   ],
+   "reported": [
+    "GameSir-G7 SE Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1071"
+   ]
+  },
+  {
+   "id": "3537:1073",
+   "name": "GameSir G7 SE for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 SE (wired, Xbox)"
+   ],
+   "reported": [
+    "GameSir-G7 SE Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1073"
+   ]
+  },
+  {
+   "id": "3537:1075",
+   "name": "GameSir G7 SE for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 SE (wired, Xbox)"
+   ],
+   "reported": [
+    "GameSir-G7 SE Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1075"
+   ]
+  },
+  {
+   "id": "3537:1079",
+   "name": "GameSir G7 HE for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 (original) / G7 HE"
+   ],
+   "reported": [
+    "GameSir-G7 HE Controller for Xbox"
+   ],
+   "modes": [
+    "usb (G7 HE)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1079"
+   ]
+  },
+  {
+   "id": "3537:107f",
+   "name": "GameSir T7 for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir T7 (wired, Xbox)"
+   ],
+   "reported": [
+    "GameSir-T7 Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-107f"
+   ]
+  },
+  {
+   "id": "3537:1082",
+   "name": "GameSir G7 HE for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 (original) / G7 HE"
+   ],
+   "reported": [
+    "GameSir-G7 HE Controller for Xbox"
+   ],
+   "modes": [
+    "usb (G7 HE)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1082"
+   ]
+  },
+  {
+   "id": "3537:1093",
+   "name": "GameSir Tegenaria Lite",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "GameSir-Tegenaria Lite"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1093"
+   ]
+  },
+  {
+   "id": "3537:1094",
+   "name": "GameSir Tegenaria Lite (T3 Lite)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Tegenaria Lite (T3 Lite)",
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "GameSir Tegenaria Lite"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3537:1095",
+   "name": "GameSir T7 for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir T7 (wired, Xbox)"
+   ],
+   "reported": [
+    "GameSir-T7 Controller for Xbox"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1095"
+   ]
+  },
+  {
+   "id": "3537:1096",
+   "name": "GameSir Kaleid Flux for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Kaleid / T4 Kaleid / Kaleid Flux"
+   ],
+   "reported": [
+    "GameSir-K1 FLUX Controller for Xbox"
+   ],
+   "modes": [
+    "usb (K1 FLUX)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://linux-hardware.org/?id=usb:3537-1096"
+   ]
+  },
+  {
+   "id": "3537:1097",
+   "name": "GameSir Kaleid Flux",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Kaleid / T4 Kaleid / Kaleid Flux"
+   ],
+   "reported": [
+    "GameSir Kaleid Flux"
+   ],
+   "modes": [
+    "usb (Kaleid Flux)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3537:1098",
+   "name": "GameSir Nova 2 Lite",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir Nova 2 Lite (sold as \"Nova Lite 2\")"
+   ],
+   "reported": [
+    "XBOX 360 For Windows"
+   ],
+   "modes": [
+    "2.4g dongle"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/CalcProgrammer1/OpenRGB/blob/master/Controllers/GameSirController/GameSirControllerDetect.cpp"
+   ]
+  },
+  {
+   "id": "3537:109b",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [
+    "GameSir-G7 Pro"
+   ],
+   "modes": [
+    "usb config identity (Shadow Ember)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/RESEARCH.md"
+   ]
+  },
+  {
+   "id": "3537:109c",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [
+    "GameSir-G7 Pro"
+   ],
+   "modes": [
+    "2.4g config identity"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/70-gamesir.rules"
+   ]
+  },
+  {
+   "id": "3537:10a7",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [],
+   "modes": [
+    "usb (Wuchang edition)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/70-gamesir.rules"
+   ]
+  },
+  {
+   "id": "3537:10b8",
+   "name": "GameSir G7 Pro (8K mode)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro",
+    "GameSir G7 Pro 8K PC"
+   ],
+   "reported": [
+    "GameSir G7 Pro 8K",
+    "GameSir-G7 Pro 8K"
+   ],
+   "modes": [
+    "8K mode (wired/2.4G/BT)",
+    "usb/2.4g/bt 8K mode"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/main/src/joystick/usb_ids.h"
+   ]
+  },
+  {
+   "id": "3537:10ba",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [],
+   "modes": [
+    "usb (Amazon edition)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/70-gamesir.rules"
+   ]
+  },
+  {
+   "id": "3537:10bb",
+   "name": "GameSir G7 Pro",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro (Xbox, tri-mode)"
+   ],
+   "reported": [],
+   "modes": [
+    "2.4g dongle (Amazon edition)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/broroeror/gamesir-linux-tools/blob/main/RESEARCH.md"
+   ]
+  },
+  {
+   "id": "3537:10c5",
+   "name": "GameSir G7 Pro 8K",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro 8K PC"
+   ],
+   "reported": [],
+   "modes": [
+    "enhanced HID"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/xsyetopz/OpenJoystickDriver/blob/main/docs/testing/gamesir-family.md"
+   ]
+  },
+  {
+   "id": "3537:10c6",
+   "name": "GameSir G7 Pro 8K",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro 8K PC"
+   ],
+   "reported": [],
+   "modes": [
+    "enhanced HID"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/xsyetopz/OpenJoystickDriver/blob/main/docs/testing/gamesir-family.md"
+   ]
+  },
+  {
+   "id": "3537:10c7",
+   "name": "GameSir G7 Pro 8K",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro 8K PC"
+   ],
+   "reported": [],
+   "modes": [
+    "enhanced HID"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/xsyetopz/OpenJoystickDriver/blob/main/docs/testing/gamesir-family.md"
+   ]
+  },
+  {
+   "id": "3537:10c8",
+   "name": "GameSir G7 Pro 8K",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir G7 Pro 8K PC"
+   ],
+   "reported": [],
+   "modes": [
+    "enhanced HID"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/xsyetopz/OpenJoystickDriver/blob/main/docs/testing/gamesir-family.md"
+   ]
+  },
+  {
+   "id": "3537:1104",
+   "name": "GameSir X4A for Xbox",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "GameSir X4A Xbox Controller"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "3537:1116",
+   "name": "GameSir X5 Lite (phone controller)",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "GameSir X5 Lite",
+    "GameSir other recent ids"
+   ],
+   "reported": [
+    "GameSir X5 Lite"
+   ],
+   "modes": [
+    "usb-c",
+    "usb/bt"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "37d7:2414",
+   "name": "Flydigi Direwolf 4",
+   "family": "Flydigi",
+   "layout": null,
+   "models": [
+    "Flydigi Apex 5 / Vader 5 Pro / Vader 4 Pro / Direwolf 4"
+   ],
+   "reported": [
+    "Flydigi Direwolf 4"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt"
+   ]
+  },
+  {
+   "id": "37d7:2801",
+   "name": "Flydigi Vader 5S",
+   "family": "Flydigi",
+   "layout": null,
+   "models": [
+    "Flydigi Vader 5S (wired, Xbox-licensed)"
+   ],
+   "reported": [],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/dlundqvist/xone/issues/203"
+   ]
+  },
+  {
+   "id": "413d:2106",
+   "name": "BIGBIG WON gamepad (ArmorX Pro, Blitz 2)",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "BIGBIG WON ArmorX Pro / Gale / Blitz 2"
+   ],
+   "reported": [],
+   "modes": [
+    "dongle/usb (ArmorX Pro)"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/feshinkof-boop/armorx-toolkit/blob/main/docs/usb-protocol.md"
+   ]
+  },
+  {
+   "id": "f000:0003",
+   "name": "retroUSB SNES RetroPad",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Tomee / Hyperkin / RetroUSB NES/SNES/Genesis original-controller to USB adapters"
+   ],
+   "reported": [
+    "RetroUSB SNES RetroPad"
+   ],
+   "modes": [
+    "RetroUSB RetroPad / RetroKit"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/torvalds/linux/blob/master/drivers/hid/hid-ids.h"
+   ]
+  },
+  {
+   "id": "f000:0008",
+   "name": "retroUSB Genesis RetroPort",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Tomee / Hyperkin / RetroUSB NES/SNES/Genesis original-controller to USB adapters"
+   ],
+   "reported": [
+    "Gene"
+   ],
+   "modes": [
+    "RetroUSB Genesis RetroPort"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/RetroUSB_RetroPort_Genesis_6_Button.cfg"
+   ]
+  },
+  {
+   "id": "f000:00f1",
+   "name": "retroUSB SNES RetroPort",
+   "family": "Other",
+   "layout": "Retro",
+   "models": [
+    "Tomee / Hyperkin / RetroUSB NES/SNES/Genesis original-controller to USB adapters"
+   ],
+   "reported": [
+    "SNES"
+   ],
+   "modes": [
+    "RetroUSB SNES RetroPort"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/RetroUSB_RetroPort_SNES.cfg"
+   ]
+  },
+  {
+   "id": "0810:0001",
+   "name": "Twin USB Joystick (generic PC pads, PS1/PS2 adapters)",
+   "renamed": true
+  },
+  {
+   "id": "2563:0523",
+   "name": "Redragon Saturn G807 or ShanWan PS3 style pad",
+   "renamed": true
+  },
+  {
+   "id": "2563:0575",
+   "name": "ShanWan USB WirelessGamepad (Redragon Harrow G808, Retro-bit)",
+   "renamed": true
+  }
+ ],
+ "left_out": [
+  {
+   "id": "044f:b108",
+   "why": "flight stick"
+  },
+  {
+   "id": "044f:b10a",
+   "why": "flight stick"
+  },
+  {
+   "id": "045e:02a2",
+   "why": "racing wheel"
+  },
+  {
+   "id": "046d:c215",
+   "why": "flight stick"
+  },
+  {
+   "id": "04b4:010a",
+   "why": "Cypress's generic id, shared with unrelated devices"
+  },
+  {
+   "id": "06a3:0255",
+   "why": "flight stick"
+  },
+  {
+   "id": "06a3:075c",
+   "why": "flight stick"
+  },
+  {
+   "id": "06a3:0762",
+   "why": "flight stick"
+  },
+  {
+   "id": "0955:7203",
+   "why": "a handheld console, not a controller"
+  },
+  {
+   "id": "1234:0004",
+   "why": "test vendor id, shared with unrelated devices"
+  },
+  {
+   "id": "2563:0973",
+   "why": "weak evidence"
+  },
+  {
+   "id": "2dc8:9026",
+   "why": "no model tied to it"
+  }
+ ]
+}

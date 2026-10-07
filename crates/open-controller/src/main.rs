@@ -114,6 +114,8 @@ impl Control {
                 return self.engine.send(Command::SetProfiles(store, profiles));
             }
             ToTray::Quit => return self.post(Msg::Quit),
+            // Answered by the window server, which has the pipe to answer on.
+            ToTray::Diagnose(_) => return,
         }
         self.notify.prefs();
         self.post(Msg::Prefs);

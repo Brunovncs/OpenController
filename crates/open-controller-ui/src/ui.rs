@@ -92,6 +92,8 @@ pub struct MainView {
     pub update: crate::updates::Update,
     /// Open programs offered for a profile to switch on with, while the list is shown.
     pub picker: Option<Vec<String>>,
+    /// The report on a controller, while its dialog is open.
+    pub report: Option<crate::report::Report>,
     /// The app's icon, in its version drawn for small sizes, for the bar on top.
     brand: Arc<Image>,
     /// Extra buttons held on the open controller in the last snapshot, to notice a new press.
@@ -126,6 +128,7 @@ impl MainView {
             installed: HashMap::new(),
             update: Default::default(),
             picker: None,
+            report: None,
             brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
             held: 0,
             _subscriptions: vec![observe, theme_change],
@@ -251,6 +254,14 @@ impl MainView {
     /// Keeps the screen in step with the controllers: a controller that left closes its page,
     /// and pressing one of its extra buttons picks that button.
     fn follow_snapshot(&mut self, cx: &mut Context<Self>) {
+        if let Some(r) = self.report.as_mut() {
+            let input = self.model.read(cx).snapshot.pads.iter().find(|p| p.key == r.key).map(|p| p.input);
+            if let Some(i) = input {
+                r.observe(&i);
+            }
+            // The dialog stays over the page, which is kept as it is meanwhile.
+            return;
+        }
         let Screen::Device(key) = self.screen else { return };
         let Some(pad) = self.pad(key, cx) else {
             self.home(cx);
@@ -269,9 +280,19 @@ impl MainView {
         }
     }
 
-    fn key_down(&mut self, ev: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = ev.keystroke.key.as_str();
         let escape = key == "escape";
+        if self.report.is_some() {
+            if escape {
+                self.close_report(window, cx);
+            } else if key == "tab" {
+                // Handled here, so a multi-line field does not take it as a tab character.
+                cx.stop_propagation();
+                self.report_tab(ev.keystroke.modifiers.shift, window, cx);
+            }
+            return;
+        }
         if let Some((i, name)) = self.renaming.as_mut() {
             cx.stop_propagation();
             match key {
@@ -428,8 +449,10 @@ impl Render for MainView {
                 None => self.render_home(window, cx),
             },
         };
+        let report = self.render_report(cx);
         div()
             .id("root")
+            .relative()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
@@ -450,5 +473,6 @@ impl Render for MainView {
                         .child(div().w_full().max_w(px(max_w)).px(px(layout::GUTTER)).pt(px(28.)).pb(px(40.)).child(content)),
                 ),
             )
+            .children(report)
     }
 }

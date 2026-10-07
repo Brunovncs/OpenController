@@ -14,7 +14,7 @@ fn input(buttons: &[u32], axes: [i16; axis::COUNT]) -> PadState {
     PadState { buttons: buttons.iter().fold(0, |b, &i| b | 1 << i), axes }
 }
 
-fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor, product): (u16, u16)) -> PadView {
+pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor, product): (u16, u16)) -> PadView {
     PadView {
         key,
         name: name.into(),
@@ -148,5 +148,35 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
         sdl_error: None,
         running: real.running,
         foreground: String::new(),
+    }
+}
+
+/// What SDL might say about an example controller, for the report dialog in `--demo`.
+pub fn diagnosis(p: &PadView) -> open_controller_core::report::Diagnosis {
+    use open_controller_core::report::{Diagnosis, Facts};
+    Diagnosis {
+        facts: Facts {
+            vendor: p.vendor,
+            product: p.product,
+            joystick_name: p.name.clone(),
+            gamepad_name: Some(p.name.clone()),
+            guid: format!(
+                "03000000{:02x}{:02x}0000{:02x}{:02x}000000000000",
+                p.vendor & 0xff,
+                p.vendor >> 8,
+                p.product & 0xff,
+                p.product >> 8
+            ),
+            path: format!(r"\\?\HID#VID_{:04X}&PID_{:04X}", p.vendor, p.product),
+            gamepad_type: "standard".into(),
+            real_type: "standard".into(),
+            joystick_type: "gamepad".into(),
+            connection: "wired".into(),
+            axes: 6,
+            buttons: 15,
+            hats: 1,
+            ..Facts::default()
+        },
+        log: vec![format!("     0.4s  added {:04x}:{:04x} \"{}\" (example)", p.vendor, p.product, p.name)],
     }
 }

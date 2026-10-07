@@ -14,6 +14,7 @@ use crate::motion::{self, GyroAim};
 use crate::platform::{Bus, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, VIRTUAL_PADS, bluetooth, devnode};
 use crate::plug::Plugger;
 use crate::profile::{self, GyroMode, Profile, Profiles};
+use crate::report::Diagnosis;
 use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
 use crate::sdl::{Event, Gamepad, Sdl};
@@ -21,7 +22,7 @@ use crate::sdl::{Event, Gamepad, Sdl};
 use crate::xinput;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -45,6 +46,9 @@ mod xinput {
         false
     }
 }
+
+/// How many lines of what happened a report carries.
+const LOG_LINES: usize = 80;
 
 /// How long a virtual controller waits for its physical controller to come back.
 pub const GRACE: Duration = Duration::from_secs(15);
@@ -122,6 +126,9 @@ pub enum Command {
     /// Two controllers trade players: each takes the other's virtual controller, so no game
     /// sees a controller leave.
     SwapPlayers(PadKey, PadKey),
+    /// What SDL says about a controller and what happened lately, for a report on it, with its
+    /// device path for the caller to look up in the device tree away from the input thread.
+    Diagnose(PadKey, Sender<Option<(Diagnosis, String)>>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -249,6 +256,16 @@ impl Engine {
     /// How many controllers the last snapshot lists, without copying it.
     pub fn pad_count(&self) -> usize {
         self.shared.lock().map(|s| s.pads.len()).unwrap_or(0)
+    }
+
+    /// Asks the input thread about a controller and looks it up in the device tree here. `None`
+    /// when it is not connected or the thread does not answer within two seconds.
+    pub fn diagnose(&self, key: PadKey) -> Option<Diagnosis> {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        self.send(Command::Diagnose(key, tx));
+        let (mut d, path) = rx.recv_timeout(Duration::from_secs(2)).ok()??;
+        d.facts.devices = devnode::ancestry(&path);
+        Some(d)
     }
 
     pub fn send(&self, c: Command) {
@@ -399,6 +416,8 @@ struct Core {
     handheld_rx: Receiver<handheld::Held>,
     handheld_held: u64,
     updated: Vec<DeviceId>,
+    /// Controllers coming and going, for reports: the last `LOG_LINES`.
+    log: VecDeque<String>,
     changed: bool,
     input_changed: bool,
     /// Last, so it is dropped last: SDL_Quit must come after every gamepad is closed.
@@ -458,6 +477,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         handheld_rx,
         handheld_held: 0,
         updated: Vec::with_capacity(16),
+        log: VecDeque::new(),
         changed: true,
         input_changed: false,
         sdl,
@@ -516,7 +536,12 @@ impl Core {
                 self.bus = Some(bus);
                 self.bus_error = None;
             }
-            Err(e) => self.bus_error = Some(e.to_string()),
+            Err(e) => {
+                if self.bus_error.as_deref() != Some(&e.to_string()) {
+                    self.note(format!("virtual controller bus: {e}"));
+                }
+                self.bus_error = Some(e.to_string());
+            }
         }
         self.bus_retry = Instant::now() + RETRY;
         self.changed = true;
@@ -581,8 +606,23 @@ impl Core {
             }
             Command::SwapPlayers(PadKey::Slot(a), PadKey::Slot(b)) if a != b => self.swap(SlotId(a), SlotId(b)),
             Command::SwapPlayers(..) => {}
+            Command::Diagnose(key, reply) => {
+                let found = self.device_for(key).and_then(|d| match self.phys.get(&d) {
+                    Some(p) => Some((p.pad.facts(), p.path.clone())),
+                    None => self.unmapped.contains_key(&d).then(|| (self.sdl.joystick_facts(d), String::new())),
+                });
+                let _ = reply.send(found.map(|(facts, path)| (Diagnosis { facts, log: self.log.iter().cloned().collect() }, path)));
+                return;
+            }
         }
         self.changed = true;
+    }
+
+    fn note(&mut self, line: String) {
+        if self.log.len() == LOG_LINES {
+            self.log.pop_front();
+        }
+        self.log.push_back(format!("{:>8.1}s  {line}", self.started.elapsed().as_secs_f32()));
     }
 
     /// Each controller with settings, and which of its profiles is in use.
@@ -706,6 +746,7 @@ impl Core {
                 Event::JoystickAdded(id) => {
                     if !self.sdl.is_gamepad(id) {
                         let (name, vendor, product) = self.sdl.joystick_info(id);
+                        self.note(format!("joystick without a gamepad mapping {vendor:04x}:{product:04x} \"{name}\""));
                         self.unmapped.insert(id, Unmapped { name, vendor, product });
                         self.changed = true;
                     }
@@ -803,6 +844,14 @@ impl Core {
             }
         };
         let kind = p.kind;
+        self.note(format!(
+            "added {vendor:04x}:{product:04x} \"{}\" as \"{}\" ({:?}, {:?}, {:?})",
+            p.pad.name(),
+            p.model.name,
+            p.model.family,
+            p.link,
+            kind
+        ));
         if let Kind::Slot(s) = kind {
             self.memo.insert(s, p.model.clone());
         }
@@ -844,6 +893,7 @@ impl Core {
     fn removed(&mut self, id: DeviceId, now: Instant) {
         self.release_keys(self.owner_of(id));
         let Some(p) = self.phys.remove(&id) else { return };
+        self.note(format!("removed {:04x}:{:04x} \"{}\" ({:?})", p.model.vendor, p.model.product, p.model.name, p.link));
         self.updated.retain(|&d| d != id);
         if let Kind::Slot(s) = p.kind {
             self.roster.detach(id, now);

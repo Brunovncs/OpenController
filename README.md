@@ -206,8 +206,15 @@ document about these machines and has not been tried on one yet.
 Controllers are read through [SDL 3](https://libsdl.org), which speaks each one's own protocol,
 plus the 869 Windows entries of the community
 [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB) for generic ones. A table of
-602 controllers (from SDL's lists, the 8BitDo range, and the ids Linux's drivers know) gives them
-their names, drawings and the advice the window shows.
+922 controllers (from SDL's lists, the 8BitDo range, the ids Linux's drivers know, and the pads
+sold today, old and retro ones that `scripts/models/sources.json` traces to their sources) gives
+them their names, drawings and the advice the window shows.
+
+Each controller has a grade, shown next to it in the window and on the website. Verified: tested
+with OpenController on the controller itself. Compatible: a known model whose protocol SDL reads in
+full. Works, with a note: something to know first, such as a mode to switch to. Not supported yet.
+A controller off the table is "not on the list yet", and its page offers to send its details so it
+can be added.
 
 | | USB | Bluetooth | Receiver | Extra buttons |
 |---|---|---|---|---|
@@ -297,7 +304,11 @@ profiles (from Windows, from the X server on Linux, XWayland included, and from 
 macOS), and keeps that to itself. When its window opens it asks GitHub's API for the latest
 release, to say when a newer version is out; the request carries nothing but the app's name, and
 "Check for updates" in Settings turns it off. Updating on Windows downloads that release's
-installer, checks it against the SHA-256 published with it and runs it. The other connection it
+installer, checks it against the SHA-256 published with it and runs it. Report a problem, on a
+controller's Information page, sends that controller's technical details to the website, which
+emails them to the maintainer: the name and ids it reports, how SDL and the device tree see it,
+the buttons pressed while the dialog is open and the controllers connected lately, plus what you
+type. It shows all of it before you press Send, and sends nothing until then. The other connection it
 makes is the one you start in Settings, Requirements on Windows: clicking Install downloads that driver's installer
 from its GitHub release with Windows' own `curl`, and the installer runs only if its SHA-256
 matches the one recorded in this version. The Linux rule is written by the program itself.
@@ -420,7 +431,9 @@ Edge into the `.ico` files.
 
 ## Reporting a problem
 
-Problems, controllers that do not work and ideas are all welcome as
+For a controller that misbehaves or is not on the list, the quickest way is Report a problem on
+its Information page in the window: it sends what it takes to add or fix it. Problems, controllers
+that do not work and ideas are also welcome as
 [issues](https://github.com/Brunovncs/OpenController/issues), or through the contact form on the
 [website](https://opencontroller.com.br/#contact). What helps most to find a problem:
 

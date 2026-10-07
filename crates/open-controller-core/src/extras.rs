@@ -86,7 +86,7 @@ pub enum Family {
     /// Ultimate 2C, with L4 and R4.
     EightBitDoUltimate2C,
     Flydigi,
-    /// Flydigi Apex 5 and 6, whose two extra front buttons are LM and RM.
+    /// Flydigi Apex 5 and 6, with two extra buttons, LM and RM, on the back beside the bumpers.
     FlydigiApex,
     Luna,
     Stadia,
@@ -220,6 +220,9 @@ pub enum Art {
 
 pub fn art(family: Family, vendor: u16, product: u16) -> Art {
     use Family::*;
+    if let Some(a) = models::layout(vendor, product) {
+        return a;
+    }
     match family {
         DualShock4 | DualSense | DualSenseEdge => Art::PlayStation,
         DualShock3 | Ps2Adapter | EightBitDoPro2 => Art::Symmetric,
@@ -283,7 +286,9 @@ pub fn hint(vendor: u16, product: u16, family: Family) -> Option<Hint> {
         (0x2DC8, 0x310B | 0x3109, _) => Some(Hint::EightBitDoDInput),
         (0x2DC8, 0x3106, _) => Some(Hint::EightBitDoSwitchD),
         (0x2DC8, 0x310A, _) => Some(Hint::EightBitDo2CBluetooth),
-        (0x2DC8, 0x2002 | 0x200F, _) => Some(Hint::EightBitDoForXbox),
+        (0x2DC8, 0x2002 | 0x200F | 0x2003 | 0x2015 | 0x2019 | 0x201B | 0x2025 | 0x2027 | 0x2030 | 0x901B, _) => {
+            Some(Hint::EightBitDoForXbox)
+        }
         (_, _, Family::XboxElite) => Some(Hint::XboxPaddlesHidden),
         (_, _, Family::SteamController | Family::SteamDeck) => Some(Hint::SteamInput),
         (_, _, Family::Flydigi | Family::FlydigiApex) => Some(Hint::FlydigiThirdParty),

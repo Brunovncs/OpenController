@@ -12,6 +12,7 @@ use open_controller_core::PadView;
 use open_controller_core::device::Brand;
 use open_controller_core::extras::{self, Art, Family};
 use open_controller_core::mapping::{PadState, axis, button};
+use open_controller_core::models;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -38,13 +39,18 @@ pub enum Look {
     Ultimate,
     Sn30Pro,
     Retro,
+    /// Redragon Darkflame G820, a PlayStation-style pad that passes itself off as a DualShock 4 or
+    /// an Xbox 360 pad: told apart only by a name that says so.
+    DarkflameG820,
     Handheld,
     Generic,
+    /// A model with a drawing of its own, by its key in `pads.json` (`models::DRAWINGS`).
+    Traced(&'static str),
 }
 
 impl Look {
     #[cfg(test)]
-    pub const ALL: [Look; 14] = [
+    pub const ALL: [Look; 15] = [
         Look::DualSense,
         Look::DualSenseEdge,
         Look::DualShock4,
@@ -57,6 +63,7 @@ impl Look {
         Look::Ultimate,
         Look::Sn30Pro,
         Look::Retro,
+        Look::DarkflameG820,
         Look::Handheld,
         Look::Generic,
     ];
@@ -76,8 +83,10 @@ impl Look {
             Look::Ultimate => "ultimate",
             Look::Sn30Pro => "sn30pro",
             Look::Retro => "retro",
+            Look::DarkflameG820 => "g820",
             Look::Handheld => "handheld",
             Look::Generic => "generic",
+            Look::Traced(key) => key,
         }
     }
 }
@@ -88,12 +97,20 @@ pub enum Glyphs {
     Xbox,
     PlayStation,
     Nintendo,
+    /// 1 to 4, clockwise from the top, as many PC pads print them.
+    Numbers,
 }
 
 pub fn look(pad: &PadView) -> Look {
     use Family::*;
     let name = pad.name.to_ascii_lowercase();
     let ultimate = name.contains("ultimate");
+    if name.contains("g820") || name.contains("darkflame") {
+        return Look::DarkflameG820;
+    }
+    if let Some(key) = models::drawing(pad.vendor, pad.product) {
+        return Look::Traced(key);
+    }
     match pad.family {
         DualSenseEdge => Look::DualSenseEdge,
         DualSense => Look::DualSense,
@@ -128,6 +145,18 @@ pub fn look(pad: &PadView) -> Look {
 }
 
 pub fn glyphs(pad: &PadView, look: Look) -> Glyphs {
+    if look == Look::DarkflameG820 {
+        return Glyphs::PlayStation;
+    }
+    if let Look::Traced(_) = look {
+        // What its own drawing says is printed on it.
+        return match pad_for(look).glyphs.as_deref() {
+            Some("ps") => Glyphs::PlayStation,
+            Some("nintendo") => Glyphs::Nintendo,
+            Some("numbers") => Glyphs::Numbers,
+            _ => Glyphs::Xbox,
+        };
+    }
     match pad.brand {
         Brand::PlayStation => Glyphs::PlayStation,
         Brand::Nintendo => Glyphs::Nintendo,
@@ -155,6 +184,8 @@ struct RawButton {
     circle: Option<[f32; 3]>,
     d: Option<String>,
     icon: Option<String>,
+    /// What is printed on it, when that is not the glyph set's letter.
+    label: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -179,6 +210,7 @@ struct RawPad {
     buttons: Vec<RawButton>,
     #[serde(default)]
     tint: bool,
+    glyphs: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -371,6 +403,19 @@ fn top(ops: &Ops) -> (f32, f32) {
     ys.fold((f32::MAX, f32::MIN), |(lo, hi), y| (lo.min(y), hi.max(y)))
 }
 
+/// Triggers drawn as buttons (a Mega Drive pad's C and Z sit on them), past the 64 button bits.
+const LEFT_TRIGGER_INPUT: u32 = 64;
+const RIGHT_TRIGGER_INPUT: u32 = 65;
+
+/// Whether a button's input is held; a trigger counts once pulled halfway.
+fn held(state: &PadState, b: u32) -> bool {
+    match b {
+        LEFT_TRIGGER_INPUT => state.axes[axis::LEFT_TRIGGER] > i16::MAX / 2,
+        RIGHT_TRIGGER_INPUT => state.axes[axis::RIGHT_TRIGGER] > i16::MAX / 2,
+        _ => state.pressed(b),
+    }
+}
+
 /// The input a button stands for, as an SDL button index.
 fn input(name: &str) -> Option<u32> {
     Some(match name {
@@ -388,6 +433,16 @@ fn input(name: &str) -> Option<u32> {
         "left" => button::DPAD_LEFT,
         "right" => button::DPAD_RIGHT,
         "misc1" => button::MISC1,
+        "misc2" => u32::from(extras::MISC2),
+        "misc3" => u32::from(extras::MISC3),
+        "misc4" => u32::from(extras::MISC4),
+        "misc5" => u32::from(extras::MISC5),
+        "misc6" => u32::from(extras::MISC6),
+        // Shoulder buttons on the face: the original Xbox controller's white and black buttons.
+        "lb" => button::LEFT_SHOULDER,
+        "rb" => button::RIGHT_SHOULDER,
+        "lt" => LEFT_TRIGGER_INPUT,
+        "rt" => RIGHT_TRIGGER_INPUT,
         "touchpad" => button::TOUCHPAD,
         "rp1" => u32::from(extras::RIGHT_PADDLE1),
         "lp1" => u32::from(extras::LEFT_PADDLE1),
@@ -408,6 +463,7 @@ struct Btn {
     face: Option<usize>,
     shape: Shape,
     icon: Option<String>,
+    label: Option<String>,
 }
 
 struct Stick {
@@ -428,6 +484,8 @@ struct Pad {
     sticks: Vec<Stick>,
     buttons: Vec<Btn>,
     tint: bool,
+    /// The face buttons' symbols as printed: `xbox`, `ps` or `nintendo`.
+    glyphs: Option<String>,
 }
 
 fn pads() -> &'static HashMap<String, Pad> {
@@ -448,6 +506,7 @@ fn pads() -> &'static HashMap<String, Pad> {
                             (None, None) => Shape::Path(Vec::new()),
                         },
                         icon: b.icon,
+                        label: b.label,
                     })
                     .collect();
                 let pair = |p: Option<[String; 2]>| p.map(|[a, b]| [parse(&a), parse(&b)]);
@@ -468,6 +527,7 @@ fn pads() -> &'static HashMap<String, Pad> {
                         .collect(),
                     buttons,
                     tint: r.tint,
+                    glyphs: r.glyphs,
                 };
                 (k, pad)
             })
@@ -629,7 +689,7 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
         |_, _, _| {},
         move |bounds, _, window, _| {
             let mut pen = Pen { window, o: bounds.origin, k };
-            let on = |b: u32| state.pressed(b);
+            let on = |b: u32| held(&state, b);
             let lit_or = |b: Option<u32>, idle: Hsla| if b.is_some_and(on) { ink.lit } else { idle };
             let value = |a: usize| (state.axes[a].max(0) as f32 / 32767.).clamp(0., 1.);
 
@@ -741,17 +801,21 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
     if glyphs != Glyphs::PlayStation {
         let letters = match glyphs {
             Glyphs::Nintendo => ["B", "A", "Y", "X"],
+            Glyphs::Numbers => ["3", "2", "4", "1"],
             _ => ["A", "B", "X", "Y"],
         };
         for b in &g.buttons {
-            let (Some(i), Shape::Circle(x, y, r)) = (b.face, &b.shape) else { continue };
-            let pressed = b.input.is_some_and(|x| state.pressed(x));
-            let color: Hsla = if pressed {
-                ink.on_lit
-            } else if g.tint && glyphs == Glyphs::Xbox {
-                rgb(XBOX_TINT[i]).into()
-            } else {
-                ink.label
+            let Shape::Circle(x, y, r) = &b.shape else { continue };
+            let text = match (&b.label, b.face) {
+                (Some(l), _) => l.as_str(),
+                (None, Some(i)) => letters[i],
+                (None, None) => continue,
+            };
+            let pressed = b.input.is_some_and(|x| held(&state, x));
+            let color: Hsla = match b.face {
+                _ if pressed => ink.on_lit,
+                Some(i) if g.tint && matches!(glyphs, Glyphs::Xbox | Glyphs::Numbers) => rgb(XBOX_TINT[i]).into(),
+                _ => ink.label,
             };
             root = root.child(
                 div()
@@ -765,7 +829,7 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
                     .text_size(px(r * 1.05 * k))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(color)
-                    .child(letters[i]),
+                    .child(text.to_string()),
             );
         }
     }
@@ -786,13 +850,31 @@ mod tests {
     }
 
     #[test]
+    fn darkflame_by_its_name() {
+        use open_controller_core::PadKey;
+        let mut p = crate::demo::pad(PadKey::Slot(0), "Redragon Darkflame G820", Brand::Xbox, Family::Xbox, (0x045E, 0x028E));
+        assert_eq!(look(&p), Look::DarkflameG820);
+        assert_eq!(glyphs(&p, Look::DarkflameG820), Glyphs::PlayStation, "it prints PlayStation's symbols");
+        // Over Bluetooth it says it is a DualShock 4, and is drawn as one.
+        p = crate::demo::pad(PadKey::Slot(0), "Wireless Controller", Brand::PlayStation, Family::DualShock4, (0x054C, 0x05C4));
+        assert_eq!(look(&p), Look::DualShock4);
+    }
+
+    #[test]
     fn every_look_is_drawn() {
         let all = pads();
-        for l in Look::ALL {
+        let traced = models::DRAWINGS.iter().map(|r| Look::Traced(r.2));
+        for l in Look::ALL.into_iter().chain(traced) {
             let p = all.get(l.key()).unwrap_or_else(|| panic!("{l:?} has no drawing in pads.json"));
             assert!(p.body.len() > 4 && p.body.iter().any(|o| matches!(o, Op::Z)), "{l:?}: a closed outline");
-            assert_eq!(p.sticks.len(), if l == Look::Retro { 0 } else { 2 }, "{l:?}: sticks");
-            for input in ["south", "east", "west", "north", "up", "down", "left", "right"] {
+            if matches!(l, Look::Traced(_)) {
+                assert!(matches!(p.glyphs.as_deref(), Some("xbox" | "ps" | "nintendo" | "numbers")), "{l:?}: glyphs");
+            } else {
+                assert_eq!(p.sticks.len(), if l == Look::Retro { 0 } else { 2 }, "{l:?}: sticks");
+            }
+            // A Genesis pad has three face buttons; every other look has all four.
+            let faces: &[&str] = if l == Look::Traced("genesis3b") { &["south", "east"] } else { &["south", "east", "west", "north"] };
+            for &input in faces.iter().chain(&["up", "down", "left", "right"]) {
                 let i = super::input(input);
                 assert!(p.buttons.iter().any(|b| b.input == i), "{l:?}: {input}");
             }

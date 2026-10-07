@@ -1,0 +1,207 @@
+{
+ "source": "pdfvec:flydigiVader/User_Manual_Vader_5_Pro_compressed.pdf:9:55,30,170,113:nodash,within",
+ "width": 1600,
+ "ink": 110,
+ "line": 5,
+ "erase": [
+  [
+   345,
+   46,
+   380,
+   60
+  ],
+  [
+   1189,
+   46,
+   1224,
+   60
+  ],
+  [
+   605,
+   57,
+   618,
+   67
+  ],
+  [
+   951,
+   57,
+   964,
+   67
+  ]
+ ],
+ "bumpers": [
+  [
+   420,
+   80
+  ],
+  [
+   1149,
+   80
+  ]
+ ],
+ "sticks": [
+  {
+   "seed": [
+    487,
+    356
+   ],
+   "well": [
+    402,
+    481
+   ]
+  },
+  {
+   "seed": [
+    1067,
+    595
+   ],
+   "well": [
+    982,
+    720
+   ]
+  }
+ ],
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1177,
+    494
+   ]
+  },
+  {
+   "input": "east",
+   "seed": [
+    1280,
+    396
+   ]
+  },
+  {
+   "input": "west",
+   "seed": [
+    1076,
+    396
+   ]
+  },
+  {
+   "input": "north",
+   "seed": [
+    1177,
+    292
+   ]
+  },
+  {
+   "input": "back",
+   "seed": [
+    640,
+    312
+   ],
+   "circle": false,
+   "icon": "view"
+  },
+  {
+   "input": "start",
+   "seed": [
+    925,
+    312
+   ],
+   "circle": false,
+   "icon": "menu"
+  },
+  {
+   "input": "guide",
+   "poly": [
+    [
+     728,
+     168
+    ],
+    [
+     856,
+     168
+    ],
+    [
+     792,
+     282
+    ]
+   ],
+   "corners": true
+  },
+  {
+   "input": "misc2",
+   "seed": [
+    1234,
+    648
+   ]
+  },
+  {
+   "input": "misc3",
+   "seed": [
+    1334,
+    562
+   ]
+  }
+ ],
+ "dpad": {
+  "seed": [
+   593,
+   593
+  ]
+ },
+ "panels": [
+  {
+   "seed": [
+    [
+     650,
+     150
+    ],
+    [
+     600,
+     175
+    ]
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    [
+     593,
+     593
+    ],
+    [
+     530,
+     530
+    ],
+    [
+     656,
+     530
+    ],
+    [
+     530,
+     656
+    ],
+    [
+     656,
+     656
+    ]
+   ],
+   "style": "part"
+  },
+  {
+   "seed": [
+    402,
+    481
+   ],
+   "style": "part"
+  },
+  {
+   "seed": [
+    982,
+    720
+   ],
+   "style": "part"
+  }
+ ],
+ "dots": [],
+ "glyphs": "xbox",
+ "tint": false
+}

@@ -14,6 +14,8 @@ pub mod mapping;
 pub mod models;
 pub mod motion;
 pub mod profile;
+pub mod rating;
+pub mod report;
 pub mod roster;
 
 mod engine;
