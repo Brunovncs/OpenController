@@ -10,14 +10,29 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// Where the user's sockets and locks live: `$XDG_RUNTIME_DIR` (private to the user, emptied at
-/// sign-out), else a private directory under the temporary one (per user on macOS already).
+/// sign-out), else a private directory in /tmp. Not under macOS's per-user temporary directory:
+/// that path alone is about half of the 104 bytes a socket path may have there, and the signal
+/// sockets did not fit.
 pub fn runtime_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).filter(|d| d.is_dir()) {
         return d;
     }
-    let dir = std::env::temp_dir().join(format!("open-controller-{}", unsafe { libc::getuid() }));
+    let uid = unsafe { libc::getuid() };
+    let short = PathBuf::from(format!("/tmp/open-controller-{uid}"));
+    if private_dir(&short, uid) {
+        return short;
+    }
+    // Someone else made that one first: the longer way is still the user's own.
+    let dir = std::env::temp_dir().join(format!("open-controller-{uid}"));
     let _ = std::fs::DirBuilder::new().mode(0o700).create(&dir);
     dir
+}
+
+/// Creates `dir` if needed, and whether it is a directory of `uid`'s that nobody else can reach.
+fn private_dir(dir: &std::path::Path, uid: u32) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let _ = std::fs::DirBuilder::new().mode(0o700).create(dir);
+    std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && m.uid() == uid && m.mode() & 0o077 == 0)
 }
 
 /// Holds the instance lock while alive.
@@ -136,5 +151,16 @@ mod tests {
         drop((_mutex, show, quit));
         assert!(!running(&name));
         assert!(!path(&name, "").exists(), "asking left a lock file");
+    }
+
+    /// macOS takes socket paths of up to 104 bytes, Linux 108.
+    #[test]
+    fn the_real_sockets_fit() {
+        for name in ["io.github.brunovncs.open-controller", "io.github.brunovncs.open-controller.ui"] {
+            for what in ["show", "quit"] {
+                let p = path(name, what);
+                assert!(p.as_os_str().len() < 104, "{} is {} bytes", p.display(), p.as_os_str().len());
+            }
+        }
     }
 }
