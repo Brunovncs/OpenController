@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.3
 
 Some controllers copy another one's USB id, so OpenController can't tell them apart. A controller
 that does can now be told which model it is, under Model on its Information page, and from then
@@ -12,7 +12,7 @@ Controller, is the first one listed.
 
 Reporting a problem with a controller that has a gyro now also sends what the gyro does while
 the report is open, so a gyro that doesn't aim can be looked into without the controller in hand.
-Turn the controller around a bit before pressing Send.
+Turn the controller around a bit before pressing Send. Settings carry over.
 
 ## 0.8.2
 
