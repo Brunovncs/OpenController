@@ -272,9 +272,8 @@ impl MainView {
     /// and pressing one of its extra buttons picks that button.
     fn follow_snapshot(&mut self, cx: &mut Context<Self>) {
         if let Some(r) = self.report.as_mut() {
-            let input = self.model.read(cx).snapshot.pads.iter().find(|p| p.key == r.key).map(|p| p.input);
-            if let Some(i) = input {
-                r.observe(&i);
+            if let Some(p) = self.model.read(cx).snapshot.pads.iter().find(|p| p.key == r.key) {
+                r.observe(p);
             }
             // The dialog stays over the page, which is kept as it is meanwhile.
             return;

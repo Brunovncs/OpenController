@@ -35,6 +35,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | `gamesirG7Pro` | The device layout drawing in GameSir's G7 Pro manual |
 | `flydigiVader` | The front drawing in Flydigi's Vader 5 Pro manual |
 | `flydigiApex` | The front drawing in Flydigi's Apex 5 manual, its filled shapes only, so the grey callouts drop out |
+| `onikumaC1` | A retailer's front photo of the Onikuma C1 (compumarts.com), its watermark and the JPEG noise under the outline erased |
 | `psClassic` | "PlayStation Controller transparent.png" on Wikimedia Commons, CC BY-SA 3.0 (Sony publishes no straight front view) |
 | `generic`, `handheld` | The Ultimate 2C's outline with neutral buttons, and a handheld drawn by hand (`derive_misc.py`) |
 
@@ -47,7 +48,9 @@ look; `build_pads.py` joins them:
     python build_pads.py --add ../../assets/pads.json gamesirG7=out/gamesirG7.json   # one look, the rest kept
 
 The looks traced from one model's pictures are given to its USB ids in `DRAWINGS`, in
-`crates/open-controller-core/src/models.rs`; the rest are drawn by family. The site gets the same
+`crates/open-controller-core/src/models.rs`; the rest are drawn by family. A model that copies
+another's ids (the Onikuma C1 reports itself as a Switch Pro Controller) is in `ALIASES` instead,
+and is drawn as itself once its owner picks it on its Information page. The site gets the same
 from `models.json`.
 
 It needs numpy, opencv-python-headless, Pillow and PyMuPDF. After changing `pads.json`, copy it to

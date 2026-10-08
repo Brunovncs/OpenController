@@ -5,6 +5,7 @@ use open_controller_core::binding::{Action, Chord, Step, XboxButton, modifier};
 use open_controller_core::device::{Brand, Link, Power};
 use open_controller_core::extras::{self, Family, Features};
 use open_controller_core::mapping::{PadState, axis, button};
+use open_controller_core::models;
 use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
 use std::collections::HashMap;
@@ -24,6 +25,8 @@ pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor
         role: Role::Unmapped,
         hidden: true,
         input: PadState::default(),
+        gyro: None,
+        aim: (0, 0),
         can_power_off: false,
         vendor,
         product,
@@ -141,6 +144,10 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
             (false, Role::KeptNative) => (p.role, p.hidden) = (Role::Virtual { player: None }, true),
             _ => {}
         }
+        // And by the name of the model chosen for it.
+        if let Some(a) = models::alias(p.vendor, p.product, p.profiles.model.as_deref()) {
+            p.name = a.4.into();
+        }
     }
     // Players traded in the window, as the engine would.
     for &(a, b) in swaps {
@@ -170,7 +177,8 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
 
 /// What SDL might say about an example controller, for the report dialog in `--demo`.
 pub fn diagnosis(p: &PadView) -> open_controller_core::report::Diagnosis {
-    use open_controller_core::report::{Diagnosis, Facts};
+    use open_controller_core::report::{Diagnosis, Facts, GyroFacts};
+    let mode = p.profile().gyro.mode;
     Diagnosis {
         facts: Facts {
             vendor: p.vendor,
@@ -195,5 +203,11 @@ pub fn diagnosis(p: &PadView) -> open_controller_core::report::Diagnosis {
             ..Facts::default()
         },
         log: vec![format!("     0.4s  added {:04x}:{:04x} \"{}\" (example)", p.vendor, p.product, p.name)],
+        gyro: p.features.motion.then(|| GyroFacts {
+            mode: format!("{mode:?}"),
+            wanted: mode != GyroMode::Off,
+            enabled: mode != GyroMode::Off,
+            error: None,
+        }),
     }
 }

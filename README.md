@@ -147,8 +147,10 @@ controller.
 Xbox controllers are listed but not duplicated: they are XInput controllers already, so they keep
 their own slot and add no latency. Controllers SDL reads through XInput, which gives no name, get
 the name Windows has for the device ("8BitDo Ultimate 2 Wireless Controller for PC" rather than
-"XInput Controller"), and generic names are replaced from a table of 602 known models. The
-interface follows Windows' light or dark mode, and is in English or Brazilian Portuguese, picked in
+"XInput Controller"), and generic names are replaced from a table of 922 known models. A
+controller that copies another's ids, as the Onikuma C1 copies the Switch Pro Controller's, can
+be told which model it is under Model on its Information page, and takes that name and drawing.
+The interface follows Windows' light or dark mode, and is in English or Brazilian Portuguese, picked in
 Settings (English until you pick).
 
 ![A controller's page: the 8BitDo drawn with its live input, its profile, and its four extra buttons, one assigned to Xbox A, one to Ctrl+Shift+M and one to a macro](docs/controller.png)

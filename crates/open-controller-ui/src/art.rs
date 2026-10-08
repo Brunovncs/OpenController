@@ -108,6 +108,9 @@ pub fn look(pad: &PadView) -> Look {
     if name.contains("g820") || name.contains("darkflame") {
         return Look::DarkflameG820;
     }
+    if let Some(a) = models::alias(pad.vendor, pad.product, pad.profiles.model.as_deref()) {
+        return Look::Traced(a.5);
+    }
     if let Some(key) = models::drawing(pad.vendor, pad.product) {
         return Look::Traced(key);
     }
@@ -861,9 +864,21 @@ mod tests {
     }
 
     #[test]
+    fn a_chosen_model_is_drawn_as_itself() {
+        use open_controller_core::PadKey;
+        use open_controller_core::profile::Edit;
+        let mut p =
+            crate::demo::pad(PadKey::Slot(0), "Nintendo Switch Pro Controller", Brand::Nintendo, Family::SwitchPro, (0x057E, 0x2009));
+        assert_eq!(look(&p), Look::SwitchPro);
+        p.profiles.apply(Edit::Model(Some("onikuma-c1".into())));
+        assert_eq!(look(&p), Look::Traced("onikumaC1"));
+        assert_eq!(glyphs(&p, look(&p)), Glyphs::Nintendo, "X on top, as printed on it");
+    }
+
+    #[test]
     fn every_look_is_drawn() {
         let all = pads();
-        let traced = models::DRAWINGS.iter().map(|r| Look::Traced(r.2));
+        let traced = models::DRAWINGS.iter().map(|r| Look::Traced(r.2)).chain(models::ALIASES.iter().map(|a| Look::Traced(a.5)));
         for l in Look::ALL.into_iter().chain(traced) {
             let p = all.get(l.key()).unwrap_or_else(|| panic!("{l:?} has no drawing in pads.json"));
             assert!(p.body.len() > 4 && p.body.iter().any(|o| matches!(o, Op::Z)), "{l:?}: a closed outline");

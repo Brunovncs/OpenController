@@ -3,6 +3,17 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+Some controllers copy another one's USB id, so OpenController can't tell them apart. A controller
+that does can now be told which model it is, under Model on its Information page, and from then
+on it shows with its own name and drawing. The Onikuma C1, which reports itself as a Switch Pro
+Controller, is the first one listed.
+
+Reporting a problem with a controller that has a gyro now also sends what the gyro does while
+the report is open, so a gyro that doesn't aim can be looked into without the controller in hand.
+Turn the controller around a bit before pressing Send.
+
 ## 0.8.2
 
 Each controller can now be kept native from its page. Games then see the real controller, with

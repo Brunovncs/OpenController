@@ -503,9 +503,15 @@ impl Gamepad {
         }
     }
 
-    /// Turns the gyro's reports on or off; they cost bandwidth, so only while it is used.
-    pub fn set_gyro(&self, on: bool) {
-        unsafe { SDL_SetGamepadSensorEnabled(self.gp, SDL_SENSOR_GYRO, on) };
+    /// Turns the gyro's reports on or off; they cost bandwidth, so only while it is used. A
+    /// controller that claims a gyro it cannot report may refuse, with SDL's error.
+    pub fn set_gyro(&self, on: bool) -> Result<(), String> {
+        if unsafe { SDL_SetGamepadSensorEnabled(self.gp, SDL_SENSOR_GYRO, on) } { Ok(()) } else { Err(error()) }
+    }
+
+    /// Whether SDL has the gyro's reports on.
+    pub fn gyro_enabled(&self) -> bool {
+        unsafe { SDL_GamepadSensorEnabled(self.gp, SDL_SENSOR_GYRO) }
     }
 
     /// The gyro's last reading in radians per second (pitch, yaw, roll), if it is on.

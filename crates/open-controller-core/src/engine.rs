@@ -16,7 +16,7 @@ use crate::platform::{
 };
 use crate::plug::Plugger;
 use crate::profile::{self, GyroMode, Profile, Profiles};
-use crate::report::Diagnosis;
+use crate::report::{Diagnosis, GyroFacts};
 use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
 use crate::sdl::{Event, Gamepad, Sdl};
@@ -167,6 +167,12 @@ pub struct PadView {
     /// Hidden from games by HidHide.
     pub hidden: bool,
     pub input: PadState,
+    /// The gyro in radians per second (pitch, yaw, roll) while its reports are on, and what it
+    /// adds to the right stick.
+    #[serde(default)]
+    pub gyro: Option<[f32; 3]>,
+    #[serde(default)]
+    pub aim: (i16, i16),
     pub can_power_off: bool,
     pub vendor: u16,
     pub product: u16,
@@ -350,6 +356,10 @@ struct Phys {
     aim: GyroAim,
     aim_out: (i16, i16),
     aim_at: Option<Instant>,
+    /// The gyro's last reading while its reports are on, and SDL's error when turning them on
+    /// failed, for reports.
+    rate: Option<[f32; 3]>,
+    gyro_error: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -696,10 +706,19 @@ impl Core {
             Command::SwapPlayers(..) => {}
             Command::Diagnose(key, reply) => {
                 let found = self.device_for(key).and_then(|d| match self.phys.get(&d) {
-                    Some(p) => Some((p.pad.facts(), p.path.clone())),
-                    None => self.unmapped.contains_key(&d).then(|| (self.sdl.joystick_facts(d), String::new())),
+                    Some(p) => {
+                        let gyro = p.model.features.motion.then(|| GyroFacts {
+                            mode: self.profile_of(&p.model.store).map_or("no profile".into(), |pr| format!("{:?}", pr.gyro.mode)),
+                            wanted: p.gyro_on,
+                            enabled: p.pad.gyro_enabled(),
+                            error: p.gyro_error.clone(),
+                        });
+                        Some((p.pad.facts(), gyro, p.path.clone()))
+                    }
+                    None => self.unmapped.contains_key(&d).then(|| (self.sdl.joystick_facts(d), None, String::new())),
                 });
-                let _ = reply.send(found.map(|(facts, path)| (Diagnosis { facts, log: self.log.iter().cloned().collect() }, path)));
+                let _ =
+                    reply.send(found.map(|(facts, gyro, path)| (Diagnosis { facts, log: self.log.iter().cloned().collect(), gyro }, path)));
                 return;
             }
             Command::SetVirtualDriver(_) if !DRIVER_CHOICE => {}
@@ -842,11 +861,12 @@ impl Core {
             };
             let p = self.phys.get_mut(&id).unwrap();
             if p.gyro_on != want {
-                p.pad.set_gyro(want);
+                p.gyro_error = p.pad.set_gyro(want).err();
                 p.gyro_on = want;
                 p.aim.reset();
                 p.aim_out = (0, 0);
                 p.aim_at = None;
+                p.rate = None;
             }
         }
     }
@@ -975,6 +995,8 @@ impl Core {
             aim: GyroAim::default(),
             aim_out: (0, 0),
             aim_at: None,
+            rate: None,
+            gyro_error: None,
             pad,
         };
         p.pad.read(&mut p.state);
@@ -1238,6 +1260,7 @@ impl Core {
             }
             let before = p.state;
             let aim_before = p.aim_out;
+            let rate_before = p.rate;
             p.pad.read(&mut p.state);
             if p.model.family == Family::Handheld && p.kind == Kind::Native {
                 p.state.buttons |= self.handheld_held;
@@ -1245,7 +1268,8 @@ impl Core {
             if p.gyro_on {
                 let gyro = self.profiles.get(&p.model.store).map(|x| x.for_program(&self.foreground).gyro).unwrap_or_default();
                 let active = motion::gyro_active(&gyro, &p.state, &before, &mut p.gyro_toggled);
-                match (active, p.pad.gyro()) {
+                p.rate = p.pad.gyro();
+                match (active, p.rate) {
                     (true, Some(rate)) => {
                         let dt = p.aim_at.map_or(0.004, |t| now.duration_since(t).as_secs_f32());
                         p.aim_out = p.aim.update(rate, dt, gyro, motion::aiming(&p.state));
@@ -1259,6 +1283,8 @@ impl Core {
                 }
             }
             if p.state == before && p.aim_out == aim_before {
+                // Only the window shows the gyro's own reading, so nothing else needs doing.
+                self.input_changed |= p.rate != rate_before;
                 continue;
             }
             self.input_changed = true;
@@ -1568,6 +1594,8 @@ impl Core {
             view.role = role;
             view.hidden = slot.devices.iter().any(|d| self.is_hidden(*d));
             view.input = source.map(|p| p.state).unwrap_or_default();
+            view.gyro = source.and_then(|p| p.rate);
+            view.aim = source.map_or((0, 0), |p| p.aim_out);
             view.can_power_off = source.is_some_and(|p| p.link == Link::Bluetooth && device::bluetooth_address(&p.identity).is_some());
             pads.push(view);
         }
@@ -1633,15 +1661,20 @@ impl Core {
     /// A view of a controller with what its model says filled in; the caller sets the rest.
     fn view(&self, key: PadKey, model: Option<&Model>, assignable: bool) -> PadView {
         let store = model.filter(|_| assignable).map(|m| m.store.clone());
+        let chosen = store.as_ref().and_then(|p| self.profiles.get(p)).and_then(|p| p.model.as_deref());
+        // A controller that copies another's ids goes by the name of the model its owner chose.
+        let alias = model.and_then(|m| models::alias(m.vendor, m.product, chosen));
         PadView {
             key,
-            name: model.map(|m| m.name.clone()).unwrap_or_default(),
+            name: alias.map(|a| a.4.to_string()).or_else(|| model.map(|m| m.name.clone())).unwrap_or_default(),
             brand: model.map(|m| m.brand).unwrap_or(Brand::Other),
             links: vec![Link::Unknown],
             power: Power::Unknown,
             role: Role::Unmapped,
             hidden: false,
             input: PadState::default(),
+            gyro: None,
+            aim: (0, 0),
             can_power_off: false,
             vendor: model.map(|m| m.vendor).unwrap_or(0),
             product: model.map(|m| m.product).unwrap_or(0),

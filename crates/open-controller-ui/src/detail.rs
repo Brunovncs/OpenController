@@ -9,10 +9,13 @@ use crate::keys;
 use crate::report;
 use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::{MainView, Section, Tab};
-use crate::widgets::{Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, row, stage, strong, title};
+use crate::widgets::{
+    Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, row, segmented, stage, strong, title,
+};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, rgb,
 };
 use open_controller_core::binding::{self, Action, Chord, Step, XboxButton};
 use open_controller_core::device::Power;
@@ -21,6 +24,7 @@ use open_controller_core::handheld;
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::keyboard;
+use open_controller_core::models;
 use open_controller_core::profile::{self, Edit, Light, MAX_PROFILES};
 use open_controller_core::rating::Rating;
 use open_controller_core::{PadKey, PadView, Role};
@@ -860,12 +864,32 @@ impl MainView {
                 .child(caption(label, t.text2).w(px(140.)).flex_none().pt(px(2.)))
                 .child(div().flex_1().min_w(px(0.)).child(value))
         };
+        // A controller whose ids another model copies: its owner says which one it is.
+        let aliases: Vec<&models::Alias> = models::aliases(pad.vendor, pad.product).collect();
+        let model = match models::lookup(pad.vendor, pad.product) {
+            Some(row) if !aliases.is_empty() && pad.store.is_some() => {
+                let mut choices: Vec<(Option<&'static str>, SharedString)> = vec![(None, row.3.into())];
+                choices.extend(aliases.iter().map(|a| (Some(a.2), a.4.into())));
+                let picked = models::alias(pad.vendor, pad.product, pad.profiles.model.as_deref()).map(|a| a.2);
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(6.))
+                    .child(segmented("model", choices, picked, &t, cx, move |this, m: Option<&'static str>, cx| {
+                        this.edit_now(key, Edit::Model(m.map(String::from)), cx)
+                    }))
+                    .child(caption(text.model_alias_hint, t.text2))
+                    .into_any_element()
+            }
+            _ => body(pad.name.clone(), t.text).into_any_element(),
+        };
         card(&t)
             .flex()
             .flex_col()
             .max_w(px(720.))
             .overflow_hidden()
-            .child(line(text.info_model, body(pad.name.clone(), t.text).into_any_element()))
+            .child(line(text.info_model, model))
             .when(pad.vendor != 0, |d| {
                 d.child(line(text.info_usb_id, body(format!("{:04X}:{:04X}", pad.vendor, pad.product), t.text).into_any_element()))
             })

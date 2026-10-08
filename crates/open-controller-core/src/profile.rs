@@ -157,6 +157,9 @@ pub struct Profiles {
     /// Left as it is for games: no Xbox controller is made for it and it is not hidden, so
     /// none of the profiles apply. A version that does not know this field reads it as off.
     pub native: bool,
+    /// Which model it is, for a controller whose ids another one copies: a key of
+    /// `models::ALIASES`. `None` is the model its ids name.
+    pub model: Option<String>,
 }
 
 impl Default for Profiles {
@@ -190,11 +193,13 @@ pub enum Edit {
     Select(usize),
     /// Keeps the controller native, or makes it an Xbox controller again.
     Native(bool),
+    /// Says which model the controller is (see [`Profiles::model`]).
+    Model(Option<String>),
 }
 
 impl Profiles {
     pub fn new(first: String) -> Profiles {
-        Profiles { list: vec![Profile { name: first, ..Profile::default() }], active: 0, native: false }
+        Profiles { list: vec![Profile { name: first, ..Profile::default() }], active: 0, native: false, model: None }
     }
 
     pub fn active(&self) -> &Profile {
@@ -223,7 +228,7 @@ impl Profiles {
 
     /// Whether this is what a controller has before anything is changed, and need not be kept.
     pub fn is_default(&self) -> bool {
-        !self.native && self.list.len() == 1 && self.list[0] == Profile::default()
+        !self.native && self.model.is_none() && self.list.len() == 1 && self.list[0] == Profile::default()
     }
 
     pub fn apply(&mut self, edit: Edit) {
@@ -281,6 +286,7 @@ impl Profiles {
             Edit::Select(i) if i < self.list.len() => self.active = i,
             Edit::Select(_) => {}
             Edit::Native(on) => self.native = on,
+            Edit::Model(key) => self.model = key.filter(|k| !k.is_empty() && k.len() <= 40),
         }
     }
 
@@ -414,7 +420,7 @@ mod tests {
         assert_eq!(p.list.len(), MAX_PROFILES);
         p.apply(Edit::Rename(0, format!(" {}\n ", "x".repeat(80))));
         assert_eq!(p.list[0].name.len(), MAX_NAME);
-        let bad = Profiles { list: vec![], active: 9, native: false }.sanitised();
+        let bad = Profiles { list: vec![], active: 9, native: false, model: None }.sanitised();
         assert_eq!((bad.list.len(), bad.active), (1, 0));
     }
 
@@ -457,6 +463,18 @@ mod tests {
         let mut p = p;
         p.apply(Edit::Native(false));
         assert!(p.is_default());
+    }
+
+    #[test]
+    fn the_chosen_model_is_kept_and_counts_as_a_change() {
+        let mut p = Profiles::default();
+        p.apply(Edit::Model(Some("onikuma-c1".into())));
+        assert!(!p.is_default(), "a chosen model must be saved");
+        let text = serde_json::to_string(&p).unwrap();
+        let back: Profiles = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.sanitised().model.as_deref(), Some("onikuma-c1"));
+        p.apply(Edit::Model(Some(String::new())));
+        assert!(p.model.is_none() && p.is_default());
     }
 
     #[test]

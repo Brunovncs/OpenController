@@ -25,6 +25,20 @@ pub fn layout(vendor: u16, product: u16) -> Option<Art> {
     LAYOUTS.iter().find(|r| r.0 == vendor && r.1 == product).map(|r| r.2)
 }
 
+/// A controller sold under its own name that reports another's ids, so only its owner can tell
+/// it apart: (vendor, product, key, brand, name, drawing). The key is what its settings keep.
+pub type Alias = (u16, u16, &'static str, &'static str, &'static str, &'static str);
+
+/// What a controller with these ids may also be, for its owner to choose.
+pub fn aliases(vendor: u16, product: u16) -> impl Iterator<Item = &'static Alias> {
+    ALIASES.iter().filter(move |a| a.0 == vendor && a.1 == product)
+}
+
+/// The model chosen for a controller, if it is one of the aliases of its ids.
+pub fn alias(vendor: u16, product: u16, key: Option<&str>) -> Option<&'static Alias> {
+    key.and_then(|k| aliases(vendor, product).find(|a| a.2 == k))
+}
+
 /// Names SDL gives when it knows nothing better, which the table's name replaces.
 pub fn is_generic_name(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
@@ -969,6 +983,10 @@ pub static MODELS: &[Row] = &[
     // End of the research rows.
 ];
 
+/// For `aliases`. Many Switch Pro Controller clones copy Nintendo's ids and answer its protocol
+/// as the original does, so nothing SDL reads tells them apart.
+pub static ALIASES: &[Alias] = &[(0x057e, 0x2009, "onikuma-c1", "Onikuma", "Onikuma C1", "onikumaC1")];
+
 /// (vendor, product, drawing), for `drawing`.
 pub static DRAWINGS: &[(u16, u16, &str)] = &[
     (0x3250, 0x1002, "atariVcs"),
@@ -1211,6 +1229,14 @@ mod tests {
         assert!(LAYOUTS.iter().all(|l| lookup(l.0, l.1).is_some()));
         assert_eq!(layout(0x054c, 0x0cda), Some(Art::Retro), "PlayStation Classic: no sticks");
         assert_eq!(crate::extras::art(Family::Other, 0x0583, 0x2060), Art::Retro);
+    }
+
+    #[test]
+    fn aliases_are_of_known_models() {
+        assert!(ALIASES.iter().all(|a| lookup(a.0, a.1).is_some() && !a.2.is_empty() && a.4.len() < 80));
+        assert_eq!(alias(0x057e, 0x2009, Some("onikuma-c1")).map(|a| a.4), Some("Onikuma C1"));
+        assert!(alias(0x057e, 0x2009, Some("gone")).is_none() && alias(0x057e, 0x2009, None).is_none());
+        assert!(alias(0x054c, 0x05c4, Some("onikuma-c1")).is_none(), "a key only counts for its own ids");
     }
 
     #[test]

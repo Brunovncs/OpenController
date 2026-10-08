@@ -55,6 +55,21 @@ pub struct Diagnosis {
     pub facts: Facts,
     /// Controllers coming and going since the resident process started, oldest first.
     pub log: Vec<String>,
+    /// `None` for a controller without a gyro.
+    #[serde(default)]
+    pub gyro: Option<GyroFacts>,
+}
+
+/// Where the gyro of a controller stands, as the engine sees it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GyroFacts {
+    /// The gyro mode of the profile in use, as `Debug` prints it.
+    pub mode: String,
+    /// Whether OpenController asked for its reports, whether SDL has them on, and SDL's error
+    /// when turning them on failed.
+    pub wanted: bool,
+    pub enabled: bool,
+    pub error: Option<String>,
 }
 
 /// Cuts a device path down to its first two parts (`\\?\HID#VID_054C&PID_09CC&MI_03`): what
