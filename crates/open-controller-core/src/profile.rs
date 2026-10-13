@@ -2,7 +2,7 @@
 //! its sticks and gyro behave, and which programs switch to them. One is in use; a profile that
 //! names the program in front takes over while that program is in front.
 
-use crate::binding::{Action, Bindings};
+use crate::binding::{self, Action, Bindings};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub const MAX_PROFILES: usize = 8;
@@ -241,6 +241,9 @@ pub enum Edit {
     },
     /// Clears every assignment of the profile in use.
     ClearBindings,
+    /// Makes a Nintendo controller's face buttons follow their letters rather than their places
+    /// (see [`binding::letters`]), or puts them back.
+    Letters(bool),
     Light(Light),
     Brightness(u8),
     LowBatteryFlash(bool),
@@ -313,6 +316,16 @@ impl Profiles {
                 };
             }
             Edit::ClearBindings => self.active_mut().bindings.clear(),
+            Edit::Letters(on) => {
+                let b = &mut self.active_mut().bindings;
+                for (button, action) in binding::letters() {
+                    if on {
+                        b.insert(button, action);
+                    } else if b.get(&button) == Some(&action) {
+                        b.remove(&button);
+                    }
+                }
+            }
             Edit::Light(l) => self.active_mut().light = l,
             Edit::Brightness(b) => self.active_mut().brightness = b.clamp(10, 100),
             Edit::LowBatteryFlash(on) => self.active_mut().low_battery_flash = on,
@@ -477,6 +490,65 @@ mod tests {
         assert_eq!(p.list[0].bindings.len(), 1);
         p.apply(Edit::Select(0));
         assert_eq!(p.active().name, "Default");
+    }
+
+    #[test]
+    fn letters_and_restoring_the_defaults() {
+        let mut p = Profiles::default();
+        p.apply(Edit::Bind { button: 9, action: Some(Action::Xbox(XboxButton::LeftTrigger)) });
+        p.apply(Edit::Letters(true));
+        assert!(binding::uses_letters(&p.active().bindings) && !p.is_default());
+        p.apply(Edit::Bind { button: 0, action: Some(Action::Xbox(XboxButton::Y)) });
+        p.apply(Edit::Letters(false));
+        let left: Vec<u8> = p.active().bindings.keys().copied().collect();
+        assert_eq!(left, [0, 9], "only the swaps it made are undone");
+        p.apply(Edit::ClearBindings);
+        assert!(p.is_default(), "restoring the defaults leaves nothing to keep");
+    }
+
+    #[test]
+    fn remapped_buttons_round_trip() {
+        let mut p = Profiles::new("Zelda".into());
+        p.apply(Edit::Letters(true));
+        p.apply(Edit::Bind { button: 4, action: Some(Action::Keys(crate::binding::Chord { mods: 0, key: 0x4D })) });
+        let text = serde_json::to_string(&p).unwrap();
+        let back = serde_json::from_str::<Profiles>(&text).unwrap().sanitised();
+        assert_eq!(back, p);
+        assert!(!back.is_default());
+    }
+
+    /// A file as 0.8.5 writes it (an extra button assigned, the gyro and sticks set) reads as it
+    /// did, and its normal buttons are themselves.
+    #[test]
+    fn a_profile_from_0_8_5_is_unchanged() {
+        let old = r#"{"list": [{"name": "", "bindings": {"16": {"Xbox": "A"}, "17": {"Keys": {"mods": 1, "key": 65}}},
+            "light": "Player", "brightness": 100, "low_battery_flash": true,
+            "gyro": {"mode": "Aiming", "sensitivity": 150, "invert_y": false, "aim_sensitivity": null, "y_scale": 100,
+                "toggle": false, "off_button": null, "acceleration": null, "tightening": 0, "anti_deadzone": 12, "tilt": true},
+            "sticks": {"deadzone": 0, "anti_deadzone": 0, "dpad": "Off"},
+            "pressure": {"left_trigger": null, "right_trigger": null, "keep_buttons": false}, "programs": []}],
+            "active": 0, "native": false, "model": null, "output": "Xbox360"}"#;
+        let p = serde_json::from_str::<Profiles>(old).unwrap().sanitised();
+        assert_eq!(p.active().bindings.len(), 2);
+        assert!(!binding::remaps_normal(&p.active().bindings));
+        assert_eq!(binding::taken(&p.active().bindings), 1 << 16 | 1 << 17);
+        let untouched: Profiles = serde_json::from_str(r#"{"list": [{"name": "", "bindings": {}}], "active": 0}"#).unwrap();
+        assert!(untouched.sanitised().is_default());
+    }
+
+    /// What 0.8.5 does with a file that remaps the normal buttons: it has the same types, so it
+    /// reads every profile and keeps the assignments, which it adds to the buttons instead of
+    /// replacing them (A to B presses both).
+    #[test]
+    fn an_older_version_keeps_remapped_buttons() {
+        let mut p = Profiles::new("Zelda".into());
+        p.apply(Edit::Letters(true));
+        p.apply(Edit::Add("Racing".into()));
+        let text = serde_json::to_string(&p).unwrap();
+        assert!(text.contains(r#""bindings":{"0":{"Xbox":"B"}"#), "{text}");
+        let old = serde_json::from_str::<Profiles>(&text).unwrap().sanitised();
+        assert_eq!(old.list.len(), 2);
+        assert_eq!(old.list[0].bindings, p.list[0].bindings);
     }
 
     #[test]

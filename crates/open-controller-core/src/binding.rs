@@ -1,8 +1,10 @@
-//! What an extra button does: press an Xbox button, hold a key, or type a short macro. Kept per
-//! controller, by its serial when it has one and by model otherwise.
+//! What a button does: press an Xbox button, hold a key, or type a short macro. Kept per
+//! controller, by its serial when it has one and by model otherwise. An extra button does nothing
+//! else; any other button given something to do stops being itself.
 
 use crate::device::Identity;
-use crate::mapping::xusb;
+use crate::extras;
+use crate::mapping::{XusbReport, button, xusb};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -170,28 +172,100 @@ pub fn store_key(identity: &Identity, vendor: u16, product: u16) -> String {
     }
 }
 
-/// The XUSB buttons and triggers the held extra buttons add to a report.
-pub fn xbox_overlay(bindings: &Bindings, buttons: u64) -> (u16, bool, bool) {
-    let mut bits = 0;
-    let (mut lt, mut rt) = (false, false);
+/// The buttons every gamepad has, by SDL index, in the order they are listed: the face buttons,
+/// the bumpers, View, Menu and Guide, the stick clicks and the d-pad. Games see each as the Xbox
+/// button in its place until it is given something else to do.
+pub const NORMAL: [u8; 15] = [
+    button::SOUTH as u8,
+    button::EAST as u8,
+    button::WEST as u8,
+    button::NORTH as u8,
+    button::LEFT_SHOULDER as u8,
+    button::RIGHT_SHOULDER as u8,
+    button::BACK as u8,
+    button::START as u8,
+    button::GUIDE as u8,
+    button::LEFT_STICK as u8,
+    button::RIGHT_STICK as u8,
+    button::DPAD_UP as u8,
+    button::DPAD_DOWN as u8,
+    button::DPAD_LEFT as u8,
+    button::DPAD_RIGHT as u8,
+];
+
+pub fn is_normal(b: u8) -> bool {
+    NORMAL.contains(&b)
+}
+
+fn bit(b: u8) -> u64 {
+    1u64.checked_shl(u32::from(b)).unwrap_or(0)
+}
+
+/// The buttons that have something to do, which games no longer see as themselves.
+pub fn taken(bindings: &Bindings) -> u64 {
+    bindings.keys().fold(0, |m, &b| m | bit(b))
+}
+
+/// Whether any of the buttons every gamepad has does something else.
+pub fn remaps_normal(bindings: &Bindings) -> bool {
+    bindings.keys().any(|&b| is_normal(b))
+}
+
+/// Presses the Xbox buttons and triggers the held buttons stand for. `buttons` is what is held,
+/// before the buttons that do something else are taken out of the report.
+pub fn overlay(bindings: &Bindings, buttons: u64, r: &mut XusbReport) {
     for (&b, action) in bindings {
-        if buttons & (1 << b) == 0 {
+        if buttons & bit(b) == 0 {
             continue;
         }
         if let Action::Xbox(x) = action {
             match (x, x.bit()) {
-                (_, Some(bit)) => bits |= bit,
-                (XboxButton::LeftTrigger, None) => lt = true,
-                _ => rt = true,
+                (_, Some(bit)) => r.buttons |= bit,
+                (XboxButton::LeftTrigger, None) => r.left_trigger = u8::MAX,
+                _ => r.right_trigger = u8::MAX,
             }
         }
     }
-    (bits, lt, rt)
+}
+
+/// Whether a virtual DualShock 4's touchpad is clicked: the controller's is, and no button the
+/// click makes (the touchpad's, its halves') does something else.
+pub fn touchpad_click(bindings: &Bindings, buttons: u64) -> bool {
+    let click = [extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT, extras::TOUCH_TWO].iter().fold(0, |m, &b| m | bit(b));
+    buttons & bit(extras::TOUCHPAD) != 0 && buttons & click & taken(bindings) == 0
+}
+
+/// SDL names the face buttons by where they are, so a Nintendo controller's B, at the bottom, is
+/// Xbox's A. These make each one the Xbox button of the letter printed on it.
+pub fn letters() -> [(u8, Action); 4] {
+    [
+        (button::SOUTH as u8, Action::Xbox(XboxButton::B)),
+        (button::EAST as u8, Action::Xbox(XboxButton::A)),
+        (button::WEST as u8, Action::Xbox(XboxButton::Y)),
+        (button::NORTH as u8, Action::Xbox(XboxButton::X)),
+    ]
+}
+
+pub fn uses_letters(bindings: &Bindings) -> bool {
+    letters().iter().all(|(b, a)| bindings.get(b) == Some(a))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::mapping::{PadState, axis, to_xusb};
+    use crate::motion;
+    use crate::profile::DpadStick;
+
+    /// What the engine sends for `held`: the buttons that do something else taken out, then
+    /// what they stand for added.
+    fn report(b: &Bindings, held: &[u32]) -> XusbReport {
+        let buttons = held.iter().fold(0, |m, &x| m | 1 << x);
+        let mut r = to_xusb(&PadState { buttons: buttons & !taken(b), ..PadState::default() });
+        overlay(b, buttons, &mut r);
+        r
+    }
 
     #[test]
     fn overlay_adds_only_held_buttons() {
@@ -199,9 +273,93 @@ mod tests {
         b.insert(16, Action::Xbox(XboxButton::A));
         b.insert(17, Action::Xbox(XboxButton::LeftTrigger));
         b.insert(18, Action::Keys(Chord { mods: modifier::CTRL, key: 0x41 }));
-        assert_eq!(xbox_overlay(&b, 0), (0, false, false));
-        assert_eq!(xbox_overlay(&b, 1 << 16), (xusb::A, false, false));
-        assert_eq!(xbox_overlay(&b, 1 << 16 | 1 << 17 | 1 << 18), (xusb::A, true, false));
+        assert_eq!(report(&b, &[]), XusbReport::default());
+        assert_eq!(report(&b, &[16]).buttons, xusb::A);
+        let r = report(&b, &[16, 17, 18]);
+        assert_eq!((r.buttons, r.left_trigger, r.right_trigger), (xusb::A, 255, 0));
+    }
+
+    #[test]
+    fn a_button_given_another_is_no_longer_itself() {
+        let mut b = Bindings::new();
+        b.insert(button::SOUTH as u8, Action::Xbox(XboxButton::B));
+        assert_eq!(report(&b, &[button::SOUTH]).buttons, xusb::B, "A is gone, B is pressed");
+        assert_eq!(report(&b, &[button::EAST]).buttons, xusb::B, "B itself still works");
+        assert_eq!(report(&b, &[button::NORTH]).buttons, xusb::Y, "the others are untouched");
+    }
+
+    #[test]
+    fn a_button_can_become_a_trigger() {
+        let mut b = Bindings::new();
+        b.insert(button::LEFT_SHOULDER as u8, Action::Xbox(XboxButton::LeftTrigger));
+        let r = report(&b, &[button::LEFT_SHOULDER]);
+        assert_eq!((r.buttons, r.left_trigger), (0, 255));
+    }
+
+    #[test]
+    fn a_button_given_a_key_leaves_the_game() {
+        let mut b = Bindings::new();
+        b.insert(button::BACK as u8, Action::Keys(Chord { mods: 0, key: 0x4D }));
+        assert_eq!(report(&b, &[button::BACK]), XusbReport::default());
+        b.insert(button::START as u8, Action::Macro(vec![Step::Keys(Chord { mods: 0, key: 0x41 })]));
+        assert_eq!(report(&b, &[button::START, button::SOUTH]).buttons, xusb::A);
+    }
+
+    #[test]
+    fn two_buttons_can_trade() {
+        let mut b = Bindings::new();
+        b.insert(button::SOUTH as u8, Action::Xbox(XboxButton::B));
+        b.insert(button::EAST as u8, Action::Xbox(XboxButton::A));
+        assert_eq!(report(&b, &[button::SOUTH]).buttons, xusb::B);
+        assert_eq!(report(&b, &[button::EAST]).buttons, xusb::A);
+        assert_eq!(report(&b, &[button::SOUTH, button::EAST]).buttons, xusb::A | xusb::B);
+    }
+
+    #[test]
+    fn a_dpad_from_the_stick_is_not_taken_with_the_button() {
+        let mut b = Bindings::new();
+        b.insert(button::DPAD_UP as u8, Action::Xbox(XboxButton::Y));
+        let held = 1 << button::DPAD_UP;
+        let mut s = PadState { buttons: held & !taken(&b), ..PadState::default() };
+        s.axes[axis::LEFT_Y] = -32000;
+        motion::apply_dpad_stick(&mut s, DpadStick::Left);
+        let mut r = to_xusb(&s);
+        overlay(&b, held, &mut r);
+        assert_eq!(r.buttons, xusb::DPAD_UP | xusb::Y, "the stick still pushes up, the button is Y");
+    }
+
+    #[test]
+    fn the_letters_follow_what_is_printed() {
+        let mut b = Bindings::new();
+        assert!(!uses_letters(&b));
+        b.extend(letters());
+        assert!(uses_letters(&b) && remaps_normal(&b));
+        assert_eq!(report(&b, &[button::SOUTH]).buttons, xusb::B, "Nintendo's B, at the bottom");
+        assert_eq!(report(&b, &[button::EAST]).buttons, xusb::A);
+        assert_eq!(report(&b, &[button::WEST]).buttons, xusb::Y);
+        assert_eq!(report(&b, &[button::NORTH]).buttons, xusb::X);
+    }
+
+    #[test]
+    fn extras_are_not_normal_buttons() {
+        assert_eq!(NORMAL.iter().fold(0u64, |m, &b| m | bit(b)), (1 << 15) - 1, "SDL's buttons 0 to 14");
+        assert!(extras::ALL.iter().all(|&b| !is_normal(b)));
+        let mut b = Bindings::new();
+        b.insert(extras::LEFT_PADDLE1, Action::Xbox(XboxButton::A));
+        assert!(!remaps_normal(&b));
+        assert_eq!(taken(&[(200, Action::Xbox(XboxButton::A))].into()), 0, "a button past the u64 is ignored");
+    }
+
+    #[test]
+    fn a_touchpad_click_that_does_something_else_does_not_click() {
+        let click = 1 << extras::TOUCHPAD | 1 << extras::TOUCH_LEFT;
+        let mut b = Bindings::new();
+        assert!(touchpad_click(&b, click));
+        b.insert(extras::TOUCH_RIGHT, Action::Xbox(XboxButton::X));
+        assert!(touchpad_click(&b, click), "the other half");
+        b.insert(extras::TOUCH_LEFT, Action::Xbox(XboxButton::X));
+        assert!(!touchpad_click(&b, click));
+        assert!(!touchpad_click(&Bindings::new(), 0));
     }
 
     #[test]

@@ -9,7 +9,7 @@ use windows_sys::Win32::Foundation::FILETIME;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F24};
 use windows_sys::Win32::UI::Input::XboxController::{
-    XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_STATE, XINPUT_VIBRATION, XInputGetState, XInputSetState,
+    XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_STATE, XINPUT_VIBRATION, XInputGetState, XInputSetState,
 };
 
 /// The Xbox set, two back paddles and the touchpad click.
@@ -151,6 +151,24 @@ fn main() {
     wait_for("button A", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_A != 0));
     check(true, "the bottom face button is A");
     unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+
+    // A button made into another is no longer itself; one made into a trigger pulls it.
+    let (south, lb) = (SDL_GAMEPAD_BUTTON_SOUTH.0 as u8, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER.0 as u8);
+    let mut remapped = profiles.clone();
+    remapped.apply(Edit::Bind { button: south, action: Some(Action::Xbox(XboxButton::X)) });
+    remapped.apply(Edit::Bind { button: lb, action: Some(Action::Xbox(XboxButton::LeftTrigger)) });
+    engine.send(Command::SetProfiles(PROFILE.into(), remapped));
+    std::thread::sleep(Duration::from_millis(50));
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, true) };
+    let s = wait_for("A as X", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_X != 0));
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+    check(s.Gamepad.wButtons & XINPUT_GAMEPAD_A == 0, "the bottom face button made into X presses X and not A");
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER.0, true) };
+    let s = wait_for("LB as LT", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 255));
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER.0, false) };
+    check(s.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER == 0, "the left bumper made into the left trigger pulls it, and is not LB");
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("everything let go", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0 && s.Gamepad.bLeftTrigger == 0));
 
     let pad = engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE));
     check(

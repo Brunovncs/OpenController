@@ -1249,7 +1249,11 @@ impl Core {
             Output::Xbox360 => Report::Xusb(report),
             Output::DualShock4 => {
                 let p = source.and_then(|d| self.phys.get(&d));
-                let touchpad = p.is_some_and(|p| p.state.pressed(mapping::button::TOUCHPAD));
+                let profile = p.and_then(|p| self.profiles.get(&p.model.store)).map(|x| x.for_program(&self.foreground));
+                let touchpad = p.is_some_and(|p| match profile {
+                    Some(pr) => binding::touchpad_click(&pr.bindings, p.state.buttons),
+                    None => p.state.pressed(mapping::button::TOUCHPAD),
+                });
                 let battery = ds4::battery(p.map_or(Power::Unknown, |p| p.power));
                 Report::Ds4(ds4::from_xusb(&report, touchpad, battery, p.map_or(Motion::REST, Phys::motion)))
             }
@@ -1257,12 +1261,14 @@ impl Core {
         self.send(s);
     }
 
-    /// The Xbox report for a device's state, with the Xbox buttons its extra buttons stand for.
+    /// The Xbox report for a device's state, with the Xbox buttons its buttons stand for. A button
+    /// that does something else is taken out first, so the d-pad a stick makes stays.
     fn report_of(&self, dev: DeviceId) -> XusbReport {
         let Some(p) = self.phys.get(&dev) else { return XusbReport::default() };
         let profile = self.profile_of(&p.model.store);
         let mut state = p.state;
         if let Some(pr) = profile {
+            state.buttons &= !binding::taken(&pr.bindings);
             if p.model.features.pressure {
                 motion::apply_pressure(&mut state, pr.pressure);
             }
@@ -1280,15 +1286,8 @@ impl Core {
             r.thumb_rx = (i32::from(r.thumb_rx) + i32::from(p.aim_out.0)).clamp(-32768, 32767) as i16;
             r.thumb_ry = (i32::from(r.thumb_ry) + i32::from(p.aim_out.1)).clamp(-32768, 32767) as i16;
         }
-        if let Some(b) = profile.map(|pr| &pr.bindings) {
-            let (bits, lt, rt) = binding::xbox_overlay(b, p.state.buttons);
-            r.buttons |= bits;
-            if lt {
-                r.left_trigger = u8::MAX;
-            }
-            if rt {
-                r.right_trigger = u8::MAX;
-            }
+        if let Some(pr) = profile {
+            binding::overlay(&pr.bindings, p.state.buttons, &mut r);
         }
         r
     }

@@ -198,6 +198,61 @@ mod tests {
     }
 
     #[test]
+    fn a_file_from_0_8_5_loads_the_same() {
+        use open_controller_core::binding::{self, Action, XboxButton};
+        use open_controller_core::profile::Output;
+        let dir = std::env::temp_dir().join(format!("oc-settings-085-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = r#"{
+  "hide_originals": true,
+  "check_updates": true,
+  "language": "pt",
+  "controllers": {
+    "serial:e417d8bc366c": {
+      "list": [
+        {"name": "", "bindings": {"16": {"Xbox": "A"}, "19": {"Macro": [{"Keys": {"mods": 1, "key": 67}}, {"Wait": 40}]}},
+         "light": {"Color": [255, 80, 0]}, "brightness": 60, "low_battery_flash": true,
+         "gyro": {"mode": "Off", "sensitivity": 100, "invert_y": false, "aim_sensitivity": null, "y_scale": 100, "toggle": false,
+                  "off_button": null, "acceleration": null, "tightening": 0, "anti_deadzone": 12, "tilt": true},
+         "sticks": {"deadzone": 8, "anti_deadzone": 0, "dpad": "Off"},
+         "pressure": {"left_trigger": null, "right_trigger": null, "keep_buttons": false},
+         "programs": ["forzahorizon5.exe"]}
+      ],
+      "active": 0, "native": false, "model": null, "output": "DualShock4"
+    }
+  },
+  "virtual_driver": "ViGEmBus"
+}"#;
+        std::fs::write(dir.join(FILE_NAME), text).unwrap();
+        let s = Settings::load(&dir);
+        assert!(!dir.join("settings.json.bad").exists(), "read as it is, nothing salvaged");
+        let p = &s.controllers["serial:e417d8bc366c"];
+        assert_eq!(p.output, Output::DualShock4);
+        assert_eq!(p.active().bindings[&16], Action::Xbox(XboxButton::A));
+        assert!(!binding::remaps_normal(&p.active().bindings), "every normal button is itself");
+        s.save(&dir);
+        assert_eq!(Settings::load(&dir), s);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remapped_buttons_survive_a_save() {
+        use open_controller_core::binding::{self, Action, Chord};
+        use open_controller_core::profile::Edit;
+        let dir = std::env::temp_dir().join(format!("oc-settings-remap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = Settings::default();
+        let p = s.controllers.entry("serial:98b6e9a1c2d3".into()).or_default();
+        p.apply(Edit::Letters(true));
+        p.apply(Edit::Bind { button: 6, action: Some(Action::Keys(Chord { mods: 0, key: 0x1B })) });
+        s.save(&dir);
+        let back = Settings::load(&dir);
+        assert_eq!(back, s);
+        assert!(binding::uses_letters(&back.controllers["serial:98b6e9a1c2d3"].active().bindings));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_native_controller_survives_a_save() {
         use open_controller_core::profile::Edit;
         let dir = std::env::temp_dir().join(format!("oc-settings-native-{}", std::process::id()));

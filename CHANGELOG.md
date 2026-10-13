@@ -3,6 +3,17 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+Every button can now be remapped, not only the extra ones. On a controller's Buttons page, All
+buttons lists the face buttons, bumpers, stick clicks, d-pad and the middle buttons, and each can
+become another Xbox button, a key or a macro. Games then stop seeing it as itself. It is kept per
+profile, so a profile tied to a game gives that game its own layout without Steam. On a Switch
+controller, Use the controller's letters makes the B at the bottom B in games, as printed. A tile
+says Remapped while its profile changes one of these buttons, and Restore defaults puts everything
+back. A touchpad click given something else no longer clicks the touchpad of a virtual DualShock 4
+too. Settings carry over. If you go back to 0.8.5, it keeps them but presses both buttons.
+
 ## 0.8.5
 
 The DualShock 3 gets more out of DsHidMini's SXS mode, all of it experimental. Its

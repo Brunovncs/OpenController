@@ -110,7 +110,8 @@ profiles. Typing keys for other apps needs the Accessibility permission, which t
 Every controller gets a player slot. Games see an Xbox 360 controller in that XInput slot, and the
 physical controller shows the same number: the player lights on a DualSense or a Switch controller,
 the light bar colour on a DualShock 4 (blue, red, green, pink, as on a PlayStation). Buttons follow
-their position, so the bottom face button is A whether it says Cross, B or A. Sticks and triggers
+their position, so the bottom face button is A whether it says Cross, B or A, unless you change it
+(see Extra buttons). Sticks and triggers
 pass through untouched, without a deadzone, as a real Xbox controller's do; the game applies its
 own. Rumble goes back the other way, from the game to the controller's motors.
 
@@ -139,7 +140,7 @@ real one has them and details such as the DualSense's light strips or the Ultima
 triggers and buttons light up as they are pressed, next to the player, connection and battery.
 The same drawings are on the [website](https://opencontroller.com.br). Icons are drawn too, so the window looks the same on
 Windows, Linux and macOS. A controller's page has its profiles at the top and three
-sections: Buttons, with the drawing and the extra buttons; Light, for controllers whose light bar
+sections: Buttons, with the drawing, the extra buttons and all the others; Light, for controllers whose light bar
 can be coloured; and Information, with the model, its USB id, what games see and what it can do.
 "Identify" makes it rumble, and "Turn off" disconnects a Bluetooth PlayStation or Switch
 controller.
@@ -179,6 +180,16 @@ PlayStation, Switch and 8BitDo pads do); otherwise they belong to the model.
 The touchpad gives three buttons of its own besides its click: a click on its left half, on its
 right half, and two fingers on it, so a DualShock 4 or DualSense has a few to assign even without
 back paddles.
+
+The buttons every controller has (face buttons, bumpers, stick clicks, d-pad and the middle ones)
+are under All buttons, folded away below the extra buttons. Any of them can be given the same
+things, and games then no longer see it as itself: made into B, the bottom face button presses B
+and not A. Default puts it back. A Nintendo controller has a switch there, Use the controller's
+letters, which makes the B at the bottom B in games, as printed, rather than A for its place.
+Restore defaults clears every assignment of the profile in use. While the profile in use changes
+any of these buttons, the controller's tile says Remapped, so a button that does something else is
+not taken for a broken one. This works the same whether games see an Xbox 360 controller, a
+DualShock 4 or, on Linux, the uinput pad.
 
 Each controller has up to eight profiles, each with its own assignments, light, gyro and stick
 settings. A new profile starts as a copy of the one in use, and switching applies at once, keys
@@ -420,8 +431,8 @@ The 138 tests on Windows (117 on Linux, where the Windows drivers' do not apply,
 grace period, two connections of one controller), device identity and connection type, the
 ViGEmBus and HidHide request layouts and IOCTL codes, HidHide's list handling (other programs'
 entries survive) and its journal file, the bundled mappings, the table of known models and the
-extra buttons' names, families and drawings, the assignments (what an Xbox button adds to a
-report, macro limits, keys pressed and let go in order, extended keys, recorded keys), profiles
+extra buttons' names, families and drawings, the assignments (what a button adds to a report and
+takes out of it, two buttons trading places, the Nintendo letters, macro limits, keys pressed and let go in order, extended keys, recorded keys), profiles
 (edits, limits, deleting the one in use, programs that switch them) and light colours, the stick
 deadzone, the gyro's aim and filter (aiming sensitivity, up and down, acceleration, steadying,
 anti-deadzone, the toggle and the pause button, and that the defaults aim as 0.8.0 did), the
@@ -490,6 +501,9 @@ Edge into the `.ico` files.
 - When a new controller connects, the engine pauses about 17 ms to plug in its virtual controller.
 - Keys and macros from extra buttons do not reach a game running as administrator: Windows keeps
   a normal program's input out of elevated ones. Games with anti-cheat may also ignore them.
+- Remapping covers buttons only: triggers and sticks stay as they are, though a button can still
+  pull a trigger. A controller games read directly (an Xbox controller, or one kept native) keeps
+  its normal buttons, since nothing stands between it and the game to take them out.
 - Extra buttons are only what SDL reports, plus the touchpad's halves and a handheld's own buttons.
   Pads in XInput mode and Xbox Elite paddles send nothing a program can read.
 - On a handheld, the buttons that arrive as keys are taken from every program while OpenController

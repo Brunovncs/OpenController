@@ -1,7 +1,7 @@
 use open_controller_core::binding::{Action, Chord, XboxButton};
 use open_controller_core::extras::{LEFT_PADDLE1, RIGHT_PADDLE1};
 use open_controller_core::profile::{Edit, Profiles};
-use open_controller_core::{Config, Engine, Role};
+use open_controller_core::{Command, Config, Engine, Role};
 use sdl3_sys::everything::*;
 use std::fs::File;
 use std::io::Write;
@@ -102,7 +102,8 @@ fn main() {
     profiles.apply(Edit::Bind { button: RIGHT_PADDLE1, action: Some(Action::Xbox(XboxButton::Y)) });
     profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord { mods: 0, key: VK_F24 })) });
     let dir = std::env::temp_dir().join("open-controller-loopback");
-    let config = Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles)].into(), driver: Default::default() };
+    let config =
+        Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into(), driver: Default::default() };
     let engine = Engine::start(config, || {});
     wait_for("the engine", Duration::from_secs(10), || engine.snapshot().running.then_some(()));
     if !matches!(engine.snapshot().vigem, open_controller_core::Driver::Ready { .. }) {
@@ -149,6 +150,19 @@ fn main() {
     wait_for("BTN_A", Duration::from_millis(500), || key(&pad, BTN_A).then_some(()));
     unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
     check(true, "the bottom face button is BTN_A");
+
+    // A button made into another is no longer itself.
+    let mut remapped = profiles.clone();
+    remapped.apply(Edit::Bind { button: SDL_GAMEPAD_BUTTON_SOUTH.0 as u8, action: Some(Action::Xbox(XboxButton::Y)) });
+    engine.send(Command::SetProfiles(PROFILE.into(), remapped));
+    std::thread::sleep(Duration::from_millis(50));
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, true) };
+    wait_for("A as Y", Duration::from_millis(500), || key(&pad, BTN_Y).then_some(()));
+    let a_too = key(&pad, BTN_A);
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+    wait_for("Y to be let go", Duration::from_millis(500), || (!key(&pad, BTN_Y)).then_some(()));
+    check(!a_too, "the bottom face button made into Y presses BTN_Y and not BTN_A");
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
 
     let paddle = |b: u8, down: bool| unsafe {
         SDL_SetJoystickVirtualButton(joy, BUTTON_MASK.count_ones() as i32 - (BUTTON_MASK >> b).count_ones() as i32, down)

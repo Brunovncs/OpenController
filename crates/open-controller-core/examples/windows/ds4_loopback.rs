@@ -181,6 +181,21 @@ fn main() {
     }
     check(seen.is_some(), &format!("the gyro and the accelerometer reach games as SDL reads them back ({seen:?})"));
 
+    // Buttons made into others: the bottom one is Circle and the right one Cross, nothing else.
+    profiles.apply(Edit::Letters(true));
+    engine.send(open_controller_core::Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    std::thread::sleep(Duration::from_millis(50));
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, true) };
+    let south = report(dev, "the bottom button as Circle", |b| b[5] & 0x40 != 0);
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_EAST.0, true) };
+    let east = report(dev, "the right button as Cross", |b| b[5] & 0x20 != 0);
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_EAST.0, false) };
+    check(south[5] & 0xF0 == 0x40 && east[5] & 0xF0 == 0x20, "two buttons trade places, and neither is still itself");
+    profiles.apply(Edit::ClearBindings);
+    engine.send(open_controller_core::Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    report(dev, "the buttons let go", |b| b[5] & 0xF0 == 0);
+
     // The right stick standing in for the d-pad.
     profiles.apply(Edit::Sticks(Sticks { dpad: DpadStick::Right, ..Sticks::default() }));
     engine.send(open_controller_core::Command::SetProfiles(PROFILE.into(), profiles.clone()));

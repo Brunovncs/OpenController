@@ -14,8 +14,10 @@ use gpui::{
     AnyElement, AppContext, ClipboardItem, Context, Entity, Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, Window, div, px,
 };
+use open_controller_core::binding::{Action, Bindings};
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
+use open_controller_core::keyboard;
 use open_controller_core::mapping::{self, axis};
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::rating::{self, Rating};
@@ -206,6 +208,24 @@ fn driver(d: &Driver) -> String {
     }
 }
 
+/// What each button does, so a button made into another is not taken for a broken one:
+/// "south (A/✕) → Xbox B, left paddle 1 → Ctrl+C".
+fn assignments(bindings: &Bindings) -> String {
+    if bindings.is_empty() {
+        return "none".into();
+    }
+    let one = |(&b, a): (&u8, &Action)| {
+        let name = BUTTON_NAMES.get(usize::from(b)).copied().unwrap_or("?");
+        let does = match a {
+            Action::Xbox(x) => format!("Xbox {}", x.label()),
+            Action::Keys(c) => keyboard::chord_names(*c).join("+"),
+            Action::Macro(steps) => format!("macro of {} steps", steps.len()),
+        };
+        format!("{name} → {does}")
+    };
+    bindings.iter().map(one).collect::<Vec<_>>().join(", ")
+}
+
 /// The report's text, in English: it is read by the maintainer, not translated.
 pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, lang: &str) -> String {
     let p = &r.pad;
@@ -234,6 +254,7 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
         "Games see it as: {:?} · stick as d-pad: {:?} · pressure: {:?} · gyro tilt from the accelerometer: {}",
         p.profiles.output, pr.sticks.dpad, pr.pressure, pr.gyro.tilt
     );
+    let _ = writeln!(s, "Assignments of the profile in use: {}", assignments(&pr.bindings));
     let _ = writeln!(
         s,
         "Drivers: {} {} · HidHide {} · hiding {}",
@@ -680,6 +701,16 @@ mod tests {
     fn names_cover_every_bit() {
         assert!(BUTTON_NAMES.len() > usize::from(*open_controller_core::extras::HANDHELD.last().unwrap()));
         assert!(moved(-20_000, 20_000) && !moved(-3000, 4000));
+    }
+
+    #[test]
+    fn assignments_name_the_button_and_what_it_does() {
+        use open_controller_core::binding::{Chord, XboxButton, modifier};
+        assert_eq!(assignments(&Bindings::new()), "none");
+        let mut b = Bindings::new();
+        b.insert(0, Action::Xbox(XboxButton::B));
+        b.insert(17, Action::Keys(Chord { mods: modifier::CTRL, key: 0x43 }));
+        assert_eq!(assignments(&b), "south (A/✕) → Xbox B, left paddle 1 → Ctrl+C");
     }
 
     #[test]

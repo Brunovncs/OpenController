@@ -99,6 +99,9 @@ pub struct MainView {
     /// picked (it stays picked when its values match a preset).
     pub gyro_advanced: bool,
     pub gyro_custom: bool,
+    /// Whether the list of every button is open; `None` until opened or closed, when it is open if a
+    /// button already does something else.
+    pub all_buttons: Option<bool>,
     /// The app's icon, in its version drawn for small sizes, for the bar on top.
     brand: Arc<Image>,
     /// Extra buttons held on the open controller in the last snapshot, to notice a new press.
@@ -139,6 +142,7 @@ impl MainView {
             report: None,
             gyro_advanced: false,
             gyro_custom: false,
+            all_buttons: None,
             brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
             held: 0,
             moving: false,
@@ -163,6 +167,7 @@ impl MainView {
         self.renaming = None;
         self.picker = None;
         self.gyro_custom = false;
+        self.all_buttons = None;
     }
 
     pub fn open(&mut self, key: PadKey, cx: &mut Context<Self>) {
@@ -250,6 +255,7 @@ impl MainView {
             let keys_only = crate::detail::native(pad);
             let tab = match current {
                 None if keys_only => Tab::Key,
+                None if open_controller_core::binding::is_normal(button) => Tab::Nothing,
                 Some(Action::Xbox(_)) | None => Tab::Xbox,
                 Some(Action::Keys(_)) => Tab::Key,
                 Some(Action::Macro(_)) => Tab::Macro,

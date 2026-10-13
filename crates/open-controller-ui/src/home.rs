@@ -4,12 +4,13 @@
 use crate::art;
 use crate::theme::{Theme, icon as glyph, layout, radius};
 use crate::ui::MainView;
-use crate::widgets::{Kind, battery, body, button, caption, chip, display, icon, icon_label_button, player_mark, title};
+use crate::widgets::{Kind, battery, body, button, caption, chip, display, icon, icon_label_button, player_mark, title, with_tip};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, AppContext, Context, Div, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled,
     Window, div, px,
 };
+use open_controller_core::binding;
 use open_controller_core::device::{Link, Power};
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
@@ -153,6 +154,30 @@ impl MainView {
         let key = pad.key;
         let away = matches!(pad.role, Role::Waiting { .. } | Role::Unmapped | Role::Unavailable);
         let n = player(&pad.role);
+        // So a button that does something else is not taken for a broken one.
+        let remapped = crate::detail::remappable(pad) && binding::remaps_normal(pad.bindings());
+        let remapped_chip = remapped.then(|| {
+            with_tip(
+                div()
+                    .id(("remapped", i))
+                    .absolute()
+                    .top(px(12.))
+                    .right(px(12.))
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .px(px(8.))
+                    .h(px(24.))
+                    .rounded(px(radius::CHIP))
+                    .bg(t.layer.opacity(0.85))
+                    .border_1()
+                    .border_color(t.stroke)
+                    .child(icon(glyph::BUTTONS, 12., t.text2))
+                    .child(caption(text.remapped, t.text2)),
+                text.remapped_hint,
+                &t,
+            )
+        });
         let stage = crate::widgets::stage(&t)
             .flex()
             .flex_none()
@@ -169,7 +194,7 @@ impl MainView {
                     .absolute()
                     .top(px(12.))
                     .left(px(12.))
-                    .max_w(px(width - 24.))
+                    .max_w(px(width - if remapped { 150. } else { 24. }))
                     .overflow_hidden()
                     .flex()
                     .items_center()
@@ -182,7 +207,8 @@ impl MainView {
                     .border_color(t.stroke)
                     .when_some(n, |d, n| d.child(player_mark(Some(n), &t)))
                     .child(caption(status(pad, text), if away { t.text3 } else { t.text2 }).min_w(px(0.)).truncate()),
-            );
+            )
+            .children(remapped_chip);
         // Controllers with a virtual controller can trade players by dragging one onto another.
         let swappable = matches!(key, PadKey::Slot(_)) && pad.role != Role::KeptNative;
         let dragged = DraggedPad { key, name: pad.name.clone(), theme: t };

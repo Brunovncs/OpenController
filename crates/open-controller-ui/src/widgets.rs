@@ -40,8 +40,13 @@ pub fn icon(name: &'static str, size: f32, color: Hsla) -> Div {
 
 /// An info mark that explains more when the pointer rests on it.
 pub fn info_tip(id: impl Into<ElementId>, tip: &'static str, t: &Theme) -> Stateful<Div> {
+    with_tip(icon(crate::theme::icon::INFO, 16., t.text2).id(id), tip, t)
+}
+
+/// Explains more when the pointer rests on `el`.
+pub fn with_tip(el: Stateful<Div>, tip: &'static str, t: &Theme) -> Stateful<Div> {
     let t = *t;
-    icon(crate::theme::icon::INFO, 16., t.text2).id(id).tooltip(move |_, cx| cx.new(|_| Tip { text: tip, theme: t }).into())
+    el.tooltip(move |_, cx| cx.new(|_| Tip { text: tip, theme: t }).into())
 }
 
 struct Tip {

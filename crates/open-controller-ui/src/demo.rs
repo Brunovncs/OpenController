@@ -99,6 +99,8 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     switch.role = Role::Virtual { player: Some(2) };
     switch.extras = vec![extras::MISC1];
     switch.features = Features { motion: true, rumble: true, player_lights: true, ..Features::default() };
+    switch.profiles.apply(Edit::Letters(true));
+    switch.profiles.apply(Edit::Bind { button: button::BACK as u8, action: Some(Action::Keys(Chord { mods: 0, key: 0x4D })) });
 
     let mut joycons = pad(PadKey::Slot(5), "Joy-Con (L/R)", Brand::Nintendo, Family::JoyCons, (0x057E, 0x2008));
     joycons.links = vec![Link::Bluetooth];

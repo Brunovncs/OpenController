@@ -58,7 +58,7 @@ pub fn can_choose_output(pad: &PadView) -> bool {
 
 impl MainView {
     /// A setting that is on or off, with its name and what it does.
-    fn toggle(
+    pub(crate) fn toggle(
         &self,
         id: &'static str,
         (label, desc): (&'static str, &'static str),

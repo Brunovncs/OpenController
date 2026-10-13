@@ -91,6 +91,39 @@ pub fn kept_native(pad: &PadView) -> bool {
     pad.role == Role::KeptNative
 }
 
+/// Whether its normal buttons can do something else: games see it through a virtual controller,
+/// from which a button can be taken out.
+pub fn remappable(pad: &PadView) -> bool {
+    pad.store.is_some() && !kept_native(pad) && !native(pad)
+}
+
+/// Nintendo's layout, B at the bottom and A on the right, where letters can follow the print. The
+/// N64 and Mega Drive controllers have other letters altogether.
+fn nintendo_letters(pad: &PadView) -> bool {
+    match pad.family {
+        Family::SwitchPro | Family::JoyCons | Family::Switch2 => true,
+        Family::NintendoClassic => pad.product == 0x2017,
+        _ => false,
+    }
+}
+
+/// What is printed on one of `binding::NORMAL`, on this controller.
+fn normal_label(pad: &PadView, b: u8) -> &'static str {
+    const XBOX: [&str; 15] = ["A", "B", "X", "Y", "LB", "RB", "View", "Menu", "Xbox", "LS", "RS", "↑", "↓", "←", "→"];
+    const NINTENDO: [&str; 15] = ["B", "A", "Y", "X", "L", "R", "−", "+", "⌂", "LS", "RS", "↑", "↓", "←", "→"];
+    const DUALSHOCK3: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Select", "Start", "PS", "L3", "R3", "↑", "↓", "←", "→"];
+    const DUALSHOCK4: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Share", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
+    const DUALSENSE: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Create", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
+    let names = match pad.family {
+        Family::DualShock3 | Family::Ps2Adapter => &DUALSHOCK3,
+        Family::DualShock4 => &DUALSHOCK4,
+        Family::DualSense | Family::DualSenseEdge => &DUALSENSE,
+        _ if nintendo_letters(pad) => &NINTENDO,
+        _ => &XBOX,
+    };
+    binding::NORMAL.iter().position(|&n| n == b).map_or("", |i| names[i])
+}
+
 fn hint_text(text: &Text, h: Hint) -> &'static str {
     match h {
         Hint::EightBitDoDInput => text.hint_8bitdo,
@@ -127,8 +160,9 @@ fn keycaps(c: Chord, t: &Theme) -> Div {
 }
 
 /// What a button does, right-aligned in its row.
-fn summary(action: Option<&Action>, text: &Text, t: &Theme) -> Div {
+fn summary(b: u8, action: Option<&Action>, text: &Text, t: &Theme) -> Div {
     match action {
+        None if binding::is_normal(b) => caption(text.tab_default, t.text3),
         None => caption(text.not_assigned, t.text3),
         Some(Action::Xbox(x)) => div().flex().items_center().gap(px(8.)).child(caption("Xbox", t.text2)).child(keycap(x.label(), t)),
         Some(Action::Keys(c)) => keycaps(*c, t),
@@ -566,85 +600,131 @@ impl MainView {
                         .flex_1()
                         .min_w(px(320.))
                         .child(self.extras_column(pad, text, &t, cx))
-                        .when(pad.features.pressure && pad.store.is_some() && !kept_native(pad) && !native(pad), |d| {
-                            d.child(self.pressure_card(pad, text, cx))
+                        .when(remappable(pad), |d| d.child(self.all_buttons_column(pad, text, &t, cx)))
+                        .when(pad.features.pressure && remappable(pad), |d| d.child(self.pressure_card(pad, text, cx)))
+                        .when(pad.store.is_some() && !kept_native(pad) && !pad.profiles.active().bindings.is_empty(), |d| {
+                            d.child(self.restore_button(pad.key, text, &t, cx))
                         }),
                 ),
             )
             .into_any_element()
     }
 
+    /// One button's row: what is printed on it, where it is, what it does. Lit while held.
+    fn button_row(&self, pad: &PadView, b: u8, printed: Option<&'static str>, place: String, t: &Theme, cx: &mut Context<Self>) -> Div {
+        let text = self.model.read(cx).text;
+        let selected = self.editor.as_ref().is_some_and(|e| e.button == b);
+        let pressed = pad.input.pressed(b as u32);
+        let pad_for_click = pad.clone();
+        let t = *t;
+        let row = row(&t)
+            .id(("button", b as usize))
+            .cursor_pointer()
+            .when(pressed, |d| d.bg(t.accent_soft).border_color(t.accent))
+            .when(selected && !pressed, |d| d.border_color(t.accent))
+            .hover(move |s| s.bg(t.layer_hover))
+            .on_click(cx.listener(move |this, _, _, cx| this.edit(&pad_for_click, b, cx)))
+            .children(printed.map(|n| {
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .min_w(px(44.))
+                    .h(px(28.))
+                    .px(px(8.))
+                    .rounded(px(radius::CHIP))
+                    .bg(if pressed { t.accent } else { t.control })
+                    .text_size(px(12.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(if pressed { t.on_accent } else { t.text })
+                    .child(n)
+            }))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .when(printed.is_some(), |d| d.child(caption(place.clone(), t.text2)))
+                    .when(printed.is_none(), |d| d.child(strong(place.clone(), t.text))),
+            )
+            .child(summary(b, pad.profiles.active().bindings.get(&b), text, &t))
+            .child(icon(if selected { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT }, 12., t.text2));
+        let mut g = group().child(row);
+        if selected {
+            g = g.child(self.editor_panel(pad, b, text, &t, cx));
+        }
+        g
+    }
+
     fn extras_column(&self, pad: &PadView, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> Div {
-        let key = pad.key;
-        let mut col = div().flex().flex_col().child(title(text.extra_buttons, t.text).pb(px(4.)));
+        let col = div().flex().flex_col().child(title(text.extra_buttons, t.text).pb(px(4.)));
         if pad.extras.is_empty() || kept_native(pad) {
             let message = if matches!(pad.role, Role::Native { .. } | Role::KeptNative) { text.no_extras_native } else { text.no_extras };
             return col.child(caption(message, t.text2));
         }
-        col = col.child(caption(text.extras_hint, t.text2).pb(px(12.)));
         let mut g = group();
         for &b in &pad.extras {
-            let selected = self.editor.as_ref().is_some_and(|e| e.button == b);
-            let pressed = pad.input.pressed(b as u32);
-            let pad_for_click = pad.clone();
-            g = g.child(
-                row(t)
-                    .id(("extra", b as usize))
-                    .cursor_pointer()
-                    .when(pressed, |d| d.bg(t.accent_soft).border_color(t.accent))
-                    .when(selected && !pressed, |d| d.border_color(t.accent))
-                    .hover(move |s| s.bg(t.layer_hover))
-                    .on_click(cx.listener(move |this, _, _, cx| this.edit(&pad_for_click, b, cx)))
-                    .children(printed_name(pad.family, b).map(|n| {
-                        div()
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .justify_center()
-                            .min_w(px(44.))
-                            .h(px(28.))
-                            .px(px(8.))
-                            .rounded(px(radius::CHIP))
-                            .bg(if pressed { t.accent } else { t.control })
-                            .text_size(px(12.))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(if pressed { t.on_accent } else { t.text })
-                            .child(n)
-                    }))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .when(printed_name(pad.family, b).is_some(), |d| d.child(caption(place_name(text, pad.family, b), t.text2)))
-                            .when(printed_name(pad.family, b).is_none(), |d| d.child(strong(place_name(text, pad.family, b), t.text))),
-                    )
-                    .child(summary(pad.profiles.active().bindings.get(&b), text, t))
-                    .child(icon(if selected { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT }, 12., t.text2)),
-            );
-            if selected {
-                g = g.child(self.editor_panel(pad, b, text, t, cx));
-            }
+            g = g.child(self.button_row(pad, b, printed_name(pad.family, b), place_name(text, pad.family, b), t, cx));
         }
-        col = col.child(g);
-        if !pad.profiles.active().bindings.is_empty() {
-            let confirm = self.confirm_reset;
-            let label = if confirm { text.reset_confirm } else { text.reset_extras };
-            col = col.child(div().flex().pt(px(12.)).child(
-                button("reset", label, if confirm { Kind::Standard } else { Kind::Subtle }, t).on_click(cx.listener(
-                    move |this, _, _, cx| {
-                        if this.confirm_reset {
-                            this.confirm_reset = false;
-                            this.editor = None;
-                            this.edit_now(key, Edit::ClearBindings, cx);
-                        } else {
-                            this.confirm_reset = true;
-                        }
-                        cx.notify();
-                    },
-                )),
-            ));
+        col.child(caption(text.extras_hint, t.text2).pb(px(12.))).child(g)
+    }
+
+    /// The buttons every gamepad has, folded away until asked for: most people never change them.
+    fn all_buttons_column(&self, pad: &PadView, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> Div {
+        let key = pad.key;
+        let bindings = &pad.profiles.active().bindings;
+        let open = self.all_buttons.unwrap_or_else(|| binding::remaps_normal(bindings));
+        let count = binding::NORMAL.iter().filter(|b| bindings.contains_key(b)).count();
+        let tt = *t;
+        let header = div()
+            .id("all-buttons")
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .py(px(6.))
+            .cursor_pointer()
+            .child(icon(if open { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT }, 12., t.text2))
+            .child(title(text.all_buttons, t.text))
+            .when(count > 0, |d| d.child(chip(count.to_string(), t.accent, t.accent_soft)))
+            .hover(move |s| s.opacity(0.85))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.all_buttons = Some(!open);
+                if this.editor.as_ref().is_some_and(|e| binding::is_normal(e.button)) {
+                    this.editor = None;
+                }
+                cx.notify();
+            }));
+        let col = div().flex().flex_col().pt(px(20.)).child(header);
+        if !open {
+            return col;
         }
-        col
+        let mut g = group();
+        if nintendo_letters(pad) {
+            let on = binding::uses_letters(bindings);
+            g = g.child(self.toggle("letters", (text.letters, text.letters_desc), on, Edit::Letters(!on), key, cx));
+        }
+        for (i, &b) in binding::NORMAL.iter().enumerate() {
+            g = g.child(self.button_row(pad, b, Some(normal_label(pad, b)), text.normal_buttons[i].to_string(), &tt, cx));
+        }
+        col.child(caption(text.all_buttons_hint, t.text2).pb(px(12.))).child(g)
+    }
+
+    /// Clears every assignment of the profile in use, after a second click.
+    fn restore_button(&self, key: PadKey, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> Div {
+        let confirm = self.confirm_reset;
+        let label = if confirm { text.reset_confirm } else { text.restore_defaults };
+        div().flex().pt(px(16.)).child(button("reset", label, if confirm { Kind::Standard } else { Kind::Subtle }, t).on_click(
+            cx.listener(move |this, _, _, cx| {
+                if this.confirm_reset {
+                    this.confirm_reset = false;
+                    this.editor = None;
+                    this.edit_now(key, Edit::ClearBindings, cx);
+                } else {
+                    this.confirm_reset = true;
+                }
+                cx.notify();
+            }),
+        ))
     }
 
     fn light_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
@@ -964,6 +1044,8 @@ impl MainView {
         let key = pad.key;
         let current = pad.profiles.active().bindings.get(&b).cloned();
         let keys_only = native(pad);
+        // Without an assignment, a normal button is itself rather than nothing.
+        let normal = binding::is_normal(b);
 
         let tab = |id: &'static str, label: &'static str, which: Tab, cx: &mut Context<Self>| {
             let on = e.tab == which;
@@ -1002,7 +1084,7 @@ impl MainView {
             .when(!keys_only, |d| d.child(tab("tab-xbox", text.tab_xbox, Tab::Xbox, cx)))
             .child(tab("tab-key", text.tab_key, Tab::Key, cx))
             .child(tab("tab-macro", text.tab_macro, Tab::Macro, cx))
-            .child(tab("tab-nothing", text.tab_nothing, Tab::Nothing, cx));
+            .child(tab("tab-nothing", if normal { text.tab_default } else { text.tab_nothing }, Tab::Nothing, cx));
 
         let content: AnyElement = match e.tab {
             Tab::Xbox => {
@@ -1095,7 +1177,7 @@ impl MainView {
                     .into_any_element()
             }
             Tab::Macro => self.macro_editor(key, b, text, t, cx),
-            Tab::Nothing => caption(text.nothing_desc, t.text2).into_any_element(),
+            Tab::Nothing => caption(if normal { text.default_desc } else { text.nothing_desc }, t.text2).into_any_element(),
         };
 
         card(t).flex().flex_col().gap(px(14.)).p(px(16.)).child(div().flex().child(tabs)).child(content).into_any_element()
