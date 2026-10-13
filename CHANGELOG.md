@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.5
 
 The DualShock 3 gets more out of DsHidMini's SXS mode, all of it experimental. Its
 pressure-sensitive buttons can move the triggers, as on the PlayStation 2 and 3: on its Buttons
