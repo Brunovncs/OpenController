@@ -976,6 +976,7 @@ pub static MODELS: &[Row] = &[
     (0x3537, 0x1116, Family::Other, "GameSir X5 Lite (phone controller)"),
     (0x37d7, 0x2414, Family::Flydigi, "Flydigi Direwolf 4"),
     (0x37d7, 0x2801, Family::Flydigi, "Flydigi Vader 5S"),
+    (0x4131, 0x3519, Family::Xbox, "LeadJoy Xeno Pro and Xeno Plus"),
     (0x413d, 0x2106, Family::Xbox, "BIGBIG WON gamepad (ArmorX Pro, Blitz 2)"),
     (0xf000, 0x0003, Family::Other, "retroUSB SNES RetroPad"),
     (0xf000, 0x0008, Family::Other, "retroUSB Genesis RetroPort"),
@@ -985,7 +986,10 @@ pub static MODELS: &[Row] = &[
 
 /// For `aliases`. Many Switch Pro Controller clones copy Nintendo's ids and answer its protocol
 /// as the original does, so nothing SDL reads tells them apart.
-pub static ALIASES: &[Alias] = &[(0x057e, 0x2009, "onikuma-c1", "Onikuma", "Onikuma C1", "onikumaC1")];
+pub static ALIASES: &[Alias] = &[
+    (0x057e, 0x2009, "onikuma-c1", "Onikuma", "Onikuma C1", "onikumaC1"),
+    (0x057e, 0x2009, "leadjoy-xeno-pro", "LeadJoy", "LeadJoy Xeno Pro", "leadjoyXenoPro"),
+];
 
 /// (vendor, product, drawing), for `drawing`.
 pub static DRAWINGS: &[(u16, u16, &str)] = &[
@@ -1071,6 +1075,7 @@ pub static DRAWINGS: &[(u16, u16, &str)] = &[
     (0x045e, 0x0285, "xboxS"),
     (0x045e, 0x0287, "xboxS"),
     (0x045e, 0x0288, "xboxS"),
+    (0x4131, 0x3519, "leadjoyXenoPro"),
 ];
 
 /// (vendor, product, shape), for `layout`.
@@ -1235,6 +1240,8 @@ mod tests {
     fn aliases_are_of_known_models() {
         assert!(ALIASES.iter().all(|a| lookup(a.0, a.1).is_some() && !a.2.is_empty() && a.4.len() < 80));
         assert_eq!(alias(0x057e, 0x2009, Some("onikuma-c1")).map(|a| a.4), Some("Onikuma C1"));
+        assert_eq!(alias(0x057e, 0x2009, Some("leadjoy-xeno-pro")).map(|a| a.5), Some("leadjoyXenoPro"));
+        assert_eq!(aliases(0x057e, 0x2009).count(), 2);
         assert!(alias(0x057e, 0x2009, Some("gone")).is_none() && alias(0x057e, 0x2009, None).is_none());
         assert!(alias(0x054c, 0x05c4, Some("onikuma-c1")).is_none(), "a key only counts for its own ids");
     }

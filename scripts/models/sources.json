@@ -6673,6 +6673,37 @@
    ]
   },
   {
+   "id": "4131:3519",
+   "name": "LeadJoy Xeno Pro and Xeno Plus",
+   "family": "Xbox",
+   "layout": null,
+   "models": [
+    "LeadJoy Xeno Plus",
+    "LeadJoy Xeno Pro (same electronics and firmware as the Plus, per LeadJoy's FCC filing)"
+   ],
+   "reported": [
+    "LeadJoy Xeno Plus"
+   ],
+   "modes": [
+    "2.4g dongle xinput (B + Home)",
+    "usb xinput (likely)",
+    "switch mode (A + Home) copies the Switch Pro Controller, 057e:2009 (likely, LiteEMF firmware): in ALIASES",
+    "ps4 mode (Y + Home) copies a DualShock 4 (not confirmed)",
+    "bluetooth dinput (ids unknown)"
+   ],
+   "confidence": [
+    "confirmed (Xeno Plus)",
+    "likely (Xeno Pro)"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/pull/944",
+    "https://fccid.io/2BGXM-LJXENO",
+    "https://gamepadla.com/leadjoy-xeno-pro.html",
+    "https://www.leadjoy.ai/products/leadjoy-xeno-pro",
+    "https://github.com/LiteEMF/LiteEMF/blob/master/app/gamepad/app_gamepad.c"
+   ]
+  },
+  {
    "id": "413d:2106",
    "name": "BIGBIG WON gamepad (ArmorX Pro, Blitz 2)",
    "family": "Xbox",

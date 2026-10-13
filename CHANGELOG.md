@@ -3,6 +3,12 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+The LeadJoy Xeno Pro and Xeno Plus are now known by name and drawn as themselves. In Switch mode
+the Xeno Pro reports itself as a Switch Pro Controller, so pick it under Model on its Information
+page.
+
 ## 0.8.3
 
 Some controllers copy another one's USB id, so OpenController can't tell them apart. A controller

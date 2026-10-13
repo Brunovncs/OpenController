@@ -36,6 +36,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | `flydigiVader` | The front drawing in Flydigi's Vader 5 Pro manual |
 | `flydigiApex` | The front drawing in Flydigi's Apex 5 manual, its filled shapes only, so the grey callouts drop out |
 | `onikumaC1` | A retailer's front photo of the Onikuma C1 (compumarts.com), its watermark and the JPEG noise under the outline erased |
+| `leadjoyXenoPro` | LeadJoy's front render of the Xeno Pro on leadjoy.ai (`XenoPro_mainImages_01.png`), laid on white and cropped to the controller; the shoulders, light-coloured on a dark body, are drawn by hand |
 | `psClassic` | "PlayStation Controller transparent.png" on Wikimedia Commons, CC BY-SA 3.0 (Sony publishes no straight front view) |
 | `generic`, `handheld` | The Ultimate 2C's outline with neutral buttons, and a handheld drawn by hand (`derive_misc.py`) |
 
