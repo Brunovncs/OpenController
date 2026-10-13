@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.6
 
 Every button can now be remapped, not only the extra ones. On a controller's Buttons page, All
 buttons lists the face buttons, bumpers, stick clicks, d-pad and the middle buttons, and each can
