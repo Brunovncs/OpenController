@@ -2,16 +2,18 @@
 //! that drift. Both edit the chosen profile and apply as they are changed.
 
 use crate::detail::{place_name, printed_name};
-use crate::theme::{Theme, icon as glyph};
+use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::MainView;
 use crate::widgets::{self, body, caption, card, icon, row, strong, switch};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px,
+    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    div, px,
 };
 use open_controller_core::i18n::Text;
-use open_controller_core::mapping::button;
-use open_controller_core::profile::{Acceleration, Edit, Gyro, GyroMode, Sticks};
+use open_controller_core::mapping::{self, button};
+use open_controller_core::platform;
+use open_controller_core::profile::{Acceleration, DpadStick, Edit, Gyro, GyroMode, Output, Pressure, Sticks};
 use open_controller_core::{PadKey, PadView};
 
 /// A row of choices that edits the controller's profile.
@@ -31,7 +33,51 @@ fn setting(label: &'static str, t: &Theme, control: Div) -> Div {
     div().flex().flex_col().gap(px(8.)).child(strong(label, t.text)).child(control)
 }
 
+/// A pressure-sensitive button's name, as printed on a PlayStation controller.
+fn pressure_name(text: &Text, b: u32) -> SharedString {
+    match b {
+        button::SOUTH => text.cross,
+        button::EAST => text.circle,
+        button::WEST => text.square,
+        button::NORTH => text.triangle,
+        button::LEFT_SHOULDER => "L1",
+        button::RIGHT_SHOULDER => "R1",
+        button::DPAD_UP => "↑",
+        button::DPAD_DOWN => "↓",
+        button::DPAD_LEFT => "←",
+        _ => "→",
+    }
+    .into()
+}
+
+/// What a controller is shown to games as, where there is a choice: an Xbox 360 controller, or
+/// a DualShock 4 that carries the motion sensors too.
+pub fn can_choose_output(pad: &PadView) -> bool {
+    platform::DS4_OUTPUT && matches!(pad.key, PadKey::Slot(_)) && pad.store.is_some()
+}
+
 impl MainView {
+    /// A setting that is on or off, with its name and what it does.
+    fn toggle(
+        &self,
+        id: &'static str,
+        (label, desc): (&'static str, &'static str),
+        on: bool,
+        edit: Edit,
+        key: PadKey,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let t = self.theme;
+        let text = self.model.read(cx).text;
+        row(&t)
+            .id(id)
+            .cursor_pointer()
+            .hover(move |s| s.bg(t.layer_hover))
+            .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, edit.clone(), cx)))
+            .child(div().flex().flex_col().flex_1().min_w(px(0.)).gap(px(2.)).child(body(label, t.text)).child(caption(desc, t.text2)))
+            .child(switch(on, text.on, text.off, &t))
+    }
+
     pub fn motion_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let key = pad.key;
@@ -120,6 +166,26 @@ impl MainView {
         // and a held button already stops it when let go.
         let aim_shown = on && g.mode != GyroMode::Aiming;
         let pause_shown = on && !(holding.is_some() && !g.toggle);
+        let sixaxis = pad.features.sixaxis;
+        let note = sixaxis.then(|| {
+            div()
+                .flex()
+                .items_start()
+                .gap(px(10.))
+                .p(px(12.))
+                .rounded(px(radius::CARD))
+                .bg(t.accent_soft)
+                .child(icon(glyph::INFO, 14., t.accent).mt(px(2.)))
+                .child(caption(text.ds3_motion_note, t.text).flex_1().min_w(px(0.)))
+        });
+        let tilt = (sixaxis && on).then(|| {
+            self.toggle("gyro-tilt", (text.gyro_tilt, text.gyro_tilt_desc), g.tilt, Edit::Gyro(Gyro { tilt: !g.tilt, ..g }), key, cx)
+        });
+        let ds4 = pad.profiles.output == Output::DualShock4;
+        let to_games = can_choose_output(pad).then(|| {
+            let next = if ds4 { Output::Xbox360 } else { Output::DualShock4 };
+            self.toggle("motion-to-games", (text.motion_to_games, text.motion_to_games_desc), ds4, Edit::Output(next), key, cx)
+        });
         let open = self.gyro_advanced;
         let advanced = div()
             .id("gyro-advanced")
@@ -140,9 +206,12 @@ impl MainView {
             .p(px(20.))
             .max_w(px(760.))
             .child(caption(text.gyro_desc, t.text2))
+            .children(note)
             .child(setting(text.gyro_mode, &t, modes))
             .when_some(hold_picker, |d, p| d.child(setting(text.gyro_button, &t, p).child(caption(text.gyro_button_note, t.text2))))
             .when_some(press, |d, p| d.child(setting(text.gyro_press, &t, p)))
+            .children(tilt)
+            .children(to_games)
             .when(on, |d| {
                 d.child(setting(text.gyro_sensitivity, &t, sens))
                     .when(aim_shown, |d| d.child(setting(text.gyro_aim_sensitivity, &t, aim_sens)))
@@ -267,6 +336,63 @@ impl MainView {
             .child(setting(text.gyro_anti_deadzone, &t, ad).child(caption(text.gyro_anti_deadzone_desc, t.text2)))
     }
 
+    /// Pressure-sensitive buttons on the triggers, with how hard each is pressed right now.
+    pub fn pressure_card(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
+        let t = self.theme;
+        let key = pad.key;
+        let p = pad.profiles.active().pressure;
+        // The face buttons and the bumpers: the d-pad senses pressure too, but nobody steers with it
+        // on a trigger.
+        let choices = || {
+            let mut c: Vec<(Option<u8>, SharedString)> = vec![(None, text.gyro_none.into())];
+            c.extend(mapping::PRESSURE[..6].iter().map(|&b| (Some(b as u8), pressure_name(text, b))));
+            c
+        };
+        let lt =
+            segmented("pressure-lt", choices(), p.left_trigger, &t, move |b| Edit::Pressure(Pressure { left_trigger: b, ..p }), key, cx);
+        let rt =
+            segmented("pressure-rt", choices(), p.right_trigger, &t, move |b| Edit::Pressure(Pressure { right_trigger: b, ..p }), key, cx);
+        let used = p.left_trigger.is_some() || p.right_trigger.is_some();
+        let keep = used.then(|| {
+            let edit = Edit::Pressure(Pressure { keep_buttons: !p.keep_buttons, ..p });
+            self.toggle("pressure-keep", (text.pressure_keep, text.pressure_keep_desc), p.keep_buttons, edit, key, cx)
+        });
+        let mut meters = div().flex().flex_wrap().gap(px(8.));
+        for (i, &b) in mapping::PRESSURE.iter().enumerate() {
+            let level = f32::from(pad.input.pressure[i]) / 255.;
+            meters = meters.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .w(px(56.))
+                    .child(caption(pressure_name(text, b), if level > 0. { t.text } else { t.text2 }))
+                    .child(
+                        div()
+                            .h(px(6.))
+                            .w_full()
+                            .rounded(px(3.))
+                            .bg(t.control)
+                            .child(div().h_full().w(gpui::relative(level)).rounded(px(3.)).bg(t.accent)),
+                    ),
+            );
+        }
+        card(&t)
+            .flex()
+            .flex_col()
+            .gap(px(20.))
+            .p(px(20.))
+            .mt(px(20.))
+            .child(
+                div().flex().flex_col().gap(px(6.)).child(strong(text.pressure_title, t.text)).child(caption(text.pressure_desc, t.text2)),
+            )
+            .child(meters)
+            .child(setting(text.pressure_lt, &t, lt))
+            .child(setting(text.pressure_rt, &t, rt))
+            .children(keep)
+            .into_any_element()
+    }
+
     pub fn sticks_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let key = pad.key;
@@ -289,6 +415,15 @@ impl MainView {
             key,
             cx,
         );
+        let dpad = segmented(
+            "dpad-stick",
+            vec![(DpadStick::Off, text.off.into()), (DpadStick::Left, text.stick_left.into()), (DpadStick::Right, text.stick_right.into())],
+            s.dpad,
+            &t,
+            move |v| Edit::Sticks(Sticks { dpad: v, ..s }),
+            key,
+            cx,
+        );
         card(&t)
             .flex()
             .flex_col()
@@ -296,8 +431,9 @@ impl MainView {
             .p(px(20.))
             .max_w(px(760.))
             .child(caption(text.sticks_desc, t.text2))
-            .child(div().flex().flex_col().gap(px(8.)).child(strong(text.deadzone, t.text)).child(dz))
-            .child(div().flex().flex_col().gap(px(8.)).child(strong(text.anti_deadzone, t.text)).child(ad))
+            .child(setting(text.deadzone, &t, dz))
+            .child(setting(text.anti_deadzone, &t, ad))
+            .child(setting(text.dpad_stick, &t, dpad).child(caption(text.dpad_stick_desc, t.text2)))
             .into_any_element()
     }
 }

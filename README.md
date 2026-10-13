@@ -190,7 +190,7 @@ players.
 ### Gyro and sticks
 
 A controller with a gyro (DualShock 4, DualSense, Switch Pro, Joy-Cons, Steam Deck, 8BitDo pads in
-D-input mode) can aim by turning it: its rotation is added to the right stick, always, only while
+D-input mode and, experimentally, the DualShock 3) can aim by turning it: its rotation is added to the right stick, always, only while
 the left trigger is pulled (aiming down sights) or while a chosen button is held. That button can
 also work as a switch: one press turns the gyro on, the next turns it off. The game still gets the
 button. A half turn a second is the stick all the way at 100 % sensitivity; a small deadzone keeps
@@ -205,8 +205,14 @@ precise, steadying shrinks movements slower than a few degrees a second so a sha
 still, and the gyro's anti-deadzone (12 % unless changed) sets the smallest push a slow turn gives.
 Profiles from older versions aim as they did.
 
+An Xbox controller has no motion sensors, so games never see the gyro itself. On Windows a
+controller can be shown to games as a DualShock 4 instead, with its gyro and accelerometer, for
+Steam Input and the games that read them. It is experimental and off unless turned on, under
+Information or Motion, because games that only know Xbox controllers do not see a DualShock 4.
+
 A worn stick that drifts can get a radial deadzone, and an anti-deadzone makes games react to the
-first movement past it. Both are off unless set: games apply their own.
+first movement past it. Both are off unless set: games apply their own. A stick can also press the
+d-pad instead, in eight directions, for games played on it.
 
 ### Light bar
 
@@ -264,7 +270,7 @@ can be added.
 | DualShock 4 (both versions) | yes | yes | Sony USB wireless adaptor | touchpad click |
 | DualSense, Access controller | yes | yes | | mic, touchpad click |
 | DualSense Edge | yes | yes | | back buttons, Fn buttons, mic, touchpad click |
-| DualShock 3, Sixaxis | with DsHidMini | with DsHidMini and BthPS3 | | none |
+| DualShock 3, Sixaxis | with DsHidMini | with DsHidMini and BthPS3 | | none, but its pressure-sensitive buttons can move the triggers |
 | PlayStation and PlayStation 2 pads | through USB adapters | | | none |
 | Switch Pro Controller and licensed pads | yes | yes | | Capture |
 | Joy-Con (pair or single) | | yes | | Capture, SL and SR |
@@ -283,7 +289,10 @@ can be added.
 
 Light bars and player lights show the player number. Windows has no driver for the DualShock 3:
 with Nefarius' DsHidMini set to its SXS mode, OpenController reads it over USB, and BthPS3 adds
-Bluetooth once it has been paired by cable. Valve's controllers are taken by Steam while it runs,
+Bluetooth once it has been paired by cable. In that mode its pressure-sensitive buttons can move
+the triggers, as in PlayStation 2 and 3 racing games, and its gyro aims, with tilting up and down
+taken from its accelerometer since the gyro only turns sideways. Both are experimental and were
+written without a DualShock 3 at hand, so reports from one help. Valve's controllers are taken by Steam while it runs,
 and a Flydigi pad's extra buttons need "Allow third-party apps to take over mappings" in Flydigi
 Space Station; the window says so on their pages. A device SDL has no button layout for is listed
 as such and not passed to games.

@@ -1,9 +1,10 @@
 //! What happens to a controller's movement on its way to the virtual Xbox controller: a radial
-//! deadzone and anti-deadzone for the sticks, the gyro turned into right-stick movement, and the
-//! touchpad split into buttons. Pure functions, so they are tested without a controller.
+//! deadzone and anti-deadzone for the sticks, a stick as the d-pad, pressure-sensitive buttons on
+//! the triggers, the gyro turned into right-stick movement, the rotation an accelerometer shows,
+//! and the touchpad split into buttons. Pure functions, so they are tested without a controller.
 
-use crate::mapping::{PadState, axis};
-use crate::profile::{Gyro, GyroMode, Sticks};
+use crate::mapping::{self, PadState, axis, button};
+use crate::profile::{DpadStick, Gyro, GyroMode, Pressure, Sticks};
 use std::f32::consts::PI;
 
 /// A stick, `x` and `y` in -32768..=32767, through a radial deadzone and anti-deadzone given in
@@ -28,6 +29,159 @@ pub fn shape_stick(x: i16, y: i16, s: Sticks) -> (i16, i16) {
 
 fn to_axis(v: f32) -> i16 {
     (v.clamp(-1., 1.) * 32767.).round() as i16
+}
+
+/// Past this much of its travel, a stick standing in for the d-pad presses a direction.
+const DPAD_TRAVEL: f32 = 0.5;
+
+/// A stick as d-pad directions, eight ways, as SDL button bits: past half its travel, the
+/// direction it points in, each covering 45 degrees.
+pub fn stick_dpad(x: i16, y: i16) -> u64 {
+    let (fx, fy) = (f32::from(x) / 32767., f32::from(y) / 32767.);
+    if fx.hypot(fy) < DPAD_TRAVEL {
+        return 0;
+    }
+    let (up, down, left, right) = (1 << button::DPAD_UP, 1 << button::DPAD_DOWN, 1 << button::DPAD_LEFT, 1 << button::DPAD_RIGHT);
+    // SDL's Y grows downwards; counted from the right, anticlockwise.
+    let sector = ((-fy).atan2(fx) / (PI / 4.)).round() as i32;
+    match sector.rem_euclid(8) {
+        0 => right,
+        1 => up | right,
+        2 => up,
+        3 => up | left,
+        4 => left,
+        5 => down | left,
+        6 => down,
+        _ => down | right,
+    }
+}
+
+/// The chosen stick turned into the d-pad: its directions pressed, the stick itself at rest.
+pub fn apply_dpad_stick(s: &mut PadState, which: DpadStick) {
+    let (ax, ay) = match which {
+        DpadStick::Off => return,
+        DpadStick::Left => (axis::LEFT_X, axis::LEFT_Y),
+        DpadStick::Right => (axis::RIGHT_X, axis::RIGHT_Y),
+    };
+    s.buttons |= stick_dpad(s.axes[ax], s.axes[ay]);
+    s.axes[ax] = 0;
+    s.axes[ay] = 0;
+}
+
+/// Pressure-sensitive buttons on the triggers: how hard the chosen button is pressed is how far
+/// the trigger goes, as racing games on the PlayStation 2 and 3 used them. The button itself is
+/// let go unless it is kept, so it does not press A at the same time.
+pub fn apply_pressure(s: &mut PadState, p: Pressure) {
+    for (b, ax) in [(p.left_trigger, axis::LEFT_TRIGGER), (p.right_trigger, axis::RIGHT_TRIGGER)] {
+        let Some(i) = b.and_then(|b| mapping::pressure_index(u32::from(b))) else { continue };
+        let v = (u32::from(s.pressure[i]) * 32767 / 255) as i16;
+        s.axes[ax] = s.axes[ax].max(v);
+        if !p.keep_buttons
+            && let Some(b) = b
+        {
+            s.buttons &= !(1 << b);
+        }
+    }
+}
+
+/// The rotation an accelerometer can see, in radians per second in SDL's frame, for a controller
+/// whose gyro misses axes: the DualShock 3's turns only around one. Held still, the accelerometer
+/// reads gravity, which stays put in the world, so in the controller's frame it turns the other
+/// way (dS/dt = -w x S). The turn between two readings of it is the part of the controller's turn
+/// across gravity; a turn around gravity shows nothing, and that is what the real gyro gives.
+///
+/// The step between two smoothed directions is GamepadMotionHelpers' sensor fusion (Julian "Jibb"
+/// Smart, MIT), as is waiting out readings the controller has not refreshed. Readings that are not
+/// just gravity, a jolt or a swing, are left out: their length is far from 1 g or jumps from the
+/// last one. The estimate reads still meanwhile, and starts over if they last.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TiltRate {
+    /// Gravity's direction, smoothed; `None` until a clean reading.
+    gravity: Option<V3>,
+    /// The last reading and its length in g, to tell a repeat and a jolt.
+    last: V3,
+    last_g: f32,
+    /// Seconds of repeated readings not yet accounted for, and of readings left out.
+    repeated: f32,
+    unclean: f32,
+    pub rate: V3,
+}
+
+type V3 = [f32; 3];
+
+fn dot(a: V3, b: V3) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: V3, b: V3) -> V3 {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+fn length(a: V3) -> f32 {
+    dot(a, a).sqrt()
+}
+
+fn scale(a: V3, k: f32) -> V3 {
+    a.map(|v| v * k)
+}
+
+impl TiltRate {
+    /// The half-life gravity's direction is smoothed with, in seconds: long enough to quiet the
+    /// accelerometer's noise, short enough to aim with.
+    const HALF_LIFE: f32 = 0.05;
+    /// How far from 1 g gravity may read, for a controller that is not calibrated.
+    const NEAR_G: f32 = 0.35;
+    /// A jump in length this big from one reading to the next, in g, is a jolt.
+    const JOLT: f32 = 0.15;
+    /// After this long between readings or without a clean one, the estimate starts over rather
+    /// than turn what it did not see into one burst.
+    const STALE: f32 = 0.25;
+
+    /// `a` is the accelerometer in m/s², `dt` the seconds since the last call.
+    pub fn update(&mut self, a: V3, dt: f32) -> V3 {
+        if !a.iter().chain([&dt]).all(|v| v.is_finite()) || dt < 0. || a == [0.; 3] {
+            *self = TiltRate::default();
+            return self.rate;
+        }
+        // The controller had nothing new: the time counts towards its next reading.
+        if self.gravity.is_some() && a == self.last {
+            self.repeated += dt;
+            return self.rate;
+        }
+        let dt = dt + std::mem::take(&mut self.repeated);
+        let g = length(a) / crate::ds4::STANDARD_GRAVITY;
+        let clean = (g - 1.).abs() <= Self::NEAR_G && (g - self.last_g).abs() <= Self::JOLT;
+        (self.last, self.last_g) = (a, g);
+        let before = match self.gravity {
+            Some(before) if dt > 0. && dt <= Self::STALE && self.unclean <= Self::STALE => before,
+            _ => {
+                self.start(a, g);
+                return self.rate;
+            }
+        };
+        if !clean {
+            self.unclean += dt;
+            self.rate = [0.; 3];
+            return self.rate;
+        }
+        self.unclean = 0.;
+        let keep = (-dt / Self::HALF_LIFE).exp2();
+        let now: V3 = std::array::from_fn(|i| a[i] + (before[i] - a[i]) * keep);
+        let (from, to) = (scale(before, 1. / length(before)), scale(now, 1. / length(now)));
+        let axis = cross(to, from);
+        let sine = length(axis);
+        self.rate = if sine > 0. { scale(axis, sine.atan2(dot(to, from)) / (sine * dt)) } else { [0.; 3] };
+        self.gravity = Some(now);
+        self.rate
+    }
+
+    /// Starts over from this reading, if it can be gravity alone.
+    fn start(&mut self, a: V3, g: f32) {
+        *self = TiltRate { last: a, last_g: g, ..TiltRate::default() };
+        if (g - 1.).abs() <= Self::NEAR_G {
+            self.gravity = Some(a);
+        }
+    }
 }
 
 /// Below this rotation the gyro is noise and drift, in radians per second (about 1.7 degrees).
@@ -179,7 +333,7 @@ mod tests {
 
     #[test]
     fn deadzone_centres_and_rescales() {
-        let s = Sticks { deadzone: 10, anti_deadzone: 0 };
+        let s = Sticks { deadzone: 10, ..Sticks::default() };
         assert_eq!(shape_stick(3000, 0, s), (0, 0), "inside 10 %");
         assert_eq!(shape_stick(32767, 0, s), (32767, 0), "full travel stays full");
         let (x, _) = shape_stick(16384, 0, s);
@@ -188,7 +342,7 @@ mod tests {
 
     #[test]
     fn anti_deadzone_jumps_past_the_games_own() {
-        let s = Sticks { deadzone: 5, anti_deadzone: 20 };
+        let s = Sticks { deadzone: 5, anti_deadzone: 20, ..Sticks::default() };
         let (x, y) = shape_stick(2000, 0, s);
         assert!(x >= 6553 && y == 0, "just past the deadzone starts at 20 %: {x}");
         let (x, y) = shape_stick(-20000, -20000, s);
@@ -363,5 +517,120 @@ mod tests {
         assert_eq!(touch_buttons(false, &[left, right]), (false, false, true));
         assert_eq!(touch_buttons(true, &[left, right]), (false, false, true), "a two-finger click is two fingers");
         assert_eq!(touch_buttons(true, &[]), (false, false, false));
+    }
+
+    fn bits(buttons: &[u32]) -> u64 {
+        buttons.iter().fold(0, |b, &i| b | 1 << i)
+    }
+
+    #[test]
+    fn a_stick_presses_eight_directions() {
+        use button::*;
+        let m = 30000;
+        assert_eq!(stick_dpad(0, -m), bits(&[DPAD_UP]), "SDL's Y grows downwards");
+        assert_eq!(stick_dpad(m, -m), bits(&[DPAD_UP, DPAD_RIGHT]));
+        assert_eq!(stick_dpad(m, 0), bits(&[DPAD_RIGHT]));
+        assert_eq!(stick_dpad(m, m), bits(&[DPAD_DOWN, DPAD_RIGHT]));
+        assert_eq!(stick_dpad(0, m), bits(&[DPAD_DOWN]));
+        assert_eq!(stick_dpad(-m, m), bits(&[DPAD_DOWN, DPAD_LEFT]));
+        assert_eq!(stick_dpad(-m, 0), bits(&[DPAD_LEFT]));
+        assert_eq!(stick_dpad(-m, -m), bits(&[DPAD_UP, DPAD_LEFT]));
+        assert_eq!(stick_dpad(30000, -9000), bits(&[DPAD_RIGHT]), "17 degrees up is still right");
+        assert_eq!(stick_dpad(12000, -9000), 0, "under half its travel");
+    }
+
+    #[test]
+    fn the_dpad_stick_rests_while_it_stands_in() {
+        let mut s = PadState { axes: [-32768, 0, 5000, 7000, 0, 0], ..PadState::default() };
+        apply_dpad_stick(&mut s, DpadStick::Left);
+        assert_eq!(s.buttons, bits(&[button::DPAD_LEFT]));
+        assert_eq!(s.axes, [0, 0, 5000, 7000, 0, 0], "the other stick is left alone");
+        let before = s;
+        apply_dpad_stick(&mut s, DpadStick::Off);
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn pressure_moves_a_button_onto_a_trigger() {
+        let mut pressure = [0u8; 10];
+        pressure[mapping::pressure_index(button::SOUTH).unwrap()] = 128;
+        pressure[mapping::pressure_index(button::WEST).unwrap()] = 255;
+        let held = PadState { buttons: bits(&[button::SOUTH, button::WEST, button::NORTH]), pressure, ..PadState::default() };
+        let p = Pressure { left_trigger: Some(button::WEST as u8), right_trigger: Some(button::SOUTH as u8), keep_buttons: false };
+        let mut s = held;
+        apply_pressure(&mut s, p);
+        assert_eq!(s.axes[axis::LEFT_TRIGGER], 32767);
+        assert!((s.axes[axis::RIGHT_TRIGGER] - 16448).abs() < 2, "half pressed, half the trigger: {}", s.axes[axis::RIGHT_TRIGGER]);
+        assert_eq!(s.buttons, bits(&[button::NORTH]), "Cross and Square no longer press A and X");
+        let mut s = held;
+        apply_pressure(&mut s, Pressure { keep_buttons: true, ..p });
+        assert_eq!(s.buttons, held.buttons);
+        let mut s = PadState { axes: [0, 0, 0, 0, 0, 30000], ..held };
+        apply_pressure(&mut s, p);
+        assert_eq!(s.axes[axis::RIGHT_TRIGGER], 30000, "the real trigger still works");
+        let mut s = held;
+        apply_pressure(&mut s, Pressure { left_trigger: Some(button::START as u8), right_trigger: None, keep_buttons: false });
+        assert_eq!(s, held, "a button without pressure does nothing");
+    }
+
+    const G: f32 = crate::ds4::STANDARD_GRAVITY;
+
+    /// Feeds `TiltRate` the gravity a controller turning at `w` (rad/s, SDL's frame) would read,
+    /// from lying flat, for `secs`; returns the last estimate.
+    fn turn(w: [f32; 3], secs: f32) -> [f32; 3] {
+        let dt = 0.004;
+        let mut s = [0., G, 0.];
+        let mut t = TiltRate::default();
+        let mut rate = [0.; 3];
+        for _ in 0..(secs / dt) as usize {
+            rate = t.update(s, dt);
+            // dS/dt = -w x S, in small steps.
+            for _ in 0..10 {
+                let d = cross(w, s);
+                s = std::array::from_fn(|i| s[i] - d[i] * dt / 10.);
+            }
+        }
+        rate
+    }
+
+    #[test]
+    fn tilting_shows_as_pitch_and_roll() {
+        let r = turn([1., 0., 0.], 0.8);
+        assert!((r[0] - 1.).abs() < 0.03 && r[1].abs() < 0.03 && r[2].abs() < 0.03, "tilting the top up is a positive pitch: {r:?}");
+        let r = turn([0., 0., -0.5], 0.8);
+        assert!((r[2] + 0.5).abs() < 0.03 && r[0].abs() < 0.03, "{r:?}");
+        let r = turn([0., 2., 0.], 0.8);
+        assert!(r.iter().all(|v| v.abs() < 0.01), "turning around gravity shows nothing: {r:?}");
+    }
+
+    #[test]
+    fn repeated_readings_do_not_slow_a_turn() {
+        // Read every 4 ms from a controller that reports every 12 ms.
+        let (dt, w) = (0.004, [0.8f32, 0., 0.]);
+        let mut s = [0., G, 0.];
+        let mut t = TiltRate::default();
+        let mut rate = [0.; 3];
+        for i in 0..300 {
+            if i % 3 == 0 {
+                for _ in 0..30 {
+                    let d = cross(w, s);
+                    s = std::array::from_fn(|k| s[k] - d[k] * 3. * dt / 30.);
+                }
+            }
+            rate = t.update(s, dt);
+        }
+        assert!((rate[0] - 0.8).abs() < 0.03, "{rate:?}");
+    }
+
+    #[test]
+    fn a_still_controller_and_a_shove_read_no_turn() {
+        let mut t = TiltRate::default();
+        for _ in 0..100 {
+            t.update([0.3, G, -0.2], 0.004);
+        }
+        assert!(t.rate.iter().all(|v| v.abs() < 1e-3), "{:?}", t.rate);
+        assert_eq!(t.update([0., 2. * G, 0.], 0.004), [0.; 3], "twice gravity is a shove");
+        assert_eq!(TiltRate::default().update([0., 3. * G, 0.], 0.004), [0.; 3], "and cannot start it");
+        assert_eq!(t.update([f32::NAN, G, 0.], 0.004), [0.; 3]);
     }
 }

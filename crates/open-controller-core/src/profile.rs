@@ -3,7 +3,7 @@
 //! names the program in front takes over while that program is in front.
 
 use crate::binding::{Action, Bindings};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 pub const MAX_PROFILES: usize = 8;
 pub const MAX_NAME: usize = 32;
@@ -65,6 +65,10 @@ pub struct Gyro {
     /// The smallest stick push a turn past the gyro's noise gives, in percent, so games react to
     /// slow turns.
     pub anti_deadzone: u8,
+    /// On a controller whose gyro turns around one axis only (the DualShock 3's, sideways), the
+    /// tilting up and down and to the sides comes from its accelerometer. Experimental; other
+    /// controllers ignore it.
+    pub tilt: bool,
 }
 
 impl Default for Gyro {
@@ -80,6 +84,7 @@ impl Default for Gyro {
             acceleration: None,
             tightening: 0,
             anti_deadzone: 12,
+            tilt: true,
         }
     }
 }
@@ -114,6 +119,39 @@ impl Default for Acceleration {
 pub struct Sticks {
     pub deadzone: u8,
     pub anti_deadzone: u8,
+    /// A stick that presses the d-pad instead of moving, for games played with the d-pad.
+    pub dpad: DpadStick,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub enum DpadStick {
+    #[default]
+    Off,
+    Left,
+    Right,
+}
+
+/// A value a newer version wrote reads as off, not as a broken settings file.
+impl<'de> Deserialize<'de> for DpadStick {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match serde_json::Value::deserialize(d)?.as_str() {
+            Some("Left") => DpadStick::Left,
+            Some("Right") => DpadStick::Right,
+            _ => DpadStick::Off,
+        })
+    }
+}
+
+/// Pressure-sensitive buttons on the triggers (DualShock 3): how hard the chosen button is
+/// pressed moves the trigger, as in racing games on the PlayStation 2 and 3. Buttons are SDL
+/// button indices among `mapping::PRESSURE`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Pressure {
+    pub left_trigger: Option<u8>,
+    pub right_trigger: Option<u8>,
+    /// The game still gets the button itself too.
+    pub keep_buttons: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,6 +167,7 @@ pub struct Profile {
     pub low_battery_flash: bool,
     pub gyro: Gyro,
     pub sticks: Sticks,
+    pub pressure: Pressure,
     /// Executable names (`game.exe`, lowercase) that make this the profile in use while one of
     /// them is the program in front.
     pub programs: Vec<String>,
@@ -144,8 +183,29 @@ impl Default for Profile {
             low_battery_flash: true,
             gyro: Gyro::default(),
             sticks: Sticks::default(),
+            pressure: Pressure::default(),
             programs: Vec::new(),
         }
+    }
+}
+
+/// What games see a controller as. An Xbox 360 controller is what every game understands; a
+/// DualShock 4 (Windows only, experimental) also carries the gyro and the accelerometer to games
+/// and Steam Input that read them, but games that only know XInput do not see it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize)]
+pub enum Output {
+    #[default]
+    Xbox360,
+    DualShock4,
+}
+
+/// A value a newer version wrote reads as an Xbox controller, not as a broken settings file.
+impl<'de> Deserialize<'de> for Output {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match serde_json::Value::deserialize(d)?.as_str() {
+            Some("DualShock4") => Output::DualShock4,
+            _ => Output::Xbox360,
+        })
     }
 }
 
@@ -160,6 +220,9 @@ pub struct Profiles {
     /// Which model it is, for a controller whose ids another one copies: a key of
     /// `models::ALIASES`. `None` is the model its ids name.
     pub model: Option<String>,
+    /// What games see it as. Kept for the controller rather than per profile: changing it makes
+    /// the virtual controller again, which a game would see as one leaving and another arriving.
+    pub output: Output,
 }
 
 impl Default for Profiles {
@@ -183,6 +246,9 @@ pub enum Edit {
     LowBatteryFlash(bool),
     Gyro(Gyro),
     Sticks(Sticks),
+    Pressure(Pressure),
+    /// What games see the controller as (see [`Profiles::output`]).
+    Output(Output),
     /// Makes a profile the one in use while this program is in front.
     AddProgram(usize, String),
     RemoveProgram(usize, String),
@@ -199,7 +265,13 @@ pub enum Edit {
 
 impl Profiles {
     pub fn new(first: String) -> Profiles {
-        Profiles { list: vec![Profile { name: first, ..Profile::default() }], active: 0, native: false, model: None }
+        Profiles {
+            list: vec![Profile { name: first, ..Profile::default() }],
+            active: 0,
+            native: false,
+            model: None,
+            output: Output::Xbox360,
+        }
     }
 
     pub fn active(&self) -> &Profile {
@@ -228,7 +300,7 @@ impl Profiles {
 
     /// Whether this is what a controller has before anything is changed, and need not be kept.
     pub fn is_default(&self) -> bool {
-        !self.native && self.model.is_none() && self.list.len() == 1 && self.list[0] == Profile::default()
+        !self.native && self.model.is_none() && self.output == Output::Xbox360 && self.list.len() == 1 && self.list[0] == Profile::default()
     }
 
     pub fn apply(&mut self, edit: Edit) {
@@ -246,6 +318,8 @@ impl Profiles {
             Edit::LowBatteryFlash(on) => self.active_mut().low_battery_flash = on,
             Edit::Gyro(g) => self.active_mut().gyro = clean_gyro(g),
             Edit::Sticks(s) => self.active_mut().sticks = clean_sticks(s),
+            Edit::Pressure(p) => self.active_mut().pressure = clean_pressure(p),
+            Edit::Output(o) => self.output = o,
             Edit::AddProgram(i, name) => {
                 let name = program_name(&name);
                 // A program switches to one profile only: the last one it was given to.
@@ -302,6 +376,7 @@ impl Profiles {
             p.brightness = p.brightness.clamp(10, 100);
             p.gyro = clean_gyro(p.gyro);
             p.sticks = clean_sticks(p.sticks);
+            p.pressure = clean_pressure(p.pressure);
             p.programs =
                 std::mem::take(&mut p.programs).iter().map(|x| program_name(x)).filter(|x| !x.is_empty()).take(MAX_PROGRAMS).collect();
             // Buttons are bits of a u64: a larger number from a damaged file would overflow.
@@ -348,11 +423,18 @@ fn clean_gyro(g: Gyro) -> Gyro {
         acceleration,
         tightening: g.tightening.min(30),
         anti_deadzone: g.anti_deadzone.min(40),
+        tilt: g.tilt,
     }
 }
 
 fn clean_sticks(s: Sticks) -> Sticks {
-    Sticks { deadzone: s.deadzone.min(40), anti_deadzone: s.anti_deadzone.min(40) }
+    Sticks { deadzone: s.deadzone.min(40), anti_deadzone: s.anti_deadzone.min(40), dpad: s.dpad }
+}
+
+/// Only buttons that sense pressure can move a trigger.
+fn clean_pressure(p: Pressure) -> Pressure {
+    let valid = |b: Option<u8>| b.filter(|&b| crate::mapping::pressure_index(u32::from(b)).is_some());
+    Pressure { left_trigger: valid(p.left_trigger), right_trigger: valid(p.right_trigger), keep_buttons: p.keep_buttons }
 }
 
 /// The colour a light bar shows for `light`, with the player's colours SDL and the consoles use.
@@ -420,7 +502,7 @@ mod tests {
         assert_eq!(p.list.len(), MAX_PROFILES);
         p.apply(Edit::Rename(0, format!(" {}\n ", "x".repeat(80))));
         assert_eq!(p.list[0].name.len(), MAX_NAME);
-        let bad = Profiles { list: vec![], active: 9, native: false, model: None }.sanitised();
+        let bad = Profiles { list: vec![], active: 9, ..Profiles::default() }.sanitised();
         assert_eq!((bad.list.len(), bad.active), (1, 0));
     }
 
@@ -449,8 +531,31 @@ mod tests {
         p.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 5000, invert_y: true, ..Gyro::default() }));
         assert_eq!(p.active().gyro.sensitivity, 400);
         assert!(!p.is_default());
-        p.apply(Edit::Sticks(Sticks { deadzone: 90, anti_deadzone: 15 }));
-        assert_eq!(p.active().sticks, Sticks { deadzone: 40, anti_deadzone: 15 });
+        p.apply(Edit::Sticks(Sticks { deadzone: 90, anti_deadzone: 15, dpad: DpadStick::Left }));
+        assert_eq!(p.active().sticks, Sticks { deadzone: 40, anti_deadzone: 15, dpad: DpadStick::Left });
+    }
+
+    #[test]
+    fn pressure_takes_only_buttons_that_sense_it() {
+        let mut p = Profiles::default();
+        p.apply(Edit::Pressure(Pressure { left_trigger: Some(6), right_trigger: Some(0), keep_buttons: true }));
+        assert_eq!(p.active().pressure, Pressure { left_trigger: None, right_trigger: Some(0), keep_buttons: true }, "Start has none");
+        assert!(!p.is_default());
+        let file: Profiles = serde_json::from_str(r#"{"list": [{"pressure": {"left_trigger": 99, "right_trigger": 2}}]}"#).unwrap();
+        assert_eq!(file.sanitised().list[0].pressure, Pressure { left_trigger: None, right_trigger: Some(2), keep_buttons: false });
+    }
+
+    #[test]
+    fn the_output_is_kept_and_unknown_ones_read_as_xbox() {
+        let mut p = Profiles::default();
+        p.apply(Edit::Output(Output::DualShock4));
+        assert!(!p.is_default(), "a controller shown as a DualShock 4 must be saved");
+        let text = serde_json::to_string(&p).unwrap();
+        assert_eq!(serde_json::from_str::<Profiles>(&text).unwrap().output, Output::DualShock4);
+        let newer: Profiles = serde_json::from_str(r#"{"list": [{"sticks": {"dpad": "Both"}}], "output": "DualSense"}"#).unwrap();
+        assert_eq!((newer.output, newer.list[0].sticks.dpad), (Output::Xbox360, DpadStick::Off));
+        p.apply(Edit::Output(Output::Xbox360));
+        assert!(p.is_default());
     }
 
     #[test]
@@ -540,6 +645,7 @@ mod tests {
             acceleration: Some(Acceleration { factor: 50, from: 200, to: 205 }),
             tightening: 200,
             anti_deadzone: 90,
+            tilt: false,
         });
         assert_eq!((g.sensitivity, g.aim_sensitivity, g.y_scale), (25, Some(400), 25));
         assert_eq!((g.tightening, g.anti_deadzone), (30, 40));
@@ -586,6 +692,7 @@ mod tests {
             acceleration: Some(Acceleration::STRONG),
             tightening: 10,
             anti_deadzone: 6,
+            tilt: false,
         };
         let old: Old = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
         assert_eq!((old.mode, old.sensitivity, old.invert_y), (GyroMode::Holding(9), 150, true));

@@ -256,6 +256,13 @@ pub struct Features {
     pub trigger_rumble: bool,
     pub light_bar: bool,
     pub player_lights: bool,
+    /// Buttons that sense how hard they are pressed (DualShock 3).
+    #[serde(default)]
+    pub pressure: bool,
+    /// A DualShock 3 read through DsHidMini's SXS mode, whose motion OpenController reads itself:
+    /// a gyro around one axis and an accelerometer (see `ds3`).
+    #[serde(default)]
+    pub sixaxis: bool,
 }
 
 /// Something the user can do to get more out of this controller.

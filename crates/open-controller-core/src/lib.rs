@@ -8,6 +8,8 @@
 
 pub mod binding;
 pub mod device;
+pub mod ds3;
+pub mod ds4;
 pub mod extras;
 pub mod i18n;
 pub mod mapping;

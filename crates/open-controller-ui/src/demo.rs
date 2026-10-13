@@ -6,13 +6,13 @@ use open_controller_core::device::{Brand, Link, Power};
 use open_controller_core::extras::{self, Family, Features};
 use open_controller_core::mapping::{PadState, axis, button};
 use open_controller_core::models;
-use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Profiles};
+use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Output, Pressure, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
 use std::collections::HashMap;
 use std::time::Duration;
 
 fn input(buttons: &[u32], axes: [i16; axis::COUNT]) -> PadState {
-    PadState { buttons: buttons.iter().fold(0, |b, &i| b | 1 << i), axes }
+    PadState { buttons: buttons.iter().fold(0, |b, &i| b | 1 << i), axes, ..PadState::default() }
 }
 
 pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor, product): (u16, u16)) -> PadView {
@@ -122,7 +122,15 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     native.power = Power::Charging(Some(70));
     native.role = Role::KeptNative;
     native.extras = vec![extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::MISC1, extras::TOUCHPAD];
-    native.features = Features { touchpad: true, motion: true, rumble: true, trigger_rumble: true, light_bar: true, player_lights: true };
+    native.features = Features {
+        touchpad: true,
+        motion: true,
+        rumble: true,
+        trigger_rumble: true,
+        light_bar: true,
+        player_lights: true,
+        ..Features::default()
+    };
     native.store = Some("model:054c:0df2".into());
     native.profiles.apply(Edit::Native(true));
 
@@ -132,7 +140,19 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     ds4.extras = vec![extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT, extras::TOUCH_TWO];
     ds4.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, ..Features::default() };
 
-    let mut pads = vec![eightbitdo, edge, switch, native, joycons, xbox, ds4];
+    // Behind DsHidMini, shown to games as a DualShock 4 for its motion, Cross half pressed and
+    // moving the right trigger.
+    let mut ds3 = pad(PadKey::Slot(8), "DualShock 3", Brand::PlayStation, Family::DualShock3, (0x054C, 0x0268));
+    ds3.role = Role::Virtual { player: None };
+    ds3.power = Power::Charging(Some(80));
+    ds3.input = input(&[button::SOUTH], [0, 0, -6000, 0, 0, 0]);
+    ds3.input.pressure[0] = 128;
+    ds3.gyro = Some([0.12, -0.4, 0.]);
+    ds3.features = Features { motion: true, rumble: true, pressure: true, sixaxis: true, ..Features::default() };
+    ds3.profiles.apply(Edit::Output(Output::DualShock4));
+    ds3.profiles.apply(Edit::Pressure(Pressure { right_trigger: Some(button::SOUTH as u8), ..Pressure::default() }));
+
+    let mut pads = vec![eightbitdo, edge, switch, native, joycons, xbox, ds4, ds3];
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
             p.profiles = edited.clone();
@@ -208,6 +228,11 @@ pub fn diagnosis(p: &PadView) -> open_controller_core::report::Diagnosis {
             wanted: mode != GyroMode::Off,
             enabled: mode != GyroMode::Off,
             error: None,
+            sixaxis: p.features.sixaxis.then(|| {
+                "order Some(Driver), words Some([[ff, 01], [00, 02], [8f, 01], [fe, 01]]), yaw rest 0.00 °/s, failed reads 0, tilt true"
+                    .into()
+            }),
+            output: Some(format!("{:?}", p.profiles.output)),
         }),
     }
 }

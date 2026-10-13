@@ -2,8 +2,10 @@
 //! default, or VIIPER, experimental. Both take the same requests, so the engine never asks which
 //! one it has.
 
+use crate::ds4::Ds4Report;
 use crate::mapping::XusbReport;
 use crate::platform::VirtualDriver;
+use crate::profile::Output;
 use crate::win::Overlapped;
 use crate::{devnode, vigem, viiper};
 use crossbeam_channel::Sender;
@@ -66,10 +68,11 @@ impl Bus {
         }
     }
 
-    pub fn plug_x360(&self, io: &mut Overlapped) -> Result<u32, BusError> {
-        match self {
-            Bus::ViGEm(b) => b.plug_x360(io).map_err(BusError::ViGEm),
-            Bus::Viiper(b) => b.plug_x360().map_err(BusError::Viiper),
+    pub fn plug(&self, io: &mut Overlapped, output: Output) -> Result<u32, BusError> {
+        match (self, output) {
+            (Bus::ViGEm(b), Output::Xbox360) => b.plug_x360(io).map_err(BusError::ViGEm),
+            (Bus::ViGEm(b), Output::DualShock4) => b.plug_ds4(io).map_err(BusError::ViGEm),
+            (Bus::Viiper(b), o) => b.plug(o).map_err(BusError::Viiper),
         }
     }
 
@@ -87,10 +90,19 @@ impl Bus {
         }
     }
 
-    pub fn listen(self: &Arc<Bus>, serial: u32, tx: Sender<Feedback>) -> JoinHandle<()> {
-        match &**self {
-            Bus::ViGEm(b) => b.listen(serial, tx),
-            Bus::Viiper(b) => b.listen(serial, tx),
+    pub fn submit_ds4(&self, io: &mut Overlapped, serial: u32, report: &Ds4Report) -> Result<(), u32> {
+        match self {
+            Bus::ViGEm(b) => b.submit_ds4(io, serial, report),
+            Bus::Viiper(b) => b.submit_ds4(serial, report),
+        }
+    }
+
+    pub fn listen(self: &Arc<Bus>, serial: u32, output: Output, tx: Sender<Feedback>) -> JoinHandle<()> {
+        match (&**self, output) {
+            (Bus::ViGEm(b), Output::Xbox360) => b.listen(serial, tx),
+            (Bus::ViGEm(b), Output::DualShock4) => b.listen_ds4(serial, tx),
+            // VIIPER knows what each of its controllers is.
+            (Bus::Viiper(b), _) => b.listen(serial, tx),
         }
     }
 

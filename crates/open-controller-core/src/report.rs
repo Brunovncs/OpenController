@@ -70,6 +70,14 @@ pub struct GyroFacts {
     pub wanted: bool,
     pub enabled: bool,
     pub error: Option<String>,
+    /// For a DualShock 3 whose motion OpenController reads itself: the byte order it found, the
+    /// last raw words, the gyro's learnt rest and failed reads, so the experimental reading can
+    /// be checked against a real controller.
+    #[serde(default)]
+    pub sixaxis: Option<String>,
+    /// What games are sent besides an Xbox controller's input, as `Debug` prints it.
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 /// Cuts a device path down to its first two parts (`\\?\HID#VID_054C&PID_09CC&MI_03`): what

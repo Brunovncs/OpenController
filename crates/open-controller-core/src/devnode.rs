@@ -76,14 +76,16 @@ fn is_virtual_instance(instance_id: &str) -> bool {
         if service.eq_ignore_ascii_case("ViGEmBus") || (viiper && service.eq_ignore_ascii_case("usbip2_ude")) {
             return true;
         }
-        viiper |= string_property(n, &DEVPKEY_Device_BusReportedDeviceDesc).is_some_and(|d| d.trim() == VIIPER_PRODUCT);
+        viiper |= string_property(n, &DEVPKEY_Device_BusReportedDeviceDesc).is_some_and(|d| VIIPER_PRODUCTS.contains(&d.trim()));
         node = parent(n);
     }
     false
 }
 
-/// The product string of VIIPER's Xbox 360 controller (`device/xbox360/device.go`).
-const VIIPER_PRODUCT: &str = "VIIPER Controller";
+/// The product strings of VIIPER's Xbox 360 controller (`device/xbox360/device.go`) and
+/// DualShock 4 (`device/dualshock4/descriptor.go`). The DualShock 4's is Sony's own, so a real one
+/// shared over USB/IP from another computer would be taken for VIIPER's too.
+const VIIPER_PRODUCTS: [&str; 2] = ["VIIPER Controller", "Wireless Controller"];
 
 /// Bluetooth is told from the device path on Windows (`device::link`).
 pub fn is_bluetooth(_: &str) -> bool {

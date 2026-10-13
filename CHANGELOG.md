@@ -3,6 +3,23 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+The DualShock 3 gets more out of DsHidMini's SXS mode, all of it experimental. Its
+pressure-sensitive buttons can move the triggers, as on the PlayStation 2 and 3: on its Buttons
+page, pick which button moves LT and which moves RT, such as Cross to accelerate in a racing game.
+Its gyro can now aim too. It only turns sideways, so tilting up and down comes from the
+accelerometer. If something reads wrong, Report a problem on its Information page sends what the
+controller measured.
+
+On Windows, a controller can now be shown to games as a DualShock 4 instead of an Xbox controller,
+so Steam Input and games that read a gyro get its motion sensors, the DualShock 3's included. Games
+that only know Xbox controllers don't see it, so it stays off until you turn it on, under
+Information or Motion. This is experimental too.
+
+Any controller can also have a stick press the d-pad, for games played on it. It is under Sticks.
+Settings carry over.
+
 ## 0.8.4
 
 The LeadJoy Xeno Pro and Xeno Plus are now known by name and drawn as themselves. In Switch mode

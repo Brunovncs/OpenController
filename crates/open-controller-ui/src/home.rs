@@ -13,6 +13,7 @@ use gpui::{
 use open_controller_core::device::{Link, Power};
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
+use open_controller_core::profile::Output;
 use open_controller_core::{PadKey, PadView, Role};
 
 const TILE_MIN_W: f32 = 248.;
@@ -50,6 +51,9 @@ pub fn player(role: &Role) -> Option<u8> {
 /// "Player 2", "Reconnecting, 4 s" and the like: what the controller is to games right now.
 pub fn status(pad: &PadView, text: &Text) -> String {
     match &pad.role {
+        Role::Virtual { .. } if pad.profiles.output == Output::DualShock4 && crate::tuning::can_choose_output(pad) => {
+            text.status_ds4.to_string()
+        }
         Role::Virtual { player: Some(n) } | Role::Native { player: Some(n) } => fill(text.player, n + 1),
         Role::Virtual { player: None } => text.fifth.to_string(),
         Role::Native { player: None } => text.native.to_string(),

@@ -3,16 +3,20 @@
 //! Windows installs the Xbox 360 driver), and the input thread must keep forwarding the other
 //! players meanwhile.
 
-use crate::platform::{Bus, Io};
+use crate::platform::{self, Bus, Io};
+use crate::profile::Output;
 use crate::roster::SlotId;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+/// A slot's virtual controller, plugged in (its serial on the bus) or refused.
+pub type Plugged = (SlotId, Output, Result<u32, String>);
+
 pub struct Plugger {
     bus: Arc<Bus>,
-    tx: Option<Sender<SlotId>>,
-    rx: Receiver<(SlotId, Result<u32, String>)>,
+    tx: Option<Sender<(SlotId, Output)>>,
+    rx: Receiver<Plugged>,
     thread: Option<JoinHandle<()>>,
     /// Slots whose virtual controller is being plugged in.
     pending: Vec<SlotId>,
@@ -20,16 +24,16 @@ pub struct Plugger {
 
 impl Plugger {
     pub fn start(bus: Arc<Bus>) -> Plugger {
-        let (tx, requests) = unbounded::<SlotId>();
+        let (tx, requests) = unbounded::<(SlotId, Output)>();
         let (done, rx) = unbounded();
         let worker = bus.clone();
         let thread = std::thread::Builder::new()
             .name("open-controller-plug".into())
             .spawn(move || {
                 let mut io = Io::new();
-                for slot in requests {
-                    let r = worker.plug_x360(&mut io).map_err(|e| e.to_string());
-                    if let Err(crossbeam_channel::SendError((_, Ok(serial)))) = done.send((slot, r)) {
+                for (slot, output) in requests {
+                    let r = platform::plug(&worker, &mut io, output).map_err(|e| e.to_string());
+                    if let Err(crossbeam_channel::SendError((_, _, Ok(serial)))) = done.send((slot, output, r)) {
                         // Nobody to hand it to: the engine has stopped.
                         let _ = worker.unplug(&mut io, serial);
                     }
@@ -39,11 +43,12 @@ impl Plugger {
         Plugger { bus, tx: Some(tx), rx, thread: Some(thread), pending: Vec::new() }
     }
 
-    /// Asks for a virtual controller for `slot`, unless one is already on its way.
-    pub fn request(&mut self, slot: SlotId) {
+    /// Asks for a virtual controller of the kind `output` for `slot`, unless one is already on
+    /// its way.
+    pub fn request(&mut self, slot: SlotId, output: Output) {
         if !self.pending.contains(&slot)
             && let Some(tx) = &self.tx
-            && tx.send(slot).is_ok()
+            && tx.send((slot, output)).is_ok()
         {
             self.pending.push(slot);
         }
@@ -53,11 +58,10 @@ impl Plugger {
         self.pending.contains(&slot)
     }
 
-    /// The virtual controllers plugged in (their serial on the bus) or refused since the last
-    /// call.
-    pub fn finished(&mut self) -> Vec<(SlotId, Result<u32, String>)> {
-        let done: Vec<_> = self.rx.try_iter().collect();
-        self.pending.retain(|s| !done.iter().any(|(d, _)| d == s));
+    /// The virtual controllers plugged in or refused since the last call.
+    pub fn finished(&mut self) -> Vec<Plugged> {
+        let done: Vec<Plugged> = self.rx.try_iter().collect();
+        self.pending.retain(|s| !done.iter().any(|(d, _, _)| d == s));
         done
     }
 
@@ -68,7 +72,7 @@ impl Plugger {
             let _ = t.join();
         }
         let mut io = Io::new();
-        for (_, r) in self.rx.try_iter() {
+        for (_, _, r) in self.rx.try_iter() {
             if let Ok(serial) = r {
                 let _ = self.bus.unplug(&mut io, serial);
             }
@@ -97,8 +101,8 @@ mod tests {
         let bus = Arc::new(Bus::connect(crate::platform::VirtualDriver::ViGEmBus).expect("ViGEmBus"));
         let mut plugger = Plugger::start(bus.clone());
         let asked = Instant::now();
-        plugger.request(SlotId(1));
-        plugger.request(SlotId(1));
+        plugger.request(SlotId(1), Output::Xbox360);
+        plugger.request(SlotId(1), Output::Xbox360);
         assert!(asked.elapsed() < Duration::from_millis(20), "asking took {:?}", asked.elapsed());
         assert!(plugger.is_pending(SlotId(1)));
         let until = Instant::now() + Duration::from_secs(10);
@@ -111,11 +115,11 @@ mod tests {
         };
         println!("ready after {:?}", asked.elapsed());
         assert_eq!(done.len(), 1, "one controller for a slot asked twice");
-        let serial = *done[0].1.as_ref().expect("plugged");
+        let serial = *done[0].2.as_ref().expect("plugged");
         assert!(!plugger.is_pending(SlotId(1)));
         bus.unplug(&mut Io::new(), serial).expect("unplug");
         // One more, left for stop() to undo.
-        plugger.request(SlotId(2));
+        plugger.request(SlotId(2), Output::DualShock4);
         plugger.stop();
     }
 }

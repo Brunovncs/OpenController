@@ -88,7 +88,11 @@ controller, so they are what the user assigns: an Xbox button (held with them), 
 (held with them), or a macro of keys and waits (typed once per press, 32 steps at most).
 
 Only extra buttons can be assigned. Remapping the standard buttons is what games' own settings and
-Steam Input are for, and a mapper is what this project set out not to be.
+Steam Input are for, and a mapper is what this project set out not to be. Two narrow settings go
+past that, both asked for by DualShock 3 owners: a pressure-sensitive button on a trigger, which
+nothing downstream can do because the Xbox controller games see has no pressure to carry, and a
+stick that presses the d-pad, for games played on it. Neither is a general mapping: the first only
+offers the buttons that sense pressure and only the two triggers, the second only a whole stick.
 
 Assignments belong to a controller's serial when it has one, so they follow it across cables and
 pairings, and to its model otherwise. Keys go out through `SendInput` from a thread of their own,
@@ -138,7 +142,8 @@ program coming to the front, so opening the window mid-game keeps the game's pro
 
 ## Gyro, sticks and touchpad
 
-The gyro is read only while a profile uses it (SDL turns the sensor's reports on and off), at the
+The gyro is read only while a profile uses it or games get it through a DualShock 4 (SDL turns the
+sensor's reports on and off, the accelerometer's too for the DualShock 4), at the
 controller's own rate, on the input thread. Whether it moves the stick is `motion::gyro_active`, a
 pure function of the profile, this report and the one before: a toggle flips when its button is
 down in this report and was up in the last. Its state lives with the device and goes back to off
@@ -166,6 +171,53 @@ The stick deadzone is radial, so a
 diagonal is not cut short, and off by default. The touchpad's halves and two-finger touch are
 worked out from SDL's finger positions on every report and carried as buttons past SDL's own
 (26 to 28), which made `PadState::buttons` 64 bits wide; a handheld's own buttons take 29 to 40.
+
+A stick set to stand in for the d-pad presses one of eight directions past half its travel, each
+45 degrees wide, after the deadzone, and rests itself, so a game does not get both.
+
+## The DualShock 3: pressure and motion
+
+Behind DsHidMini's SXS mode SDL reads a DualShock 3 with its Sixaxis driver, from feature report 0
+as with Sony's own driver. It gives the pressure of ten buttons as joystick axes 6 to 15, which the
+gamepad mapping leaves out, so `sdl::Gamepad` reads them itself into `PadState::pressure` for any
+PS3 pad SDL's own driver reads (its GUID's driver mark is `h` and it has 16 axes). Moving a trigger
+with one of them takes the larger of the trigger and the pressure, and lets go of the button unless
+it is kept, so Cross on RT does not also press A.
+
+Its motion SDL half reads: it registers only an accelerometer, and swaps its bytes as if they were
+the controller's own big-endian words, when DsHidMini 3 writes them calibrated, little-endian, with
+X mirrored and the gyro's sign flipped, as Sony's driver did. So while the gyro is wanted,
+`ds3::Sixaxis` opens the same device through `SDL_hid_*` and reads the four words itself, every
+2 ms at most, which the engine asks for on its own since SDL sends no event for a report whose
+buttons and sticks did not change. The byte order is worked out from the accelerometer, which
+reads about 1 g at rest only the right way round, and settled after eight readings agree, which
+also covers an older DsHidMini that passes the controller's raw report on. The gyro turns only
+around the controller's up axis; a slow rest bias is learnt while the accelerometer says the
+controller lies still and the yaw is under 2.5 °/s, for clones and older drivers DsHidMini does not
+zero. Pitch and roll come from the accelerometer (`motion::TiltRate`, after GamepadMotionHelpers'
+sensor fusion): the direction of gravity is smoothed, the rotation between two directions is the
+part of the turn it can see, a repeated reading waits for the next, and a reading that is not
+gravity alone (far from 1 g, or a jump in length) is left out, the estimate reading still meanwhile.
+PadForge, whose license does not allow reuse here, does the same with an estimator of its own. The
+signs follow PadForge's SDL fork and DS4Windows,
+which were checked on controllers; this was not, so it is marked experimental and a report on the
+controller carries the byte order, the last raw words and the learnt rest.
+
+## Showing a controller as a DualShock 4
+
+An Xbox controller has nowhere to put motion, so a controller can be shown to games as a
+DualShock 4 instead (Windows only, per controller, kept in `Profiles::output` rather than per
+profile, since changing it makes the virtual controller again). Both drivers make one: ViGEmBus's
+first-model DualShock 4 with `DS4_SUBMIT_REPORT_EX`, the 63-byte report with the sensors, and
+VIIPER's with its own 31-byte stream. The report is built from the Xbox report every controller
+already gets (`ds4::from_xusb`), so assignments, triggers from pressure and the stick as d-pad all
+carry over, plus the gyro and accelerometer in SDL's frame, which is a DualShock 4's own. Each
+driver's controller answers the calibration request (feature 0x02) with its own numbers, and games
+read the sensors through them, so the values are scaled to what that report says: SDL reads back
+what was sent to within a thousandth (`examples/ds4_loopback.rs`). It has no XInput slot, so it is
+never looked for there and lights the player colour of the first player. Linux is left out: a
+uinput device cannot carry the serial SDL pairs a motion node with its controller by, and a uhid
+DualShock 4 would have to answer the kernel driver's whole start-up exchange.
 
 ## Handhelds
 

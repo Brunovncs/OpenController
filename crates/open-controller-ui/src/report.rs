@@ -16,7 +16,7 @@ use gpui::{
 };
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
-use open_controller_core::mapping::axis;
+use open_controller_core::mapping::{self, axis};
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::rating::{self, Rating};
 use open_controller_core::report::{self, Diagnosis, Submission};
@@ -102,12 +102,17 @@ pub struct Report {
     pub gyro_readings: u32,
     pub gyro_peak: [f32; 3],
     pub aim_peak: u16,
+    /// The hardest each pressure-sensitive button was pressed while the dialog is open.
+    pub pressure_peak: [u8; mapping::PRESSURE.len()],
 }
 
 impl Report {
     /// Takes in what the controller sends while the dialog is open.
     pub fn observe(&mut self, pad: &PadView) {
         self.seen |= pad.input.buttons;
+        for (peak, &v) in self.pressure_peak.iter_mut().zip(pad.input.pressure.iter()) {
+            *peak = (*peak).max(v);
+        }
         for (r, &v) in self.axes.iter_mut().zip(pad.input.axes.iter()) {
             *r = (r.0.min(v), r.1.max(v));
         }
@@ -223,6 +228,12 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
     let _ = writeln!(s, "Role: {:?} · links: {:?} · power: {:?} · hidden: {}", p.role, p.links, p.power, p.hidden);
     let _ = writeln!(s, "Extra buttons: {:?} · hint: {:?}", p.extras, p.hint);
     let _ = writeln!(s, "Features: {:?}", p.features);
+    let pr = p.profile();
+    let _ = writeln!(
+        s,
+        "Games see it as: {:?} · stick as d-pad: {:?} · pressure: {:?} · gyro tilt from the accelerometer: {}",
+        p.profiles.output, pr.sticks.dpad, pr.pressure, pr.gyro.tilt
+    );
     let _ = writeln!(
         s,
         "Drivers: {} {} · HidHide {} · hiding {}",
@@ -270,6 +281,11 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
             let _ = writeln!(s, "{name}: {lo} to {hi}");
         }
     }
+    if p.features.pressure {
+        let peaks: Vec<String> =
+            mapping::PRESSURE.iter().zip(r.pressure_peak).map(|(&b, v)| format!("{} {v}", BUTTON_NAMES[b as usize])).collect();
+        let _ = writeln!(s, "Hardest press (0 to 255): {}", peaks.join(", "));
+    }
     let gyro = diagnosis.and_then(|d| d.gyro.as_ref());
     if gyro.is_some() || r.gyro_readings > 0 {
         let _ = writeln!(s, "\n== Gyro");
@@ -278,6 +294,12 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
             let _ = writeln!(s, "Mode: {} · reports asked for: {} · on in SDL: {}", g.mode, yes(g.wanted), yes(g.enabled));
             if let Some(e) = &g.error {
                 let _ = writeln!(s, "Turning its reports on failed: {e}");
+            }
+            if let Some(o) = &g.output {
+                let _ = writeln!(s, "Virtual controller: {o}");
+            }
+            if let Some(x) = &g.sixaxis {
+                let _ = writeln!(s, "DualShock 3 motion: {x}");
             }
         }
         let _ = writeln!(s, "{}", gyro_seen(r.gyro_readings, r.gyro_peak, r.aim_peak));
@@ -335,6 +357,7 @@ impl MainView {
             gyro_readings: 0,
             gyro_peak: [0.; 3],
             aim_peak: 0,
+            pressure_peak: [0; mapping::PRESSURE.len()],
         });
         if let Some(r) = self.report.as_mut() {
             // Resting triggers sit at 0 and sticks near it: the range starts where they are.

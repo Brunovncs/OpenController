@@ -291,7 +291,7 @@ fn main() {
 
     // A deadzone for a drifting stick, on the X axis alone (the radial deadzone counts both).
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFTY.0, 0) };
-    profiles.apply(Edit::Sticks(Sticks { deadzone: 20, anti_deadzone: 0 }));
+    profiles.apply(Edit::Sticks(Sticks { deadzone: 20, ..Sticks::default() }));
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFTX.0, 5000) };
     std::thread::sleep(Duration::from_millis(50));

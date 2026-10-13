@@ -4,18 +4,20 @@
 
 use crate::binding::{self, Action, Bindings, Chord};
 use crate::device::{self, Brand, Identity, Link, Power};
+use crate::ds3::Sixaxis;
+use crate::ds4::{self, Motion};
 use crate::extras::{self, Art, Family, Features, Hint};
 use crate::handheld;
 use crate::hiding::Hider;
 use crate::keyboard::Keyboard;
 use crate::mapping::{self, PadState, XusbReport};
 use crate::models;
-use crate::motion::{self, GyroAim};
+use crate::motion::{self, GyroAim, TiltRate};
 use crate::platform::{
-    self, Bus, DRIVER_CHOICE, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, VIRTUAL_PADS, VirtualDriver, bluetooth, devnode,
+    self, Bus, DRIVER_CHOICE, DS4_OUTPUT, Feedback, Io, JOURNAL_FILE, PLAYER_SLOTS, Report, VIRTUAL_PADS, VirtualDriver, bluetooth, devnode,
 };
 use crate::plug::Plugger;
-use crate::profile::{self, GyroMode, Profile, Profiles};
+use crate::profile::{self, GyroMode, Output, Profile, Profiles};
 use crate::report::{Diagnosis, GyroFacts};
 use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
@@ -360,6 +362,42 @@ struct Phys {
     /// failed, for reports.
     rate: Option<[f32; 3]>,
     gyro_error: Option<String>,
+    /// Whether its accelerometer's reports are on, for a virtual DualShock 4, and their last
+    /// reading in m/s².
+    accel_on: bool,
+    accel: Option<[f32; 3]>,
+    /// A DualShock 3's motion, which OpenController reads itself while it is wanted (see `ds3`),
+    /// and the rotation its accelerometer shows, with when that was last worked out.
+    sixaxis: Option<Sixaxis>,
+    tilt: TiltRate,
+    tilt_at: Option<Instant>,
+}
+
+impl Phys {
+    /// What its motion sensors read, for a virtual DualShock 4: at rest when they are off.
+    fn motion(&self) -> Motion {
+        Motion { gyro: self.rate.unwrap_or(Motion::REST.gyro), accel: self.accel.unwrap_or(Motion::REST.accel) }
+    }
+
+    /// Reads the gyro and the accelerometer, while they are on. A DualShock 3's come from its
+    /// own report, with the up and down and sideways tilt worked out from the accelerometer
+    /// when `tilt` is on.
+    fn read_motion(&mut self, now: Instant, tilt: bool) {
+        let Some(sx) = self.sixaxis.as_mut() else {
+            self.rate = self.pad.gyro();
+            self.accel = if self.accel_on { self.pad.accel() } else { None };
+            return;
+        };
+        let Some(r) = sx.read(now) else {
+            (self.rate, self.accel) = (None, None);
+            return;
+        };
+        let dt = self.tilt_at.map_or(0., |t| now.duration_since(t).as_secs_f32());
+        self.tilt_at = Some(now);
+        let [pitch, _, roll] = if tilt { self.tilt.update(r.accel, dt) } else { [0.; 3] };
+        self.rate = Some([pitch, r.yaw, roll]);
+        self.accel = Some(r.accel);
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -393,6 +431,8 @@ enum Owner {
 /// A virtual controller.
 struct Target {
     serial: u32,
+    /// An Xbox 360 controller or a DualShock 4. Only an Xbox one has an XInput slot to find.
+    output: Output,
     player: Option<u8>,
     /// While its XInput slot is looked for: the marker report it shows meanwhile, and until
     /// when. Input waits until the slot is found; XInput devices seen meanwhile wait to be
@@ -402,14 +442,21 @@ struct Target {
     next_search: Instant,
     backoff: Duration,
     /// What the game should see.
-    want: XusbReport,
+    want: Report,
     /// What the bus last took. Right after plugging in, it refuses a report or two until the
     /// Xbox 360 driver has opened the controller; a refused report is sent again next pass.
-    last: Option<XusbReport>,
+    last: Option<Report>,
     rumble: (u8, u8),
     rumble_sent: Instant,
     rumble_to: Option<DeviceId>,
     listener: Option<JoinHandle<()>>,
+}
+
+impl Target {
+    /// What it should show now: its marker while its slot is looked for, its input otherwise.
+    fn showing(&self) -> Report {
+        self.search.map(|(marker, _)| Report::Xusb(marker)).unwrap_or(self.want)
+    }
 }
 
 struct Core {
@@ -545,6 +592,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         }
         core.pump(now);
         core.handheld_buttons();
+        core.poll_sixaxis(now);
         core.forward(now);
         core.feedback(now);
         core.housekeeping(now);
@@ -622,7 +670,7 @@ impl Core {
                 p.pad.rumble(0, 0, 0);
             }
             if let Some(bus) = self.bus.as_ref() {
-                let _ = bus.submit(&mut self.io, t.serial, &XusbReport::default());
+                let _ = platform::submit(bus, &mut self.io, t.serial, &Report::rest(t.output));
                 let _ = bus.unplug(&mut self.io, t.serial);
             }
             let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
@@ -679,6 +727,7 @@ impl Core {
                 }
                 let profiles = profiles.sanitised();
                 let (was_native, now_native) = (native(&self.profiles, &store), profiles.native);
+                let was_output = self.output_of(&store);
                 if profiles.is_default() {
                     self.profiles.remove(&store);
                 } else {
@@ -686,6 +735,8 @@ impl Core {
                 }
                 if was_native != now_native {
                     self.set_native(&store, now_native);
+                } else if was_output != self.output_of(&store) {
+                    self.set_output(&store);
                 }
                 self.profiles_changed(&devices);
             }
@@ -710,8 +761,19 @@ impl Core {
                         let gyro = p.model.features.motion.then(|| GyroFacts {
                             mode: self.profile_of(&p.model.store).map_or("no profile".into(), |pr| format!("{:?}", pr.gyro.mode)),
                             wanted: p.gyro_on,
-                            enabled: p.pad.gyro_enabled(),
+                            enabled: if p.model.features.sixaxis { p.sixaxis.is_some() } else { p.pad.gyro_enabled() },
                             error: p.gyro_error.clone(),
+                            sixaxis: p.sixaxis.as_ref().map(|sx| {
+                                format!(
+                                    "order {:?}, words {:02x?}, yaw rest {:.2} °/s, failed reads {}, tilt {}",
+                                    sx.order(),
+                                    sx.words,
+                                    sx.bias().to_degrees(),
+                                    sx.failures,
+                                    self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.tilt),
+                                )
+                            }),
+                            output: Some(format!("{:?}", self.output_of(&p.model.store))),
                         });
                         Some((p.pad.facts(), gyro, p.path.clone()))
                     }
@@ -849,25 +911,78 @@ impl Core {
         self.profiles.get(store).map(|p| p.for_program(&self.foreground))
     }
 
-    /// Turns each controller's gyro reports on while its profile uses them.
+    /// What games see the controllers kept under `store` as.
+    fn output_of(&self, store: &str) -> Output {
+        if !DS4_OUTPUT {
+            return Output::Xbox360;
+        }
+        self.profiles.get(store).map_or(Output::Xbox360, |p| p.output)
+    }
+
+    /// The controllers kept under `store` are to be shown to games as something else: their
+    /// virtual controllers are unplugged, and `plug_missing` makes them again as they now should
+    /// be. The originals stay hidden meanwhile.
+    fn set_output(&mut self, store: &str) {
+        let slots: Vec<SlotId> = self.memo.iter().filter(|(_, m)| m.store == store).map(|(&s, _)| s).collect();
+        for s in slots {
+            self.note(format!("slot {} now as {:?}", s.0, self.output_of(store)));
+            self.release_keys(Owner::Slot(s));
+            if let Some(p) = self.targets.get(&s).and_then(|t| t.rumble_to).and_then(|d| self.phys.get(&d)) {
+                p.pad.rumble(0, 0, 0);
+            }
+            let model = self.memo.get(&s).cloned();
+            self.unplug(s);
+            if let Some(m) = model {
+                self.memo.insert(s, m);
+            }
+        }
+    }
+
+    /// A DualShock 3's motion is read by OpenController, not reported by SDL: while it is on,
+    /// the controller is looked at as often as its driver has something new.
+    fn poll_sixaxis(&mut self, now: Instant) {
+        for (&id, p) in &self.phys {
+            if p.sixaxis.as_ref().is_some_and(|sx| sx.due(now)) && !self.updated.contains(&id) {
+                self.updated.push(id);
+            }
+        }
+    }
+
+    /// Turns each controller's motion sensors on while they are used: the gyro while its
+    /// profile aims with it or games are sent it through a DualShock 4, and the accelerometer
+    /// for the DualShock 4 too. A DualShock 3's are read by opening it alongside SDL.
     fn sync_gyro(&mut self) {
         let ids: Vec<DeviceId> = self.phys.keys().copied().collect();
         for id in ids {
-            let want = {
+            let (gyro, accel) = {
                 let p = &self.phys[&id];
-                matches!(p.kind, Kind::Slot(s) if !self.is_native(s))
+                let ds4 = self.output_of(&p.model.store) == Output::DualShock4;
+                let gyro = matches!(p.kind, Kind::Slot(s) if !self.is_native(s))
                     && p.model.features.motion
-                    && self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off)
+                    && (ds4 || self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off));
+                (gyro, gyro && ds4)
             };
             let p = self.phys.get_mut(&id).unwrap();
-            if p.gyro_on != want {
-                p.gyro_error = p.pad.set_gyro(want).err();
-                p.gyro_on = want;
-                p.aim.reset();
-                p.aim_out = (0, 0);
-                p.aim_at = None;
-                p.rate = None;
+            if (p.gyro_on, p.accel_on) == (gyro, accel) {
+                continue;
             }
+            p.gyro_error = if p.model.features.sixaxis {
+                let opened = if gyro && p.sixaxis.is_none() { Sixaxis::open(&p.path).map(|sx| p.sixaxis = Some(sx)) } else { Ok(()) };
+                if !gyro {
+                    p.sixaxis = None;
+                }
+                opened.err()
+            } else {
+                p.pad.set_sensors(gyro, accel).err()
+            };
+            (p.gyro_on, p.accel_on) = (gyro, accel);
+            p.aim.reset();
+            p.aim_out = (0, 0);
+            p.aim_at = None;
+            p.rate = None;
+            p.accel = None;
+            p.tilt = TiltRate::default();
+            p.tilt_at = None;
         }
     }
 
@@ -997,6 +1112,11 @@ impl Core {
             aim_at: None,
             rate: None,
             gyro_error: None,
+            accel_on: false,
+            accel: None,
+            sixaxis: None,
+            tilt: TiltRate::default(),
+            tilt_at: None,
             pad,
         };
         p.pad.read(&mut p.state);
@@ -1122,9 +1242,18 @@ impl Core {
     /// Sends a slot's current state: after its source changed or sent input, or to a new
     /// virtual controller.
     fn resend(&mut self, s: SlotId) {
-        let report = self.roster.get(s).and_then(|slot| slot.source).map(|d| self.report_of(d)).unwrap_or_default();
+        let source = self.roster.get(s).and_then(|slot| slot.source);
+        let report = source.map(|d| self.report_of(d)).unwrap_or_default();
         let Some(t) = self.targets.get_mut(&s) else { return };
-        t.want = report;
+        t.want = match t.output {
+            Output::Xbox360 => Report::Xusb(report),
+            Output::DualShock4 => {
+                let p = source.and_then(|d| self.phys.get(&d));
+                let touchpad = p.is_some_and(|p| p.state.pressed(mapping::button::TOUCHPAD));
+                let battery = ds4::battery(p.map_or(Power::Unknown, |p| p.power));
+                Report::Ds4(ds4::from_xusb(&report, touchpad, battery, p.map_or(Motion::REST, Phys::motion)))
+            }
+        };
         self.send(s);
     }
 
@@ -1134,12 +1263,16 @@ impl Core {
         let profile = self.profile_of(&p.model.store);
         let mut state = p.state;
         if let Some(pr) = profile {
+            if p.model.features.pressure {
+                motion::apply_pressure(&mut state, pr.pressure);
+            }
             let (lx, ly) = motion::shape_stick(state.axes[mapping::axis::LEFT_X], state.axes[mapping::axis::LEFT_Y], pr.sticks);
             let (rx, ry) = motion::shape_stick(state.axes[mapping::axis::RIGHT_X], state.axes[mapping::axis::RIGHT_Y], pr.sticks);
             state.axes[mapping::axis::LEFT_X] = lx;
             state.axes[mapping::axis::LEFT_Y] = ly;
             state.axes[mapping::axis::RIGHT_X] = rx;
             state.axes[mapping::axis::RIGHT_Y] = ry;
+            motion::apply_dpad_stick(&mut state, pr.sticks.dpad);
         }
         let mut r = mapping::to_xusb(&state);
         // The gyro adds to the right stick, so the stick still turns and the gyro fine-tunes.
@@ -1243,8 +1376,8 @@ impl Core {
     /// for, its input otherwise.
     fn send(&mut self, s: SlotId) {
         let (Some(bus), Some(t)) = (self.bus.as_ref(), self.targets.get_mut(&s)) else { return };
-        let report = t.search.map(|(marker, _)| marker).unwrap_or(t.want);
-        if t.last != Some(report) && bus.submit(&mut self.io, t.serial, &report).is_ok() {
+        let report = t.showing();
+        if t.last != Some(report) && platform::submit(bus, &mut self.io, t.serial, &report).is_ok() {
             t.last = Some(report);
         }
     }
@@ -1260,7 +1393,7 @@ impl Core {
             }
             let before = p.state;
             let aim_before = p.aim_out;
-            let rate_before = p.rate;
+            let (rate_before, accel_before) = (p.rate, p.accel);
             p.pad.read(&mut p.state);
             if p.model.family == Family::Handheld && p.kind == Kind::Native {
                 p.state.buttons |= self.handheld_held;
@@ -1268,7 +1401,7 @@ impl Core {
             if p.gyro_on {
                 let gyro = self.profiles.get(&p.model.store).map(|x| x.for_program(&self.foreground).gyro).unwrap_or_default();
                 let active = motion::gyro_active(&gyro, &p.state, &before, &mut p.gyro_toggled);
-                p.rate = p.pad.gyro();
+                p.read_motion(now, gyro.tilt);
                 match (active, p.rate) {
                     (true, Some(rate)) => {
                         let dt = p.aim_at.map_or(0.004, |t| now.duration_since(t).as_secs_f32());
@@ -1282,9 +1415,12 @@ impl Core {
                     }
                 }
             }
-            if p.state == before && p.aim_out == aim_before {
-                // Only the window shows the gyro's own reading, so nothing else needs doing.
-                self.input_changed |= p.rate != rate_before;
+            let moved = p.rate != rate_before || p.accel != accel_before;
+            // A DualShock 4 carries the motion to games, so it is sent on as it changes.
+            let carries_motion = matches!(p.kind, Kind::Slot(s) if self.targets.get(&s).is_some_and(|t| t.output == Output::DualShock4));
+            if p.state == before && p.aim_out == aim_before && !(moved && carries_motion) {
+                // Otherwise only the window shows the gyro's own reading, so nothing else needs doing.
+                self.input_changed |= moved;
                 continue;
             }
             self.input_changed = true;
@@ -1370,12 +1506,7 @@ impl Core {
         self.plug_missing(now);
         self.find_player_slots(now);
         self.update_lights(now);
-        let unsent: Vec<SlotId> = self
-            .targets
-            .iter()
-            .filter(|(_, t)| t.last != Some(t.search.map(|(marker, _)| marker).unwrap_or(t.want)))
-            .map(|(&s, _)| s)
-            .collect();
+        let unsent: Vec<SlotId> = self.targets.iter().filter(|(_, t)| t.last != Some(t.showing())).map(|(&s, _)| s).collect();
         for s in unsent {
             self.send(s);
         }
@@ -1404,23 +1535,23 @@ impl Core {
     /// sets up the ones that are ready.
     fn plug_missing(&mut self, now: Instant) {
         let Some(plugger) = self.plugger.as_ref() else { return };
-        let wanting: Vec<SlotId> = self
+        let wanting: Vec<(SlotId, Output)> = self
             .roster
             .slots()
             .iter()
             .filter(|s| s.lost_since.is_none() && !self.targets.contains_key(&s.id) && !plugger.is_pending(s.id))
             .filter(|s| self.failed.get(&s.id).is_none_or(|&t| now.duration_since(t) >= RETRY))
             .filter(|s| !self.is_native(s.id))
-            .map(|s| s.id)
+            .map(|s| (s.id, self.memo.get(&s.id).map_or(Output::Xbox360, |m| self.output_of(&m.store))))
             .collect();
         let Some(plugger) = self.plugger.as_mut() else { return };
-        for s in wanting {
-            plugger.request(s);
+        for (s, output) in wanting {
+            plugger.request(s, output);
         }
         let mut viiper_failed = None;
-        for (s, result) in plugger.finished() {
+        for (s, output, result) in plugger.finished() {
             match result {
-                Ok(serial) => self.plugged(s, serial, now),
+                Ok(serial) => self.plugged(s, serial, output, now),
                 Err(e) => {
                     if self.bus_driver == VirtualDriver::Viiper {
                         viiper_failed = Some(e.clone());
@@ -1446,25 +1577,28 @@ impl Core {
     }
 
     /// A virtual controller for `s` is ready: it gets the slot's input, rumble and player.
-    fn plugged(&mut self, s: SlotId, serial: u32, now: Instant) {
+    fn plugged(&mut self, s: SlotId, serial: u32, output: Output, now: Instant) {
         let Some(bus) = self.bus.clone() else { return };
-        // The controller was turned off, stayed away or was kept native while it was being
-        // plugged in.
-        if self.roster.get(s).is_none() || self.targets.contains_key(&s) || self.is_native(s) {
+        // The controller was turned off, stayed away, was kept native or set to show itself as
+        // something else while it was being plugged in.
+        let wanted = self.memo.get(&s).map_or(Output::Xbox360, |m| self.output_of(&m.store));
+        if self.roster.get(s).is_none() || self.targets.contains_key(&s) || self.is_native(s) || wanted != output {
             let _ = bus.unplug(&mut self.io, serial);
             return;
         }
         self.failed.remove(&s);
-        let listener = Some(bus.listen(serial, self.feedback_tx.clone()));
+        let listener = Some(platform::listen(&bus, serial, output, self.feedback_tx.clone()));
+        let xinput = output == Output::Xbox360;
         self.targets.insert(
             s,
             Target {
                 serial,
+                output,
                 player: None,
-                search: PLAYER_SLOTS.then(|| (xinput::marker(serial), now + SLOT_WAIT)),
+                search: (PLAYER_SLOTS && xinput).then(|| (xinput::marker(serial), now + SLOT_WAIT)),
                 next_search: now,
                 backoff: Duration::from_secs(1),
-                want: XusbReport::default(),
+                want: Report::rest(output),
                 last: None,
                 rumble: (0, 0),
                 rumble_sent: now,
@@ -1491,12 +1625,13 @@ impl Core {
         let mut lit = Vec::new();
         let mut free = None;
         for (&s, t) in self.targets.iter_mut() {
-            if t.player.is_some() {
+            // A DualShock 4 has no XInput slot.
+            if t.player.is_some() || t.output != Output::Xbox360 {
                 continue;
             }
             match t.search {
                 Some((marker, until)) => {
-                    if let Some(i) = (t.last == Some(marker)).then(|| xinput::find(&marker)).flatten() {
+                    if let Some(i) = (t.last == Some(Report::Xusb(marker))).then(|| xinput::find(&marker)).flatten() {
                         t.player = Some(i);
                         t.search = None;
                         lit.push((s, i));
@@ -1562,7 +1697,7 @@ impl Core {
         self.memo.remove(&s);
         let Some(t) = self.targets.remove(&s) else { return };
         if let Some(bus) = self.bus.as_ref() {
-            let _ = bus.submit(&mut self.io, t.serial, &XusbReport::default());
+            let _ = platform::submit(bus, &mut self.io, t.serial, &Report::rest(t.output));
             let _ = bus.unplug(&mut self.io, t.serial);
         }
         // The feedback thread ends once its controller is gone.

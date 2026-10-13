@@ -65,12 +65,36 @@ pub struct PadState {
     /// (`extras::TOUCH_LEFT` and up).
     pub buttons: u64,
     pub axes: [i16; axis::COUNT],
+    /// How hard each pressure-sensitive button is pressed, 0 to 255, in [`PRESSURE`]'s order; all
+    /// 0 on a controller without them.
+    #[serde(default)]
+    pub pressure: [u8; PRESSURE.len()],
 }
 
 impl PadState {
     pub fn pressed(&self, b: u32) -> bool {
         self.buttons & (1 << b) != 0
     }
+}
+
+/// The buttons a DualShock 3 senses the pressure of, in the order SDL reports them as joystick
+/// axes 6 to 15.
+pub const PRESSURE: [u32; 10] = [
+    button::SOUTH,
+    button::EAST,
+    button::WEST,
+    button::NORTH,
+    button::LEFT_SHOULDER,
+    button::RIGHT_SHOULDER,
+    button::DPAD_UP,
+    button::DPAD_DOWN,
+    button::DPAD_LEFT,
+    button::DPAD_RIGHT,
+];
+
+/// Where a button's pressure is kept in [`PadState::pressure`], if it has one.
+pub fn pressure_index(b: u32) -> Option<usize> {
+    PRESSURE.iter().position(|&p| p == b)
 }
 
 /// `XUSB_REPORT`, the payload ViGEmBus takes for a virtual Xbox 360 controller. Y grows upwards.
@@ -152,7 +176,7 @@ mod tests {
     use super::*;
 
     fn state(buttons: &[u32], axes: [i16; 6]) -> PadState {
-        PadState { buttons: buttons.iter().fold(0, |b, &i| b | 1 << i), axes }
+        PadState { buttons: buttons.iter().fold(0, |b, &i| b | 1 << i), axes, ..PadState::default() }
     }
 
     #[test]
@@ -211,6 +235,20 @@ mod tests {
     #[test]
     fn report_has_the_xusb_layout() {
         assert_eq!(std::mem::size_of::<XusbReport>(), 12);
+    }
+
+    #[test]
+    fn a_state_from_before_pressure_reads() {
+        let s: PadState = serde_json::from_str(r#"{"buttons":3,"axes":[1,2,3,4,5,6]}"#).unwrap();
+        assert_eq!((s.buttons, s.pressure), (3, [0; 10]));
+    }
+
+    #[test]
+    fn pressure_follows_sdls_axis_order() {
+        assert_eq!(pressure_index(button::SOUTH), Some(0));
+        assert_eq!(pressure_index(button::RIGHT_SHOULDER), Some(5));
+        assert_eq!(pressure_index(button::DPAD_RIGHT), Some(9));
+        assert_eq!(pressure_index(button::START), None);
     }
 
     #[test]

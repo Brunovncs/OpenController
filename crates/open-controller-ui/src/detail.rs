@@ -25,7 +25,7 @@ use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::keyboard;
 use open_controller_core::models;
-use open_controller_core::profile::{self, Edit, Light, MAX_PROFILES};
+use open_controller_core::profile::{self, Edit, Light, MAX_PROFILES, Output};
 use open_controller_core::rating::Rating;
 use open_controller_core::{PadKey, PadView, Role};
 
@@ -561,13 +561,15 @@ impl MainView {
             .flex_col()
             .children(hint)
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_start()
-                    .gap(px(20.))
-                    .child(drawing)
-                    .child(div().flex_1().min_w(px(320.)).child(self.extras_column(pad, text, &t, cx))),
+                div().flex().flex_wrap().items_start().gap(px(20.)).child(drawing).child(
+                    div()
+                        .flex_1()
+                        .min_w(px(320.))
+                        .child(self.extras_column(pad, text, &t, cx))
+                        .when(pad.features.pressure && pad.store.is_some() && !kept_native(pad) && !native(pad), |d| {
+                            d.child(self.pressure_card(pad, text, cx))
+                        }),
+                ),
             )
             .into_any_element()
     }
@@ -832,11 +834,14 @@ impl MainView {
             (f.trigger_rumble, text.trigger_rumble),
             (f.light_bar, text.light_bar),
             (f.player_lights, text.player_lights),
+            (f.pressure, text.pressure_title),
         ]
         .into_iter()
         .filter_map(|(has, name)| has.then_some(name))
         .collect();
+        let ds4 = pad.profiles.output == Output::DualShock4 && crate::tuning::can_choose_output(pad);
         let games = match &pad.role {
+            Role::Virtual { .. } if ds4 => text.as_ds4.into(),
             Role::Virtual { player: Some(n) } => fill(text.as_xbox, n + 1),
             Role::Virtual { player: None } => text.as_xbox_fifth.into(),
             Role::Waiting { remaining, .. } => fill(text.waiting_slot, remaining.as_secs() + 1),
@@ -884,6 +889,23 @@ impl MainView {
             }
             _ => body(pad.name.clone(), t.text).into_any_element(),
         };
+        let output = (crate::tuning::can_choose_output(pad) && !kept_native(pad)).then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .items_start()
+                .gap(px(6.))
+                .child(segmented(
+                    "output",
+                    vec![(Output::Xbox360, text.output_xbox.into()), (Output::DualShock4, text.output_ds4.into())],
+                    pad.profiles.output,
+                    &t,
+                    cx,
+                    move |this, o, cx| this.edit_now(key, Edit::Output(o), cx),
+                ))
+                .child(caption(text.output_desc, t.text2))
+                .into_any_element()
+        });
         card(&t)
             .flex()
             .flex_col()
@@ -905,6 +927,7 @@ impl MainView {
                     .when_some(note, |d, n| d.child(caption(n, t.text2)))
                     .into_any_element(),
             ))
+            .when_some(output, |d, o| d.child(line(text.games_see, o)))
             .when(!features.is_empty(), |d| {
                 d.child(line(
                     text.features,

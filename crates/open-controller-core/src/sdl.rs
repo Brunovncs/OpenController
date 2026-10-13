@@ -9,7 +9,7 @@
 
 use crate::device::{PadType, Power, SdlConnection};
 use crate::extras::{Features, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO};
-use crate::mapping::{PadState, axis, button};
+use crate::mapping::{self, PadState, axis, button};
 use crate::motion::{Finger, touch_buttons};
 use crate::report::{Facts, model_path};
 use sdl3_sys::everything::*;
@@ -169,7 +169,8 @@ impl Sdl {
         let gp = unsafe { SDL_OpenGamepad(SDL_JoystickID(id)) };
         (!gp.is_null()).then(|| {
             let path = text(unsafe { SDL_GetGamepadPath(gp) }).unwrap_or_default();
-            Gamepad { gp, rumbler: Rumbler::start(SDL_JoystickID(id), path) }
+            let pressure = unsafe { has_pressure(gp) };
+            Gamepad { gp, rumbler: Rumbler::start(SDL_JoystickID(id), path), pressure }
         })
     }
 }
@@ -339,9 +340,29 @@ impl Drop for Sdl {
 pub struct Gamepad {
     gp: *mut SDL_Gamepad,
     rumbler: Rumbler,
+    /// Its pressure-sensitive buttons come as joystick axes [`PRESSURE_AXIS`] on.
+    pressure: bool,
 }
 
 const BUTTONS: u32 = button::COUNT;
+/// SDL's PlayStation 3 drivers give the pressure of ten buttons as joystick axes 6 to 15, after
+/// the sticks and triggers (`SDL_hidapi_ps3.c`), which its gamepad mappings leave out.
+const PRESSURE_AXIS: i32 = 6;
+
+/// Whether SDL's own PlayStation 3 driver reads the controller (its GUID's driver mark is `h`,
+/// for HIDAPI), which gives the pressure of the buttons.
+///
+/// # Safety
+/// `gp` must be an open gamepad.
+unsafe fn has_pressure(gp: *mut SDL_Gamepad) -> bool {
+    unsafe {
+        let js = SDL_GetGamepadJoystick(gp);
+        !js.is_null()
+            && SDL_GetGamepadType(gp) == SDL_GAMEPAD_TYPE_PS3
+            && SDL_GetJoystickGUID(js).data[14] == b'h'
+            && SDL_GetNumJoystickAxes(js) == PRESSURE_AXIS + mapping::PRESSURE.len() as i32
+    }
+}
 
 impl Gamepad {
     pub fn name(&self) -> String {
@@ -410,15 +431,27 @@ impl Gamepad {
         unsafe {
             let props = SDL_GetGamepadProperties(self.gp);
             let cap = |name| SDL_GetBooleanProperty(props, name, false);
+            let sixaxis = self.is_sixaxis();
             Features {
                 touchpad: SDL_GetNumGamepadTouchpads(self.gp) > 0,
-                motion: SDL_GamepadHasSensor(self.gp, SDL_SENSOR_GYRO),
+                motion: SDL_GamepadHasSensor(self.gp, SDL_SENSOR_GYRO) || sixaxis,
                 rumble: cap(SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN),
                 trigger_rumble: cap(SDL_PROP_GAMEPAD_CAP_TRIGGER_RUMBLE_BOOLEAN),
                 light_bar: cap(SDL_PROP_GAMEPAD_CAP_RGB_LED_BOOLEAN),
                 player_lights: cap(SDL_PROP_GAMEPAD_CAP_PLAYER_LED_BOOLEAN),
+                pressure: self.pressure,
+                sixaxis,
             }
         }
+    }
+
+    /// A Sony DualShock 3 that SDL reads from feature report 0, as with Sony's driver: behind
+    /// DsHidMini in its SXS mode, on Windows. Its motion is read by `ds3::Sixaxis`.
+    fn is_sixaxis(&self) -> bool {
+        cfg!(windows)
+            && self.pressure
+            && (self.vendor(), self.product()) == (0x054C, 0x0268)
+            && unsafe { SDL_GamepadHasSensor(self.gp, SDL_SENSOR_ACCEL) }
     }
 
     /// What SDL says about this controller, for a report on it.
@@ -484,6 +517,14 @@ impl Gamepad {
         for i in 0..axis::COUNT {
             out.axes[i] = unsafe { SDL_GetGamepadAxis(self.gp, SDL_GamepadAxis(i as i32)) };
         }
+        if self.pressure {
+            let js = unsafe { SDL_GetGamepadJoystick(self.gp) };
+            for (i, p) in out.pressure.iter_mut().enumerate() {
+                // -32768 released to 32767 pressed all the way, as `byte * 257 - 32768`.
+                let v = unsafe { SDL_GetJoystickAxis(js, PRESSURE_AXIS + i as i32) };
+                *p = ((i32::from(v) + 32768) / 257) as u8;
+            }
+        }
     }
 
     /// The touchpad's halves and two-finger touch, as the bits OpenController gives them.
@@ -503,10 +544,23 @@ impl Gamepad {
         }
     }
 
-    /// Turns the gyro's reports on or off; they cost bandwidth, so only while it is used. A
-    /// controller that claims a gyro it cannot report may refuse, with SDL's error.
-    pub fn set_gyro(&self, on: bool) -> Result<(), String> {
-        if unsafe { SDL_SetGamepadSensorEnabled(self.gp, SDL_SENSOR_GYRO, on) } { Ok(()) } else { Err(error()) }
+    /// Turns the gyro's reports on or off, and the accelerometer's; they cost bandwidth, so only
+    /// while they are used. A controller that claims a sensor it cannot report may refuse, with
+    /// SDL's error.
+    pub fn set_sensors(&self, gyro: bool, accel: bool) -> Result<(), String> {
+        let mut ok = true;
+        for (s, on) in [(SDL_SENSOR_GYRO, gyro), (SDL_SENSOR_ACCEL, accel)] {
+            if unsafe { SDL_GamepadHasSensor(self.gp, s) } {
+                ok &= unsafe { SDL_SetGamepadSensorEnabled(self.gp, s, on) };
+            }
+        }
+        if ok { Ok(()) } else { Err(error()) }
+    }
+
+    /// The accelerometer's last reading in m/s², if it is on.
+    pub fn accel(&self) -> Option<[f32; 3]> {
+        let mut v = [0f32; 3];
+        unsafe { SDL_GetGamepadSensorData(self.gp, SDL_SENSOR_ACCEL, v.as_mut_ptr(), 3) }.then_some(v)
     }
 
     /// Whether SDL has the gyro's reports on.

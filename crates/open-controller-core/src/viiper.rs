@@ -10,10 +10,13 @@
 //! v0.8.2). A request is `path[ payload]\0` on a new connection, answered with one line of JSON,
 //! or of RFC 7807 problem JSON when it fails, and the connection closes. A device's stream starts
 //! with `bus/{bus}/{device}\0` and then carries 20-byte input reports one way and 2-byte rumble
-//! the other. The server removes a device whose stream is not open within its handler timeout,
-//! counted from before the attach, and a bus left empty after that long.
+//! the other; for a DualShock 4, 31-byte reports and 8 bytes of rumble and light. The server
+//! removes a device whose stream is not open within its handler timeout, counted from before the
+//! attach, and a bus left empty after that long.
 
+use crate::ds4::{Calibration, Ds4Report};
 use crate::mapping::XusbReport;
+use crate::profile::Output;
 use crate::vigem::Feedback;
 use crate::win::{Handle, interface_paths};
 use crossbeam_channel::Sender;
@@ -150,9 +153,14 @@ impl Api {
         v.get("busId").and_then(Value::as_u64).map(|b| b as u32).ok_or_else(|| unexpected(&v))
     }
 
-    /// Adds a wired Xbox 360 controller and waits for it to be attached; returns its device id.
-    fn add(&self, bus: u32) -> Result<String, BusError> {
-        let v = self.request(&format!("bus/{bus}/add"), Some(r#"{"type":"xbox360"}"#), self.wait.max(ADD_WAIT))?;
+    /// Adds a wired controller of the kind asked for and waits for it to be attached; returns its
+    /// device id.
+    fn add(&self, bus: u32, output: Output) -> Result<String, BusError> {
+        let ty = match output {
+            Output::Xbox360 => r#"{"type":"xbox360"}"#,
+            Output::DualShock4 => r#"{"type":"dualshock4"}"#,
+        };
+        let v = self.request(&format!("bus/{bus}/add"), Some(ty), self.wait.max(ADD_WAIT))?;
         v.get("devId").and_then(Value::as_str).map(str::to_string).ok_or_else(|| unexpected(&v))
     }
 
@@ -212,6 +220,28 @@ fn wire(r: &XusbReport) -> [u8; 20] {
     b[8..10].copy_from_slice(&r.thumb_ly.to_le_bytes());
     b[10..12].copy_from_slice(&r.thumb_rx.to_le_bytes());
     b[12..14].copy_from_slice(&r.thumb_ry.to_le_bytes());
+    b
+}
+
+/// The 31 bytes the server takes for a DualShock 4 report (`device/dualshock4/state.go`): sticks
+/// as signed bytes around 0, the buttons with PS and the touchpad click in the low bits, the
+/// d-pad as directions, the triggers, two touches, then the sensors as the report carries them,
+/// for the calibration the server's controller gives.
+fn wire_ds4(r: &Ds4Report) -> [u8; 31] {
+    let mut b = [0u8; 31];
+    for (i, v) in [r.lx, r.ly, r.rx, r.ry].into_iter().enumerate() {
+        b[i] = (i16::from(v) - 128) as i8 as u8;
+    }
+    let buttons = r.buttons | u16::from(r.ps) | u16::from(r.touchpad) << 1;
+    b[4..6].copy_from_slice(&buttons.to_le_bytes());
+    b[6] = r.dpad;
+    b[7] = r.l2;
+    b[8] = r.r2;
+    let (gyro, accel) = Calibration::VIIPER.encode(&r.motion);
+    for i in 0..3 {
+        b[19 + 2 * i..21 + 2 * i].copy_from_slice(&gyro[i].to_le_bytes());
+        b[25 + 2 * i..27 + 2 * i].copy_from_slice(&accel[i].to_le_bytes());
+    }
     b
 }
 
@@ -301,10 +331,11 @@ fn kill_on_close(child: &Child) -> Result<Handle, u32> {
     }
 }
 
-/// One virtual controller: where it is on the server and its stream.
+/// One virtual controller: where it is on the server, what it is and its stream.
 struct Pad {
     bus: u32,
     device: String,
+    output: Output,
     stream: TcpStream,
     /// Set before this side closes the stream, so its end is not taken for a failure.
     closing: AtomicBool,
@@ -403,12 +434,17 @@ impl Bus {
 
     /// Adds a virtual Xbox 360 controller, attached and with its stream open. Returns its serial.
     pub fn plug_x360(&self) -> Result<u32, BusError> {
+        self.plug(Output::Xbox360)
+    }
+
+    /// Adds a virtual controller of the kind asked for, attached and with its stream open.
+    pub fn plug(&self, output: Output) -> Result<u32, BusError> {
         let _one = self.plugging.lock().map_err(|_| BusError::Io("poisoned".into()))?;
         let serial = {
             let pads = self.pads.lock().map_err(|_| BusError::Io("poisoned".into()))?;
             (1..=MAX_PADS).find(|s| !pads.contains_key(s)).ok_or_else(|| BusError::Io("too many controllers".into()))?
         };
-        let (bus, device) = self.add()?;
+        let (bus, device) = self.add(output)?;
         let stream = match self.api.stream(bus, &device) {
             Ok(s) => s,
             Err(e) => {
@@ -416,7 +452,7 @@ impl Bus {
                 return Err(e);
             }
         };
-        let pad = Arc::new(Pad { bus, device, stream, closing: AtomicBool::new(false) });
+        let pad = Arc::new(Pad { bus, device, output, stream, closing: AtomicBool::new(false) });
         if let Ok(mut pads) = self.pads.lock() {
             pads.insert(serial, pad);
         }
@@ -424,12 +460,12 @@ impl Bus {
     }
 
     /// Adds a device to this process's bus, making the bus again if the server removed it.
-    fn add(&self) -> Result<(u32, String), BusError> {
+    fn add(&self, output: Output) -> Result<(u32, String), BusError> {
         let mut bus = self.bus.lock().map_err(|_| BusError::Io("poisoned".into()))?;
-        match self.api.add(*bus) {
+        match self.api.add(*bus, output) {
             Err(BusError::Problem(404, _)) => {
                 *bus = self.api.create_bus()?;
-                self.api.add(*bus).map(|d| (*bus, d))
+                self.api.add(*bus, output).map(|d| (*bus, d))
             }
             r => r.map(|d| (*bus, d)),
         }
@@ -446,8 +482,16 @@ impl Bus {
     }
 
     pub fn submit(&self, serial: u32, report: &XusbReport) -> Result<(), u32> {
+        self.write(serial, &wire(report))
+    }
+
+    pub fn submit_ds4(&self, serial: u32, report: &Ds4Report) -> Result<(), u32> {
+        self.write(serial, &wire_ds4(report))
+    }
+
+    fn write(&self, serial: u32, bytes: &[u8]) -> Result<(), u32> {
         let pad = self.pads.lock().ok().and_then(|p| p.get(&serial).cloned()).ok_or(ERROR_FILE_NOT_FOUND)?;
-        (&pad.stream).write_all(&wire(report)).map_err(|e| {
+        (&pad.stream).write_all(bytes).map_err(|e| {
             // A report half written leaves the stream out of step: it cannot be used again.
             if !pad.closing.load(Ordering::Acquire) {
                 self.fail(format!("a controller's stream failed: {e}"));
@@ -463,8 +507,10 @@ impl Bus {
         }
     }
 
-    /// Starts a thread that passes on the game's rumble for one controller: two bytes, the large
-    /// (left, low-frequency) motor then the small one. It ends when the stream closes.
+    /// Starts a thread that passes on the game's rumble for one controller. An Xbox 360
+    /// controller's is two bytes, the large (left, low-frequency) motor then the small one; a
+    /// DualShock 4's is eight, flags, small motor, large motor, then the light, not used. It ends
+    /// when the stream closes.
     pub fn listen(&self, serial: u32, tx: Sender<Feedback>) -> JoinHandle<()> {
         let pad = self.pads.lock().ok().and_then(|p| p.get(&serial).cloned());
         let reader = pad.as_ref().and_then(|p| p.stream.try_clone().ok());
@@ -478,9 +524,13 @@ impl Bus {
                 if reader.set_read_timeout(Some(LISTEN_POLL)).is_err() {
                     return;
                 }
-                let (mut b, mut have) = ([0u8; 2], 0);
+                let size = match pad.output {
+                    Output::Xbox360 => 2,
+                    Output::DualShock4 => 8,
+                };
+                let (mut b, mut have) = ([0u8; 8], 0);
                 let end = loop {
-                    match reader.read(&mut b[have..]) {
+                    match reader.read(&mut b[have..size]) {
                         Ok(0) => break "it ended".to_string(),
                         Ok(n) => have += n,
                         Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted) => {}
@@ -489,9 +539,10 @@ impl Bus {
                     if pad.closing.load(Ordering::Acquire) {
                         return;
                     }
-                    if have == 2 {
+                    if have == size {
                         have = 0;
-                        if tx.send(Feedback { serial, large_motor: b[0], small_motor: b[1] }).is_err() {
+                        let (large_motor, small_motor) = if size == 2 { (b[0], b[1]) } else { (b[2], b[1]) };
+                        if tx.send(Feedback { serial, large_motor, small_motor }).is_err() {
                             return;
                         }
                     }
@@ -597,11 +648,13 @@ mod tests {
 
     struct Dev {
         id: u32,
+        /// The size of its reports: 20 for an Xbox 360 controller, 31 for a DualShock 4.
+        size: usize,
         /// Until when it may go without a stream; `None` while its stream is open.
         deadline: Option<Instant>,
-        reports: Arc<Mutex<Vec<[u8; 20]>>>,
+        reports: Arc<Mutex<Vec<Vec<u8>>>>,
         /// Rumble to send down its stream.
-        rumble: Option<mpsc::Sender<[u8; 2]>>,
+        rumble: Option<mpsc::Sender<Vec<u8>>>,
         /// Closes its stream from the server's side.
         stream: Option<TcpStream>,
     }
@@ -672,7 +725,7 @@ mod tests {
             })
         }
 
-        fn reports(&self, bus: u32, dev: u32) -> Vec<[u8; 20]> {
+        fn reports(&self, bus: u32, dev: u32) -> Vec<Vec<u8>> {
             self.with(|s| s.buses[&bus].iter().find(|d| d.id == dev).map(|d| d.reports.lock().unwrap().clone()).unwrap_or_default())
         }
     }
@@ -700,13 +753,21 @@ mod tests {
             ["bus", b, "add"] => {
                 let b: u32 = b.parse().unwrap();
                 let timeout = st.timeout;
+                let size = if payload.contains(r#""type":"xbox360""#) {
+                    20
+                } else if payload.contains(r#""type":"dualshock4""#) {
+                    31
+                } else {
+                    0
+                };
                 if let Some((status, detail)) = st.refuse_add.take() {
                     problem(status, detail)
-                } else if !payload.contains(r#""type":"xbox360""#) {
+                } else if size == 0 {
                     problem(400, "missing device type")
                 } else if let Some(devs) = st.buses.get_mut(&b) {
                     let id = devs.iter().map(|d| d.id).max().unwrap_or(0) + 1;
-                    let dev = Dev { id, deadline: Some(Instant::now() + timeout), reports: Default::default(), rumble: None, stream: None };
+                    let dev =
+                        Dev { id, size, deadline: Some(Instant::now() + timeout), reports: Default::default(), rumble: None, stream: None };
                     devs.push(dev);
                     if std::mem::take(&mut st.drop_after_add) {
                         st.buses.get_mut(&b).unwrap().retain(|d| d.id != id);
@@ -739,10 +800,11 @@ mod tests {
                     return;
                 };
                 dev.deadline = None;
-                let (tx, rx) = mpsc::channel::<[u8; 2]>();
+                let (tx, rx) = mpsc::channel::<Vec<u8>>();
                 dev.rumble = Some(tx);
                 dev.stream = conn.try_clone().ok();
                 let reports = dev.reports.clone();
+                let size = dev.size;
                 let timeout = st.timeout;
                 drop(st);
                 let mut out = conn.try_clone().unwrap();
@@ -753,9 +815,9 @@ mod tests {
                         }
                     }
                 });
-                let mut buf = [0u8; 20];
+                let mut buf = vec![0u8; size];
                 while reader.read_exact(&mut buf).is_ok() {
-                    reports.lock().unwrap().push(buf);
+                    reports.lock().unwrap().push(buf.clone());
                 }
                 if !s.lock().unwrap().hang {
                     let _ = conn.shutdown(Shutdown::Both);
@@ -793,7 +855,7 @@ mod tests {
         bus.submit(serial, &r).unwrap();
         bus.submit(serial, &XusbReport::default()).unwrap();
         wait_until("both reports", || fake.reports(1, 1).len() == 2);
-        assert_eq!(fake.reports(1, 1), [wire(&r), [0; 20]]);
+        assert_eq!(fake.reports(1, 1), [wire(&r).to_vec(), vec![0; 20]]);
         bus.unplug(serial).unwrap();
         assert_eq!(fake.devices(), []);
         assert_eq!(bus.submit(serial, &r), Err(ERROR_FILE_NOT_FOUND));
@@ -801,6 +863,43 @@ mod tests {
         assert!(bus.lost().is_none(), "{:?}", bus.lost());
         let log = fake.with(|s| s.log.clone());
         assert_eq!(log, ["ping", "bus/create", "bus/1/add {\"type\":\"xbox360\"}", "bus/1/1", "bus/1/remove 1"]);
+    }
+
+    #[test]
+    fn a_dualshock_4_gets_its_own_reports_and_rumble() {
+        use crate::ds4::{Motion, dpad};
+        let fake = Fake::start(Duration::from_secs(5));
+        let bus = fake.bus();
+        let serial = bus.plug(Output::DualShock4).unwrap();
+        let r = Ds4Report {
+            lx: 0,
+            ly: 255,
+            buttons: crate::ds4::button::TRIANGLE,
+            dpad: dpad::UP,
+            ps: true,
+            l2: 77,
+            motion: Motion { gyro: [0., 1., 0.], ..Motion::REST },
+            ..Ds4Report::default()
+        };
+        bus.submit_ds4(serial, &r).unwrap();
+        wait_until("the report", || fake.reports(1, 1).len() == 1);
+        let b = &fake.reports(1, 1)[0];
+        assert_eq!(b.len(), 31);
+        assert_eq!((b[0] as i8, b[1] as i8, b[2] as i8), (-128, 127, 0), "sticks around 0");
+        assert_eq!(u16::from_le_bytes([b[4], b[5]]), 0x0080 | 0x0001, "Triangle and PS");
+        assert_eq!((b[6], b[7]), (dpad::UP, 77));
+        // 1 rad/s is 57.3 °/s, 16 counts each.
+        assert_eq!(i16::from_le_bytes([b[21], b[22]]), 917);
+        assert_eq!(i16::from_le_bytes([b[27], b[28]]), 8192, "1 g up");
+        let (tx, rx) = unbounded();
+        let listener = bus.listen(serial, tx);
+        wait_until("the stream", || fake.with(|s| s.buses[&1][0].rumble.is_some()));
+        let rumble = fake.with(|s| s.buses[&1][0].rumble.clone().unwrap());
+        rumble.send(vec![0x03, 40, 200, 0, 0, 255, 0, 0]).unwrap();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), Feedback { serial, large_motor: 200, small_motor: 40 });
+        bus.unplug(serial).unwrap();
+        listener.join().unwrap();
+        assert!(fake.with(|s| s.log.iter().any(|l| l == r#"bus/1/add {"type":"dualshock4"}"#)));
     }
 
     #[test]
@@ -812,8 +911,8 @@ mod tests {
         let listener = bus.listen(serial, tx);
         wait_until("the stream", || fake.with(|s| s.buses[&1][0].rumble.is_some()));
         let rumble = fake.with(|s| s.buses[&1][0].rumble.clone().unwrap());
-        rumble.send([200, 10]).unwrap();
-        rumble.send([0, 0]).unwrap();
+        rumble.send(vec![200, 10]).unwrap();
+        rumble.send(vec![0, 0]).unwrap();
         let got: Vec<Feedback> = (0..2).map(|_| rx.recv_timeout(Duration::from_secs(2)).unwrap()).collect();
         assert_eq!(got[0], Feedback { serial, large_motor: 200, small_motor: 10 });
         assert_eq!(got[1], Feedback { serial, large_motor: 0, small_motor: 0 });
