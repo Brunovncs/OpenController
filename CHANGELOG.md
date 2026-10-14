@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.7
 
 Sticks get more settings. Full tilt at makes a worn stick that no longer reaches its edge count as
 pushed all the way, and the response curve slows the middle of the travel for fine aiming, or
