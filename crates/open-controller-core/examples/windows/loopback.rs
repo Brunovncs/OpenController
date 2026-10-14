@@ -1,6 +1,6 @@
 use open_controller_core::binding::{Action, Chord, XboxButton};
 use open_controller_core::extras::{LEFT_PADDLE1, RIGHT_PADDLE1, TOUCH_LEFT, TOUCHPAD};
-use open_controller_core::profile::{Edit, Gyro, GyroMode, Profiles, Sticks};
+use open_controller_core::profile::{Edit, Gyro, GyroMode, Profiles, Shape, Sticks};
 use open_controller_core::{Command, Config, Engine, PadKey, Role};
 use sdl3_sys::everything::*;
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -309,7 +309,7 @@ fn main() {
 
     // A deadzone for a drifting stick, on the X axis alone (the radial deadzone counts both).
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFTY.0, 0) };
-    profiles.apply(Edit::Sticks(Sticks { deadzone: 20, ..Sticks::default() }));
+    profiles.apply(Edit::Sticks(Sticks { left: Shape { deadzone: 20, ..Shape::default() }, ..Sticks::default() }));
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFTX.0, 5000) };
     std::thread::sleep(Duration::from_millis(50));
@@ -318,6 +318,20 @@ fn main() {
     let full = wait_for("the full stick", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbLX == 32767));
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFTX.0, 0) };
     check(small == 0 && full.Gamepad.sThumbLX == 32767, "a 20 % deadzone centres a small movement and keeps the full one");
+
+    // The right stick with a shape of its own: no deadzone, and all the way at 80 %.
+    let own = Shape { full_tilt: 80, ..Shape::default() };
+    profiles.apply(Edit::Sticks(Sticks { left: Shape { deadzone: 20, ..Shape::default() }, right: Some(own), ..Sticks::default() }));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 26500) };
+    let tilted = wait_for("the right stick at full tilt", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX == 32767));
+    unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 5000) };
+    let right_small = wait_for("a small right stick", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX > 0 && s.Gamepad.sThumbRX < 10000));
+    unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 0) };
+    check(
+        tilted.Gamepad.sThumbRX == 32767 && right_small.Gamepad.sThumbRX > 5000,
+        "the right stick keeps its own shape: full at 80 % and no deadzone, while the left one has one",
+    );
     profiles.apply(Edit::Sticks(Sticks::default()));
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
 

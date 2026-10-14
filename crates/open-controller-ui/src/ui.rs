@@ -102,6 +102,12 @@ pub struct MainView {
     /// Whether the list of every button is open; `None` until opened or closed, when it is open if a
     /// button already does something else.
     pub all_buttons: Option<bool>,
+    /// With a shape for each stick, whether the right one's is being changed.
+    pub stick_right: bool,
+    /// The box a stick setting's value is being typed into.
+    pub custom: Option<crate::sticks::Custom>,
+    /// The open controller's sticks being measured, or the outcome of the last time.
+    pub measuring: Option<crate::sticks::Measuring>,
     /// The app's icon, in its version drawn for small sizes, for the bar on top.
     brand: Arc<Image>,
     /// Extra buttons held on the open controller in the last snapshot, to notice a new press.
@@ -143,6 +149,9 @@ impl MainView {
             gyro_advanced: false,
             gyro_custom: false,
             all_buttons: None,
+            stick_right: false,
+            custom: None,
+            measuring: None,
             brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
             held: 0,
             moving: false,
@@ -168,12 +177,15 @@ impl MainView {
         self.picker = None;
         self.gyro_custom = false;
         self.all_buttons = None;
+        self.custom = None;
+        self.measuring = None;
     }
 
     pub fn open(&mut self, key: PadKey, cx: &mut Context<Self>) {
         self.screen = Screen::Device(key);
         self.section = Section::Buttons;
         self.reset_page();
+        self.stick_right = false;
         self.held = self.pad(key, cx).map(|p| extras_held(&p)).unwrap_or(0);
         cx.notify();
     }
@@ -289,11 +301,14 @@ impl MainView {
             self.home(cx);
             return;
         };
+        if let Some(m) = self.measuring.as_mut().filter(|m| m.key == key) {
+            m.sample(&pad.input);
+        }
         let held = extras_held(&pad);
         let pressed = held & !self.held;
         self.held = held;
         let listening = self.editor.as_ref().is_some_and(|e| e.recording);
-        if pressed != 0 && !listening && self.renaming.is_none() {
+        if pressed != 0 && !listening && self.renaming.is_none() && self.measuring.is_none() {
             let button = pressed.trailing_zeros() as u8;
             self.section = Section::Buttons;
             if self.editor.as_ref().is_none_or(|e| e.button != button) {
@@ -313,6 +328,11 @@ impl MainView {
                 cx.stop_propagation();
                 self.report_tab(ev.keystroke.modifiers.shift, window, cx);
             }
+            return;
+        }
+        if escape && self.custom.is_some() {
+            cx.stop_propagation();
+            self.close_custom(window, cx);
             return;
         }
         if let Some((i, name)) = self.renaming.as_mut() {

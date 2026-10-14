@@ -111,16 +111,75 @@ impl Default for Acceleration {
     }
 }
 
-/// A radial deadzone for worn sticks that drift, and an anti-deadzone for games whose own
-/// deadzone swallows small movements. Both in percent of the stick's travel, both off by default:
-/// games apply their own.
+/// How a stick's travel reaches games: a radial deadzone for worn sticks that drift, an
+/// anti-deadzone for games whose own deadzone swallows small movements, where the stick counts as
+/// pushed all the way, and a response curve. In percent of the stick's travel, and all off by
+/// default: games apply their own.
+///
+/// Fields added after 0.8.6 default to what 0.8.6 did, so an older file reads the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Shape {
+    pub deadzone: u8,
+    pub anti_deadzone: u8,
+    /// Past this much of its travel the stick counts as pushed all the way, for a worn stick that
+    /// no longer reaches its edge. 100 is the edge.
+    pub full_tilt: u8,
+    /// The response curve, as the power the travel past the deadzone is raised to, in
+    /// hundredths: 100 is linear, more is slower near the centre for fine aiming, less is quicker.
+    pub curve: u16,
+}
+
+impl Shape {
+    pub const MAX_DEADZONE: u8 = 40;
+    pub const MAX_ANTI_DEADZONE: u8 = 40;
+    pub const MIN_FULL_TILT: u8 = 50;
+    pub const LINEAR: u16 = 100;
+    pub const MIN_CURVE: u16 = 25;
+    pub const MAX_CURVE: u16 = 400;
+}
+
+impl Default for Shape {
+    fn default() -> Self {
+        Shape { deadzone: 0, anti_deadzone: 0, full_tilt: 100, curve: Shape::LINEAR }
+    }
+}
+
+/// Both sticks: one shape for the two, or one each, and where each rests.
+///
+/// The left stick's shape sits at the top level, where 0.8.6 kept the only one, so an older
+/// version reading a newer file gives both sticks the left one's deadzones.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Sticks {
-    pub deadzone: u8,
-    pub anti_deadzone: u8,
+    /// The left stick's shape, and the right one's too unless it has its own.
+    #[serde(flatten)]
+    pub left: Shape,
+    pub right: Option<Shape>,
+    /// Where each stick rests, left then right, in axis units, as measured in the window: taken
+    /// away first, so a stick that always leans the same way needs no deadzone to hide it.
+    pub centre: [[i16; 2]; 2],
     /// A stick that presses the d-pad instead of moving, for games played with the d-pad.
     pub dpad: DpadStick,
+}
+
+impl Sticks {
+    /// Farthest a measured centre can be from the real one: a stick resting further off is being
+    /// held, not drifting.
+    pub const MAX_CENTRE: i16 = 13107;
+
+    /// The shape of the right stick, or of the left one.
+    pub fn shape(&self, right: bool) -> Shape {
+        if right { self.right.unwrap_or(self.left) } else { self.left }
+    }
+
+    /// The same with the shape of one stick replaced; with one shape for both, both change.
+    pub fn with_shape(self, right: bool, shape: Shape) -> Sticks {
+        match (right, self.right) {
+            (true, Some(_)) => Sticks { right: Some(shape), ..self },
+            _ => Sticks { left: shape, ..self },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -440,8 +499,18 @@ fn clean_gyro(g: Gyro) -> Gyro {
     }
 }
 
+fn clean_shape(s: Shape) -> Shape {
+    Shape {
+        deadzone: s.deadzone.min(Shape::MAX_DEADZONE),
+        anti_deadzone: s.anti_deadzone.min(Shape::MAX_ANTI_DEADZONE),
+        full_tilt: s.full_tilt.clamp(Shape::MIN_FULL_TILT, 100),
+        curve: s.curve.clamp(Shape::MIN_CURVE, Shape::MAX_CURVE),
+    }
+}
+
 fn clean_sticks(s: Sticks) -> Sticks {
-    Sticks { deadzone: s.deadzone.min(40), anti_deadzone: s.anti_deadzone.min(40), dpad: s.dpad }
+    let m = Sticks::MAX_CENTRE;
+    Sticks { left: clean_shape(s.left), right: s.right.map(clean_shape), centre: s.centre.map(|c| c.map(|v| v.clamp(-m, m))), dpad: s.dpad }
 }
 
 /// Only buttons that sense pressure can move a trigger.
@@ -603,8 +672,59 @@ mod tests {
         p.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 5000, invert_y: true, ..Gyro::default() }));
         assert_eq!(p.active().gyro.sensitivity, 400);
         assert!(!p.is_default());
-        p.apply(Edit::Sticks(Sticks { deadzone: 90, anti_deadzone: 15, dpad: DpadStick::Left }));
-        assert_eq!(p.active().sticks, Sticks { deadzone: 40, anti_deadzone: 15, dpad: DpadStick::Left });
+        let wild = Shape { deadzone: 90, anti_deadzone: 15, full_tilt: 10, curve: 9000 };
+        p.apply(Edit::Sticks(Sticks {
+            left: wild,
+            right: Some(Shape { full_tilt: 200, curve: 1, ..wild }),
+            centre: [[30000, -100], [0, i16::MIN]],
+            dpad: DpadStick::Left,
+        }));
+        let s = p.active().sticks;
+        assert_eq!(s.left, Shape { deadzone: 40, anti_deadzone: 15, full_tilt: 50, curve: 400 });
+        assert_eq!(s.right, Some(Shape { deadzone: 40, anti_deadzone: 15, full_tilt: 100, curve: 25 }));
+        assert_eq!(s.centre, [[Sticks::MAX_CENTRE, -100], [0, -Sticks::MAX_CENTRE]]);
+        assert_eq!(s.dpad, DpadStick::Left);
+    }
+
+    #[test]
+    fn one_shape_for_both_sticks_or_one_each() {
+        let tight = Shape { deadzone: 10, ..Shape::default() };
+        let s = Sticks::default().with_shape(true, tight);
+        assert_eq!((s.shape(false), s.shape(true)), (tight, tight), "with one shape, either stick changes both");
+        let aim = Shape { curve: 200, ..Shape::default() };
+        let s = Sticks { right: Some(s.left), ..s }.with_shape(true, aim);
+        assert_eq!((s.shape(false), s.shape(true)), (tight, aim));
+        let s = s.with_shape(false, Shape::default());
+        assert_eq!((s.shape(false), s.shape(true)), (Shape::default(), aim));
+    }
+
+    /// Sticks as 0.8.6 wrote them read the same, and 0.8.6 reads a newer file's left stick.
+    #[test]
+    fn sticks_from_0_8_6_and_back() {
+        let old = r#"{"list": [{"sticks": {"deadzone": 8, "anti_deadzone": 20, "dpad": "Right"}}]}"#;
+        let s = serde_json::from_str::<Profiles>(old).unwrap().sanitised().list[0].sticks;
+        assert_eq!(
+            s,
+            Sticks { left: Shape { deadzone: 8, anti_deadzone: 20, ..Shape::default() }, dpad: DpadStick::Right, ..Sticks::default() }
+        );
+        assert!(Profiles::default().is_default(), "the new fields start as 0.8.6 behaved");
+
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct Before {
+            deadzone: u8,
+            anti_deadzone: u8,
+            dpad: DpadStick,
+        }
+        let new = Sticks {
+            left: Shape { deadzone: 6, anti_deadzone: 10, full_tilt: 90, curve: 150 },
+            right: Some(Shape { curve: 200, ..Shape::default() }),
+            centre: [[1200, -800], [0, 0]],
+            dpad: DpadStick::Left,
+        };
+        let text = serde_json::to_string(&new).unwrap();
+        let before: Before = serde_json::from_str(&text).unwrap();
+        assert_eq!(before, Before { deadzone: 6, anti_deadzone: 10, dpad: DpadStick::Left });
+        assert_eq!(serde_json::from_str::<Sticks>(&text).unwrap(), new);
     }
 
     #[test]

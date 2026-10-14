@@ -1,5 +1,5 @@
-//! A controller's Motion and Sticks sections: aiming with the gyro, and a deadzone for sticks
-//! that drift. Both edit the chosen profile and apply as they are changed.
+//! A controller's Motion section, aiming with the gyro, and its pressure-sensitive buttons. Both
+//! edit the chosen profile and apply as they are changed; the Sticks section is in `sticks.rs`.
 
 use crate::detail::{place_name, printed_name};
 use crate::theme::{Theme, icon as glyph, radius};
@@ -13,7 +13,7 @@ use gpui::{
 use open_controller_core::i18n::Text;
 use open_controller_core::mapping::{self, button};
 use open_controller_core::platform;
-use open_controller_core::profile::{Acceleration, DpadStick, Edit, Gyro, GyroMode, Output, Pressure, Sticks};
+use open_controller_core::profile::{Acceleration, Edit, Gyro, GyroMode, Output, Pressure};
 use open_controller_core::{PadKey, PadView};
 
 /// A row of choices that edits the controller's profile.
@@ -390,50 +390,6 @@ impl MainView {
             .child(setting(text.pressure_lt, &t, lt))
             .child(setting(text.pressure_rt, &t, rt))
             .children(keep)
-            .into_any_element()
-    }
-
-    pub fn sticks_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
-        let t = self.theme;
-        let key = pad.key;
-        let s = pad.profiles.active().sticks;
-        let dz = segmented(
-            "deadzone",
-            [0u8, 5, 10, 15, 20, 25].into_iter().map(|v| (v, format!("{v} %").into())).collect(),
-            s.deadzone,
-            &t,
-            move |v| Edit::Sticks(Sticks { deadzone: v, ..s }),
-            key,
-            cx,
-        );
-        let ad = segmented(
-            "anti-deadzone",
-            [0u8, 10, 15, 20, 30].into_iter().map(|v| (v, format!("{v} %").into())).collect(),
-            s.anti_deadzone,
-            &t,
-            move |v| Edit::Sticks(Sticks { anti_deadzone: v, ..s }),
-            key,
-            cx,
-        );
-        let dpad = segmented(
-            "dpad-stick",
-            vec![(DpadStick::Off, text.off.into()), (DpadStick::Left, text.stick_left.into()), (DpadStick::Right, text.stick_right.into())],
-            s.dpad,
-            &t,
-            move |v| Edit::Sticks(Sticks { dpad: v, ..s }),
-            key,
-            cx,
-        );
-        card(&t)
-            .flex()
-            .flex_col()
-            .gap(px(20.))
-            .p(px(20.))
-            .max_w(px(760.))
-            .child(caption(text.sticks_desc, t.text2))
-            .child(setting(text.deadzone, &t, dz))
-            .child(setting(text.anti_deadzone, &t, ad))
-            .child(setting(text.dpad_stick, &t, dpad).child(caption(text.dpad_stick_desc, t.text2)))
             .into_any_element()
     }
 }

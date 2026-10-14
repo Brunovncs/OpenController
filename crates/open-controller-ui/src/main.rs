@@ -15,6 +15,7 @@ mod programs;
 mod report;
 mod requirements;
 mod settings;
+mod sticks;
 mod text_field;
 mod theme;
 mod tuning;

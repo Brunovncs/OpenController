@@ -199,6 +199,12 @@ impl TextField {
         self.set_text("", cx);
     }
 
+    /// Replaces the text as `set_text` does, all of it selected, so typing replaces it.
+    pub fn set_text_selected(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.set_text(text, cx);
+        self.buf.select_all();
+    }
+
     fn theme(&mut self, window: &Window) -> Theme {
         let appearance = window.appearance();
         match self.theme {

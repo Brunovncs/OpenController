@@ -3,6 +3,17 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+Sticks get more settings. Full tilt at makes a worn stick that no longer reaches its edge count as
+pushed all the way, and the response curve slows the middle of the travel for fine aiming, or
+speeds it up. Every stick setting also takes any value typed in, not only the ones offered. Each
+stick can have its own settings, such as a precise curve on the right one only, and the page shows
+live what games get from each stick. Measure finds where a drifting stick rests and how far it
+reaches, then sets its centre, deadzone and full tilt from that, so a stick that always leans the
+same way no longer needs a large deadzone. Settings carry over. If you go back to 0.8.6, both
+sticks keep the left one's deadzones.
+
 ## 0.8.6
 
 Every button can now be remapped, not only the extra ones. On a controller's Buttons page, All

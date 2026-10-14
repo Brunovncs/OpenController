@@ -251,8 +251,8 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
     let pr = p.profile();
     let _ = writeln!(
         s,
-        "Games see it as: {:?} · stick as d-pad: {:?} · pressure: {:?} · gyro tilt from the accelerometer: {}",
-        p.profiles.output, pr.sticks.dpad, pr.pressure, pr.gyro.tilt
+        "Games see it as: {:?} · sticks: {:?} · pressure: {:?} · gyro tilt from the accelerometer: {}",
+        p.profiles.output, pr.sticks, pr.pressure, pr.gyro.tilt
     );
     let _ = writeln!(s, "Assignments of the profile in use: {}", assignments(&pr.bindings));
     let _ = writeln!(

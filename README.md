@@ -222,8 +222,16 @@ Steam Input and the games that read them. It is experimental and off unless turn
 Information or Motion, because games that only know Xbox controllers do not see a DualShock 4.
 
 A worn stick that drifts can get a radial deadzone, and an anti-deadzone makes games react to the
-first movement past it. Both are off unless set: games apply their own. A stick can also press the
-d-pad instead, in eight directions, for games played on it.
+first movement past it. Full tilt at makes a stick that no longer reaches its edge count as pushed
+all the way sooner, and the response curve bends the travel: precise curves move slowly near the
+centre for fine aiming, a quick one does the opposite. Each takes one of the values offered or any
+value typed in, and both sticks share them unless each is given its own. All are off unless set:
+games apply their own. The page draws what games get from each stick as it moves.
+
+Measure finds where a stick rests and how far it reaches. Where it rests becomes its centre, so a
+stick that always leans the same way needs only a small deadzone, and the deadzone and full tilt
+are set from what was measured. A stick can also press the d-pad instead, in eight directions, for
+games played on it.
 
 ### Light bar
 
@@ -433,8 +441,9 @@ ViGEmBus and HidHide request layouts and IOCTL codes, HidHide's list handling (o
 entries survive) and its journal file, the bundled mappings, the table of known models and the
 extra buttons' names, families and drawings, the assignments (what a button adds to a report and
 takes out of it, two buttons trading places, the Nintendo letters, macro limits, keys pressed and let go in order, extended keys, recorded keys), profiles
-(edits, limits, deleting the one in use, programs that switch them) and light colours, the stick
-deadzone, the gyro's aim and filter (aiming sensitivity, up and down, acceleration, steadying,
+(edits, limits, deleting the one in use, programs that switch them) and light colours, the
+sticks' deadzones, full tilt, curve and measured centre, measuring a stick and the values typed in
+for them, the gyro's aim and filter (aiming sensitivity, up and down, acceleration, steadying,
 anti-deadzone, the toggle and the pause button, and that the defaults aim as 0.8.0 did), the
 touchpad's halves, the handhelds' firmware names and HID
 reports, the XInput slot markers, the pinned
@@ -458,7 +467,7 @@ to Y presses Y and one assigned to a key (F24, which nothing uses) holds it whil
 switching to another profile applies at once and lets go of the old one's keys, that a click on
 the left half of its touchpad is a button of its own, that a profile naming the program in front
 takes over and gives way, that its gyro turns the right stick (always, only with the left trigger
-pulled, or switched on and off by a button, with another button pausing it), that a stick deadzone centres a small movement, that a second controller and it
+pulled, or switched on and off by a button, with another button pausing it), that a stick deadzone centres a small movement and that the right stick keeps a shape of its own, that a second controller and it
 trade players with input reaching each other's slot, that rumble set by a "game" reaches it, that
 disconnecting and reconnecting keeps the slot, and that stopping unplugs it.
 

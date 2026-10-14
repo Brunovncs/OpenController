@@ -1,30 +1,133 @@
-//! What happens to a controller's movement on its way to the virtual Xbox controller: a radial
-//! deadzone and anti-deadzone for the sticks, a stick as the d-pad, pressure-sensitive buttons on
-//! the triggers, the gyro turned into right-stick movement, the rotation an accelerometer shows,
-//! and the touchpad split into buttons. Pure functions, so they are tested without a controller.
+//! What happens to a controller's movement on its way to the virtual Xbox controller: the sticks'
+//! centre, deadzones, full tilt and curve, and measuring a stick for them; a stick as the d-pad,
+//! pressure-sensitive buttons on the triggers, the gyro turned into right-stick movement, the
+//! rotation an accelerometer shows, and the touchpad split into buttons. Pure functions, so they
+//! are tested without a controller.
 
 use crate::mapping::{self, PadState, axis, button};
-use crate::profile::{DpadStick, Gyro, GyroMode, Pressure, Sticks};
+use crate::profile::{DpadStick, Gyro, GyroMode, Pressure, Shape, Sticks};
 use std::f32::consts::PI;
 
-/// A stick, `x` and `y` in -32768..=32767, through a radial deadzone and anti-deadzone given in
-/// percent. Inside the deadzone the stick is centred; past it, travel starts at the
-/// anti-deadzone, so a game's own deadzone does not swallow the first millimetres.
-pub fn shape_stick(x: i16, y: i16, s: Sticks) -> (i16, i16) {
-    if s.deadzone == 0 && s.anti_deadzone == 0 {
+/// How far games see a stick pushed `travel` of the way from its centre (0 to 1 and past it on
+/// square gates): nothing inside the deadzone, then from the anti-deadzone up to all the way at
+/// full tilt, along the curve.
+pub fn response(travel: f32, s: Shape) -> f32 {
+    let dz = f32::from(s.deadzone) / 100.;
+    if travel <= dz || travel <= 0. {
+        return 0.;
+    }
+    let ad = f32::from(s.anti_deadzone) / 100.;
+    // A full tilt inside the deadzone would leave no travel to rise over.
+    let full = (f32::from(s.full_tilt) / 100.).max(dz + 0.05);
+    let past = ((travel - dz) / (full - dz)).min(1.);
+    let curved = if s.curve == Shape::LINEAR { past } else { past.powf(f32::from(s.curve) / 100.) };
+    ad + (1. - ad) * curved
+}
+
+/// A stick, `x` and `y` in -32768..=32767, taken from where it rests (`centre`) and through its
+/// shape, radially: the direction is kept and only the distance changes. Inside the deadzone the
+/// stick is centred; past it, travel starts at the anti-deadzone, so a game's own deadzone does
+/// not swallow the first millimetres.
+pub fn shape_stick(x: i16, y: i16, s: Shape, centre: [i16; 2]) -> (i16, i16) {
+    if s == Shape::default() && centre == [0, 0] {
         return (x, y);
     }
-    let (fx, fy) = (f32::from(x) / 32767., f32::from(y) / 32767.);
-    let mag = (fx * fx + fy * fy).sqrt();
-    let dz = f32::from(s.deadzone) / 100.;
-    let ad = f32::from(s.anti_deadzone) / 100.;
-    if mag <= dz || mag == 0. {
+    let fx = (f32::from(x) - f32::from(centre[0])) / 32767.;
+    let fy = (f32::from(y) - f32::from(centre[1])) / 32767.;
+    let mag = fx.hypot(fy);
+    if mag == 0. {
         return (0, 0);
     }
-    let travel = ((mag - dz) / (1. - dz)).min(1.);
-    let out = ad + (1. - ad) * travel;
-    let k = out / mag;
+    let k = response(mag, s) / mag;
     (to_axis(fx * k), to_axis(fy * k))
+}
+
+/// Both sticks of a state through their shapes.
+pub fn shape_sticks(state: &mut PadState, s: &Sticks) {
+    for (right, (ax, ay)) in [(false, (axis::LEFT_X, axis::LEFT_Y)), (true, (axis::RIGHT_X, axis::RIGHT_Y))] {
+        let (x, y) = shape_stick(state.axes[ax], state.axes[ay], s.shape(right), s.centre[usize::from(right)]);
+        state.axes[ax] = x;
+        state.axes[ay] = y;
+    }
+}
+
+/// A stick left alone, measured: where it rests, and the deadzone that hides how it wanders there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rest {
+    pub centre: [i16; 2],
+    /// How far it wandered from there, in tenths of a percent of its travel.
+    pub wander: u16,
+    pub deadzone: u8,
+}
+
+/// Wandering past this, in tenths of a percent, means the stick was being moved.
+const MAX_WANDER: u16 = 120;
+
+/// Where a stick rests, from its positions while left alone; `None` without positions, or when
+/// it moved or rested too far off to be drifting.
+pub fn measure_rest(samples: &[[i16; 2]]) -> Option<Rest> {
+    if samples.is_empty() {
+        return None;
+    }
+    let n = samples.len() as f32;
+    let cx = samples.iter().map(|s| f32::from(s[0])).sum::<f32>() / n;
+    let cy = samples.iter().map(|s| f32::from(s[1])).sum::<f32>() / n;
+    let far = samples.iter().map(|s| (f32::from(s[0]) - cx).hypot(f32::from(s[1]) - cy)).fold(0., f32::max);
+    let wander = (far / 32767. * 1000.).ceil() as u16;
+    let centre = [cx.round() as i16, cy.round() as i16];
+    if wander > MAX_WANDER || centre.iter().any(|c| c.unsigned_abs() > Sticks::MAX_CENTRE as u16) {
+        return None;
+    }
+    // A little more than it wandered while measured, as it may wander further later on.
+    let deadzone = (wander.div_ceil(10) + 2).min(u16::from(Shape::MAX_DEADZONE)) as u8;
+    Some(Rest { centre, wander, deadzone })
+}
+
+/// Directions a turn around the edge is split into; each must be reached.
+pub const EDGE_SECTORS: usize = 16;
+
+/// Closer to the centre than this a position is not at the edge, however worn the stick.
+const EDGE_MIN: f32 = 0.7;
+
+/// A stick turned around its edge, measured: how far it reaches in each direction.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Edge {
+    reach: [f32; EDGE_SECTORS],
+}
+
+impl Edge {
+    pub fn add(&mut self, x: i16, y: i16, centre: [i16; 2]) {
+        let fx = (f32::from(x) - f32::from(centre[0])) / 32767.;
+        let fy = (f32::from(y) - f32::from(centre[1])) / 32767.;
+        let r = fx.hypot(fy);
+        if r < EDGE_MIN {
+            return;
+        }
+        let sector = ((fy.atan2(fx) + PI) / (2. * PI) * EDGE_SECTORS as f32) as usize % EDGE_SECTORS;
+        self.reach[sector] = self.reach[sector].max(r);
+    }
+
+    /// Whether the stick reached its edge in direction `i`, counted from the left, clockwise on
+    /// the screen.
+    pub fn sector(&self, i: usize) -> bool {
+        self.reach.get(i).is_some_and(|&r| r > 0.)
+    }
+
+    /// How many of the directions the stick has reached its edge in.
+    pub fn covered(&self) -> usize {
+        self.reach.iter().filter(|&&r| r > 0.).count()
+    }
+
+    /// Once every direction was reached: the shortest reach, in tenths of a percent.
+    pub fn least(&self) -> Option<u16> {
+        (self.covered() == EDGE_SECTORS).then(|| (self.reach.iter().copied().fold(f32::MAX, f32::min) * 1000.).floor() as u16)
+    }
+
+    /// The full tilt every direction gets to: a hair inside the shortest reach, or the edge when
+    /// the stick reaches it all round.
+    pub fn full_tilt(&self) -> Option<u8> {
+        self.least().map(|l| if l >= 980 { 100 } else { (l / 10).saturating_sub(1).max(u16::from(Shape::MIN_FULL_TILT)) as u8 })
+    }
 }
 
 fn to_axis(v: f32) -> i16 {
@@ -328,25 +431,112 @@ mod tests {
 
     #[test]
     fn sticks_pass_through_untouched_by_default() {
-        assert_eq!(shape_stick(1200, -30000, Sticks::default()), (1200, -30000));
+        assert_eq!(shape_stick(1200, -30000, Shape::default(), [0, 0]), (1200, -30000));
+        let mut s = PadState { axes: [1200, -30000, 32767, 32767, 0, 0], ..PadState::default() };
+        shape_sticks(&mut s, &Sticks::default());
+        assert_eq!(s.axes, [1200, -30000, 32767, 32767, 0, 0], "square gates keep their corners");
     }
 
     #[test]
     fn deadzone_centres_and_rescales() {
-        let s = Sticks { deadzone: 10, ..Sticks::default() };
-        assert_eq!(shape_stick(3000, 0, s), (0, 0), "inside 10 %");
-        assert_eq!(shape_stick(32767, 0, s), (32767, 0), "full travel stays full");
-        let (x, _) = shape_stick(16384, 0, s);
+        let s = Shape { deadzone: 10, ..Shape::default() };
+        assert_eq!(shape_stick(3000, 0, s, [0, 0]), (0, 0), "inside 10 %");
+        assert_eq!(shape_stick(32767, 0, s, [0, 0]), (32767, 0), "full travel stays full");
+        let (x, _) = shape_stick(16384, 0, s, [0, 0]);
         assert!((x - 14563).abs() < 40, "half travel is rescaled past the deadzone: {x}");
     }
 
     #[test]
     fn anti_deadzone_jumps_past_the_games_own() {
-        let s = Sticks { deadzone: 5, anti_deadzone: 20, ..Sticks::default() };
-        let (x, y) = shape_stick(2000, 0, s);
+        let s = Shape { deadzone: 5, anti_deadzone: 20, ..Shape::default() };
+        let (x, y) = shape_stick(2000, 0, s, [0, 0]);
         assert!(x >= 6553 && y == 0, "just past the deadzone starts at 20 %: {x}");
-        let (x, y) = shape_stick(-20000, -20000, s);
+        let (x, y) = shape_stick(-20000, -20000, s, [0, 0]);
         assert!(x < 0 && y < 0 && x == y, "direction is kept");
+    }
+
+    #[test]
+    fn full_tilt_reaches_the_edge_early() {
+        let s = Shape { full_tilt: 80, ..Shape::default() };
+        assert_eq!(shape_stick(26214, 0, s, [0, 0]), (32767, 0), "80 % of the travel is all the way");
+        assert_eq!(shape_stick(0, -30000, s, [0, 0]), (0, -32767));
+        let (x, _) = shape_stick(13107, 0, s, [0, 0]);
+        assert!((x - 16384).abs() < 40, "40 % is half way: {x}");
+        let (x, y) = shape_stick(30000, 30000, s, [0, 0]);
+        assert!(x == y && (x - 23170).abs() < 3, "a corner stays on the circle: {x}");
+    }
+
+    #[test]
+    fn curves_bend_the_middle_and_keep_the_ends() {
+        let precise = Shape { curve: 200, ..Shape::default() };
+        let quick = Shape { curve: 50, ..Shape::default() };
+        assert!((response(0.5, precise) - 0.25).abs() < 1e-4, "squared, half travel is a quarter");
+        assert!((response(0.25, quick) - 0.5).abs() < 1e-4);
+        for s in [precise, quick] {
+            assert_eq!((response(0., s), response(1., s), response(1.3, s)), (0., 1., 1.));
+        }
+        // The curve runs over what is left between the deadzone and full tilt, from the
+        // anti-deadzone up.
+        let s = Shape { deadzone: 10, anti_deadzone: 20, full_tilt: 90, curve: 200 };
+        assert_eq!(response(0.1, s), 0.);
+        assert!((response(0.5, s) - (0.2 + 0.8 * 0.25)).abs() < 1e-4);
+        assert_eq!(response(0.9, s), 1.);
+        let odd = Shape { deadzone: 40, full_tilt: 30, ..Shape::default() };
+        assert!(response(0.42, odd) > 0. && response(0.46, odd) == 1., "a full tilt inside the deadzone still rises");
+    }
+
+    #[test]
+    fn a_measured_centre_is_taken_away_first() {
+        let s = Shape::default();
+        assert_eq!(shape_stick(1500, -900, s, [1500, -900]), (0, 0), "resting where it leans is the centre");
+        assert_eq!(shape_stick(11500, -900, s, [1500, -900]), (10000, 0));
+        let mut state = PadState { axes: [1500, -900, 400, 0, 0, 0], ..PadState::default() };
+        let sticks = Sticks { right: Some(Shape { deadzone: 5, ..s }), centre: [[1500, -900], [0, 0]], ..Sticks::default() };
+        shape_sticks(&mut state, &sticks);
+        assert_eq!(state.axes[..4], [0, 0, 0, 0], "each stick with its own centre and shape");
+    }
+
+    #[test]
+    fn measuring_where_a_stick_rests() {
+        assert_eq!(measure_rest(&[]), None);
+        let leaning = [[2000, -1000], [2100, -1000], [1900, -1000], [2000, -1100], [2000, -900]];
+        let r = measure_rest(&leaning).unwrap();
+        assert_eq!(r.centre, [2000, -1000]);
+        assert_eq!((r.wander, r.deadzone), (4, 3), "it wandered 0.3 %: a deadzone just past that");
+        let still = measure_rest(&[[0, 0]; 3]).unwrap();
+        assert_eq!((still.wander, still.deadzone), (0, 2));
+        assert_eq!(measure_rest(&[[0, 0], [9000, 0]]), None, "it was moved");
+        assert_eq!(measure_rest(&[[20000, 0]; 4]), None, "it was held over");
+    }
+
+    #[test]
+    fn measuring_how_far_a_stick_reaches() {
+        let turn = |reach: &dyn Fn(f32) -> f32, centre: [i16; 2], steps: usize| {
+            let mut e = Edge::default();
+            for i in 0..steps {
+                let a = i as f32 / steps as f32 * 2. * PI;
+                let r = reach(a) * 32767.;
+                e.add((a.cos() * r) as i16 + centre[0], (a.sin() * r) as i16 + centre[1], centre);
+            }
+            e
+        };
+        let mut e = Edge::default();
+        for i in 0..16 {
+            let a = i as f32 / 32. * 2. * PI;
+            e.add((a.cos() * 32767.) as i16, (a.sin() * 32767.) as i16, [0, 0]);
+        }
+        assert!(e.covered() < EDGE_SECTORS && e.full_tilt().is_none(), "half a turn is not enough");
+        assert_eq!(turn(&|_| 1., [0, 0], 32).full_tilt(), Some(100));
+        let worn = turn(&|a| if a > 4. && a < 5. { 0.865 } else { 0.95 }, [0, 0], 64);
+        assert_eq!(worn.full_tilt(), Some(85), "the shortest reach, a hair inside");
+        let square = turn(&|a| 1. / a.cos().abs().max(a.sin().abs()), [0, 0], 64);
+        assert_eq!(square.full_tilt(), Some(100));
+        let leaning = turn(&|_| 0.905, [3000, -3000], 64);
+        assert_eq!(leaning.full_tilt(), Some(89), "measured from the stick's own centre");
+        let mut e = Edge::default();
+        e.add(16000, 0, [0, 0]);
+        assert_eq!(e.covered(), 0, "the middle is not the edge");
+        assert_eq!(turn(&|_| 0.725, [0, 0], 64).full_tilt(), Some(71));
     }
 
     #[test]

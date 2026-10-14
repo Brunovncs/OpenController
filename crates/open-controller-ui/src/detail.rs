@@ -1,7 +1,7 @@
 //! One controller: a header with its profiles, and a rail of what can be set for it. Buttons,
-//! with the drawing and its extra buttons and what each does; Motion and Sticks (in `tuning.rs`);
-//! Light, for controllers with a light bar SDL can colour; Information, what it is and what games
-//! see.
+//! with the drawing and its extra buttons and what each does; Motion (in `tuning.rs`) and Sticks
+//! (in `sticks.rs`); Light, for controllers with a light bar SDL can colour; Information, what it
+//! is and what games see.
 
 use crate::art;
 use crate::home::{links, power, status};

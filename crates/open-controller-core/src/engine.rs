@@ -1272,12 +1272,7 @@ impl Core {
             if p.model.features.pressure {
                 motion::apply_pressure(&mut state, pr.pressure);
             }
-            let (lx, ly) = motion::shape_stick(state.axes[mapping::axis::LEFT_X], state.axes[mapping::axis::LEFT_Y], pr.sticks);
-            let (rx, ry) = motion::shape_stick(state.axes[mapping::axis::RIGHT_X], state.axes[mapping::axis::RIGHT_Y], pr.sticks);
-            state.axes[mapping::axis::LEFT_X] = lx;
-            state.axes[mapping::axis::LEFT_Y] = ly;
-            state.axes[mapping::axis::RIGHT_X] = rx;
-            state.axes[mapping::axis::RIGHT_Y] = ry;
+            motion::shape_sticks(&mut state, &pr.sticks);
             motion::apply_dpad_stick(&mut state, pr.sticks.dpad);
         }
         let mut r = mapping::to_xusb(&state);
