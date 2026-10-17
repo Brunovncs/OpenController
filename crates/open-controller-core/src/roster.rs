@@ -75,6 +75,22 @@ impl Roster {
         Attached::New(id)
     }
 
+    /// Hands a slot whose controller is away to another controller, which joins it as if it were
+    /// the one coming back: two Joy-Cons joined or split keep a player. False, and nothing
+    /// changes, when the slot's controller is still here or the other already has a slot.
+    pub fn hand_over(&mut self, id: SlotId, identity: Identity) -> bool {
+        if self.slots.iter().any(|s| s.identity == identity) {
+            return false;
+        }
+        match self.slots.iter_mut().find(|s| s.id == id && s.devices.is_empty()) {
+            Some(slot) => {
+                slot.identity = identity;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The device is gone. Returns its slot, which stays until [`Roster::expire`] removes it.
     pub fn detach(&mut self, device: DeviceId, now: Instant) -> Option<SlotId> {
         let slot = self.slots.iter_mut().find(|s| s.devices.contains(&device))?;
@@ -191,6 +207,22 @@ mod tests {
         r.detach(2, t0); // cable out: Bluetooth takes over without a gap
         let s = r.get(SlotId(1)).unwrap();
         assert_eq!((s.source, s.lost_since), (Some(1), None));
+    }
+
+    #[test]
+    fn a_split_pair_leaves_its_slot_to_one_joycon() {
+        let t0 = Instant::now();
+        let mut r = Roster::new(GRACE);
+        let pair = Identity::Pair("l".into(), "r".into());
+        r.attach(1, pair.clone());
+        assert!(!r.hand_over(SlotId(1), serial("left")), "not while the pair is connected");
+        r.detach(1, t0);
+        assert!(r.hand_over(SlotId(1), serial("left")));
+        assert_eq!(r.attach(2, serial("left")), Attached::Rejoined(SlotId(1)));
+        assert_eq!(r.attach(3, serial("right")), Attached::New(SlotId(2)));
+        r.detach(3, t0);
+        assert!(!r.hand_over(SlotId(2), serial("left")), "the left one has a slot already");
+        assert_eq!(r.get(SlotId(2)).unwrap().identity, serial("right"));
     }
 
     #[test]

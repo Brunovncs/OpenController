@@ -168,7 +168,7 @@ pub type Bindings = BTreeMap<u8, Action>;
 pub fn store_key(identity: &Identity, vendor: u16, product: u16) -> String {
     match identity {
         Identity::Serial(s) => format!("serial:{s}"),
-        Identity::Path(_) => format!("model:{vendor:04x}:{product:04x}"),
+        Identity::Path(_) | Identity::Pair(..) => format!("model:{vendor:04x}:{product:04x}"),
     }
 }
 

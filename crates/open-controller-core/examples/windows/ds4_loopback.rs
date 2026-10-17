@@ -116,7 +116,7 @@ fn main() {
     unsafe { SDL_hid_init() };
     let dir = std::env::temp_dir().join("open-controller-ds4-loopback");
     let mut profiles = Profiles::default();
-    let config = Config { data_dir: dir, hide: false, profiles: Default::default(), driver: Default::default() };
+    let config = Config { data_dir: dir, hide: false, profiles: Default::default(), driver: Default::default(), split_joycons: false };
     let engine = Engine::start(config, || {});
     wait_for("the engine", Duration::from_secs(10), || engine.snapshot().running.then_some(()));
     if !matches!(engine.snapshot().vigem, open_controller_core::Driver::Ready { .. }) {

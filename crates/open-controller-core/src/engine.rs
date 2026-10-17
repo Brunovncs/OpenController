@@ -77,21 +77,11 @@ const RUMBLE_MS: u32 = 20_000;
 const RUMBLE_RENEW: Duration = Duration::from_secs(10);
 const RETRY: Duration = Duration::from_secs(5);
 const VIEW_PERIOD: Duration = Duration::from_millis(16);
-/// The bits of the buttons with no Xbox equivalent in `PadState::buttons`.
-const EXTRA_BUTTONS: u64 = {
-    let mut m = 0u64;
-    let mut i = 0;
-    while i < extras::ALL.len() {
-        m |= 1 << extras::ALL[i];
-        i += 1;
-    }
-    let mut i = 0;
-    while i < extras::HANDHELD.len() {
-        m |= 1 << extras::HANDHELD[i];
-        i += 1;
-    }
-    m
-};
+/// The same while the window is behind another one, a game most likely: it still follows, at a
+/// pace that costs the game nothing.
+const VIEW_PERIOD_AWAY: Duration = Duration::from_millis(250);
+/// How soon after two Joy-Cons leave a pair SDL joins of them comes.
+const HALVES_WAIT: Duration = Duration::from_secs(2);
 /// Below this charge, a light bar set to blink does.
 const LOW_BATTERY: u8 = 15;
 /// Stops the handheld button readers when the engine stops.
@@ -106,6 +96,9 @@ pub struct Config {
     pub profiles: HashMap<String, Profiles>,
     /// The driver that makes the virtual controllers, where there is a choice.
     pub driver: VirtualDriver,
+    /// Each Joy-Con a controller of its own, held sideways, rather than a left and a right one
+    /// joined into one.
+    pub split_joycons: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -122,6 +115,8 @@ pub enum Command {
     PowerOff(PadKey),
     /// Whether someone is looking: live input in snapshots is only kept up to date then.
     Watch(bool),
+    /// Whether the window looking is the one in front; behind, live input comes less often.
+    Focused(bool),
     /// Replaces the profiles of the controllers whose settings are kept under this key.
     SetProfiles(String, Profiles),
     /// The program in front changed (its executable's name, lowercase): profiles that name it
@@ -136,6 +131,9 @@ pub enum Command {
     /// Makes the virtual controllers again with this driver. Choosing VIIPER again after it
     /// failed tries it again.
     SetVirtualDriver(VirtualDriver),
+    /// Splits every pair of Joy-Cons into two controllers held sideways, or joins them again.
+    /// The left Joy-Con keeps the pair's player, and a pair its left Joy-Con's.
+    SplitJoyCons(bool),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -334,6 +332,8 @@ struct Model {
     features: Features,
     hint: Option<Hint>,
     store: String,
+    /// A Joy-Con on its own: its device path, as a pair of Joy-Cons names its halves.
+    half: Option<String>,
 }
 
 /// A connected device, as SDL sees it.
@@ -344,8 +344,8 @@ struct Phys {
     identity: Identity,
     /// SDL's device path, read once: it never changes while the device is connected.
     path: String,
-    /// Device instance id, for HidHide.
-    instance: Option<String>,
+    /// Device instance ids, for HidHide: the device's, or both Joy-Cons' of a pair.
+    instances: Vec<String>,
     kind: Kind,
     state: PadState,
     power: Power,
@@ -492,6 +492,9 @@ struct Core {
     /// Devices turned off from here: when one leaves and its slot is empty, the virtual
     /// controller is unplugged at once, without the grace period.
     turning_off: Vec<(DeviceId, Instant)>,
+    /// Joy-Cons that just left: SDL takes away the two it joins just before the pair comes.
+    /// Whether each is a right one, its device path, and when it left.
+    gone_halves: Vec<(bool, String, Instant)>,
     profiles: HashMap<String, Profiles>,
     keyboard: Keyboard,
     /// Keys held down for extra buttons that are held down, to be let go with them.
@@ -503,6 +506,8 @@ struct Core {
     handheld: Option<&'static handheld::Machine>,
     handheld_rx: Receiver<handheld::Held>,
     handheld_held: u64,
+    /// Before `sdl`, so it is let go of before SDL quits.
+    _handheld_reader: Option<handheld::Reader>,
     updated: Vec<DeviceId>,
     /// Controllers coming and going, for reports: the last `LOG_LINES`.
     log: VecDeque<String>,
@@ -522,11 +527,16 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         on_change();
     };
 
-    let sdl = match Sdl::init() {
+    let sdl = match Sdl::init(config.split_joycons) {
         Ok(s) => s,
         Err(e) => {
             publish(Snapshot { sdl_error: Some(e), ..Snapshot::default() });
-            let _ = rx.recv();
+            // Nothing to do but wait to be stopped; the window's requests change nothing.
+            while let Ok(m) = rx.recv() {
+                if matches!(m, Msg::Quit) {
+                    break;
+                }
+            }
             return;
         }
     };
@@ -535,7 +545,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
     let (feedback_tx, feedback_rx) = unbounded();
     let (handheld_tx, handheld_rx) = unbounded();
     HANDHELD_STOP.store(false, Ordering::Relaxed);
-    handheld::start(handheld_tx, &HANDHELD_STOP);
+    let handheld_reader = handheld::start(handheld_tx, &HANDHELD_STOP);
     let mut core = Core {
         bus: None,
         bus_version: None,
@@ -559,6 +569,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         memo: HashMap::new(),
         names: HashMap::new(),
         turning_off: Vec::new(),
+        gone_halves: Vec::new(),
         profiles: config.profiles,
         keyboard: Keyboard::start(),
         held: Vec::new(),
@@ -567,6 +578,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         handheld: handheld::this_machine(),
         handheld_rx,
         handheld_held: 0,
+        _handheld_reader: handheld_reader,
         updated: Vec::with_capacity(16),
         log: VecDeque::new(),
         changed: true,
@@ -576,6 +588,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
     core.connect_bus();
 
     let mut watching = false;
+    let mut focused = true;
     let mut last_view = Instant::now() - VIEW_PERIOD;
     let mut last_countdown = Instant::now();
     'run: loop {
@@ -585,8 +598,10 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
                 Msg::Quit => break 'run,
                 Msg::Command(Command::Watch(on)) => {
                     watching = on;
+                    focused = true;
                     core.changed = true;
                 }
+                Msg::Command(Command::Focused(on)) => focused = on,
                 Msg::Command(c) => core.command(c, now),
             }
         }
@@ -599,7 +614,8 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
 
         let waiting = core.roster.slots().iter().any(|s| s.lost_since.is_some());
         let countdown = waiting && now.duration_since(last_countdown) >= Duration::from_millis(500);
-        let live = watching && core.input_changed && now.duration_since(last_view) >= VIEW_PERIOD;
+        let view_period = if focused { VIEW_PERIOD } else { VIEW_PERIOD_AWAY };
+        let live = watching && core.input_changed && now.duration_since(last_view) >= view_period;
         if core.changed || countdown || live {
             publish(core.snapshot(now));
             core.changed = false;
@@ -674,7 +690,7 @@ impl Core {
                 let _ = bus.unplug(&mut self.io, t.serial);
             }
             let devices = self.roster.get(s).map(|x| x.devices.clone()).unwrap_or_default();
-            shown.extend(devices.iter().filter_map(|d| self.phys.get(d).and_then(|p| p.instance.clone())));
+            shown.extend(devices.iter().filter_map(|d| self.phys.get(d)).flat_map(|p| p.instances.iter().cloned()));
         }
         self.hider.reveal(shown);
         // A plug under way finishes and is undone.
@@ -719,7 +735,7 @@ impl Core {
                     std::thread::spawn(move || bluetooth::disconnect(a));
                 }
             }
-            Command::Watch(_) => {}
+            Command::Watch(_) | Command::Focused(_) => {}
             Command::SetProfiles(store, profiles) => {
                 let devices: Vec<DeviceId> = self.phys.iter().filter(|(_, p)| p.model.store == store).map(|(&id, _)| id).collect();
                 for &d in &devices {
@@ -794,6 +810,10 @@ impl Core {
                     self.connect_bus();
                 }
             }
+            Command::SplitJoyCons(on) => {
+                self.note(format!("Joy-Cons {}", if on { "split" } else { "joined" }));
+                self.sdl.split_joycons(on);
+            }
         }
         self.changed = true;
     }
@@ -862,7 +882,7 @@ impl Core {
             if let Some(m) = model {
                 self.memo.insert(s, m);
             }
-            let ids: Vec<String> = devices.iter().filter_map(|d| self.phys.get(d).and_then(|p| p.instance.clone())).collect();
+            let ids: Vec<String> = devices.iter().filter_map(|d| self.phys.get(d)).flat_map(|p| p.instances.iter().cloned()).collect();
             self.hider.reveal(ids);
         }
     }
@@ -871,6 +891,11 @@ impl Core {
     /// with different hands on them.
     fn swap(&mut self, a: SlotId, b: SlotId) {
         if self.roster.get(a).is_none() || self.roster.get(b).is_none() || self.is_native(a) || self.is_native(b) {
+            return;
+        }
+        // A DualShock 4 and an Xbox controller cannot trade: each would get the other's kind.
+        let output = |s: SlotId| self.memo.get(&s).map(|m| self.output_of(&m.store));
+        if output(a) != output(b) {
             return;
         }
         self.release_keys(Owner::Slot(a));
@@ -1044,11 +1069,27 @@ impl Core {
         self.unmapped.remove(&id);
         let Some(pad) = self.sdl.open(id) else { return };
         let (vendor, product, path) = (pad.vendor(), pad.product(), pad.path());
-        let mut link = device::link(vendor, product, &path, pad.connection());
-        if devnode::is_bluetooth(&path) {
+        // SDL gives every pair of Joy-Cons it joins the same made-up path: the two Joy-Cons are
+        // what is connected, what tells one pair from another and what HidHide hides.
+        let joined = path == device::JOINED_JOYCONS_PATH;
+        let halves = if joined { self.pair_halves() } else { None };
+        let real: Vec<&str> = halves.as_ref().map_or(vec![path.as_str()], |(l, r)| vec![l.as_str(), r.as_str()]);
+        let mut link = device::link(vendor, product, real[0], pad.connection());
+        if devnode::is_bluetooth(real[0]) {
             link = Link::Bluetooth;
         }
-        let mut identity = device::identity(vendor, product, pad.serial().as_deref(), &path);
+        let mut identity = match &halves {
+            Some((l, r)) => Identity::Pair(device::half(l), device::half(r)),
+            // Two pairs must not share a slot, even when their Joy-Cons cannot be told apart:
+            // they are told by their order, which a pair coming back keeps.
+            None if joined => (1..)
+                .map(|n| device::identity(vendor, product, None, &format!("{path}#{n}")))
+                .find(|i| !self.phys.values().any(|p| &p.identity == i))
+                .unwrap_or_else(|| device::identity(vendor, product, None, &path)),
+            None => device::identity(vendor, product, pad.serial().as_deref(), &path),
+        };
+        let instances: Vec<String> = real.iter().filter_map(|p| devnode::instance_id(p)).collect();
+        let half = matches!(pad.pad_type(), device::PadType::JoyConLeft | device::PadType::JoyConRight).then(|| device::half(&path));
         // One controller cannot be connected twice the same way. Two devices with one serial and
         // one kind of link are two controllers that share a serial, as some clones do.
         if self.shares_link(&identity, link) {
@@ -1085,11 +1126,17 @@ impl Core {
             vendor,
             product,
             family,
-            art: extras::art(family, vendor, product),
+            // A Joy-Con on its own is held sideways, in a charging grip too.
+            art: match pad.pad_type() {
+                device::PadType::JoyConLeft => extras::Art::JoyConLeft,
+                device::PadType::JoyConRight => extras::Art::JoyConRight,
+                _ => extras::art(family, vendor, product),
+            },
             extras: extras::available(&features, |b| pad.has_button(b)),
             features,
             hint: extras::hint(vendor, product, family),
             store: binding::store_key(&identity, vendor, product),
+            half,
         };
         if let Some(m) = built_in {
             model.extras = extras::HANDHELD[..m.buttons.len()].to_vec();
@@ -1099,7 +1146,7 @@ impl Core {
             model,
             link,
             identity,
-            instance: devnode::instance_id(&path),
+            instances,
             power: device::power(pad.power(), device::is_xinput_path(&path)),
             path,
             kind: Kind::Pending,
@@ -1128,6 +1175,7 @@ impl Core {
         } else if !VIRTUAL_PADS || devnode::is_native(&p.path, xbox) {
             Kind::Native
         } else {
+            self.hand_over(&p.identity, &p.model);
             match self.roster.attach(id, p.identity.clone()) {
                 Attached::New(s) | Attached::Rejoined(s) => Kind::Slot(s),
             }
@@ -1159,8 +1207,72 @@ impl Core {
                 self.move_rumble(s);
             }
         }
+        // Hidden as something else before (one half of a pair now split, or a controller set to
+        // stay native while away): games read this one directly, so they must see it.
+        let direct = match kind {
+            Kind::Native => true,
+            Kind::Slot(s) => self.is_native(s),
+            _ => false,
+        };
+        if direct {
+            let stale: Vec<String> = self.phys[&id].instances.iter().filter(|i| self.hider.is_hidden(i)).cloned().collect();
+            self.hider.reveal(stale);
+        }
         self.sync_gyro();
         self.changed = true;
+    }
+
+    /// The two Joy-Cons a pair SDL just joined is made of: the two that just left, as SDL takes
+    /// them away first, or at the start, the first two free ones in SDL's order, as SDL joins them.
+    fn pair_halves(&mut self) -> Option<(String, String)> {
+        let taken: Vec<String> = self
+            .phys
+            .values()
+            .flat_map(|p| match &p.identity {
+                Identity::Pair(l, r) => vec![l.clone(), r.clone()],
+                _ => p.model.half.iter().cloned().collect(),
+            })
+            .collect();
+        let now = Instant::now();
+        self.gone_halves.retain(|(_, _, at)| now.duration_since(*at) < HALVES_WAIT);
+        let gone: Vec<(bool, String)> = self.gone_halves.iter().rev().map(|(r, p, _)| (*r, p.clone())).collect();
+        if let Some((l, r)) = device::pair_halves(&gone, &taken) {
+            self.gone_halves.retain(|(_, p, _)| *p != l && *p != r);
+            return Some((l, r));
+        }
+        device::pair_halves(&self.sdl.joycons(), &taken)
+    }
+
+    /// Joy-Cons joined or split keep a player, so games see no controller leave: a pair takes
+    /// its left Joy-Con's slot (or its right one's), and a left Joy-Con its pair's. A slot nobody
+    /// takes over is unplugged at once, as its controller will not come back. A slot is only
+    /// taken over when its virtual controller is what the newcomer's profile asks for.
+    fn hand_over(&mut self, identity: &Identity, model: &Model) {
+        let fits = |c: &Core, s: SlotId| {
+            c.memo.get(&s).is_some_and(|m| {
+                native(&c.profiles, &m.store) == native(&c.profiles, &model.store) && c.output_of(&m.store) == c.output_of(&model.store)
+            })
+        };
+        let away = |c: &Core, test: &dyn Fn(&Core, SlotId) -> bool| -> Vec<SlotId> {
+            c.roster.slots().iter().filter(|s| s.devices.is_empty() && test(c, s.id)).map(|s| s.id).collect()
+        };
+        let slots: Vec<SlotId> = match (identity, model.half.as_deref()) {
+            (Identity::Pair(l, r), _) => {
+                [l, r].into_iter().flat_map(|h| away(self, &|c, s| c.memo.get(&s).is_some_and(|m| m.half.as_ref() == Some(h)))).collect()
+            }
+            (_, Some(h)) => away(self, &|c, s| c.roster.get(s).is_some_and(|x| matches!(&x.identity, Identity::Pair(l, _) if l == h))),
+            _ => Vec::new(),
+        };
+        let mut kept = false;
+        for s in slots {
+            if !kept && fits(self, s) && self.roster.hand_over(s, identity.clone()) {
+                kept = true;
+                self.note(format!("slot {} handed over to \"{}\"", s.0, model.name));
+            } else {
+                self.roster.remove(s);
+                self.unplug(s);
+            }
+        }
     }
 
     fn shares_link(&self, identity: &Identity, link: Link) -> bool {
@@ -1189,6 +1301,10 @@ impl Core {
         self.release_keys(self.owner_of(id));
         let Some(p) = self.phys.remove(&id) else { return };
         self.note(format!("removed {:04x}:{:04x} \"{}\" ({:?})", p.model.vendor, p.model.product, p.model.name, p.link));
+        if p.model.half.is_some() {
+            self.gone_halves.retain(|(_, _, at)| now.duration_since(*at) < HALVES_WAIT);
+            self.gone_halves.push((p.pad.pad_type() == device::PadType::JoyConRight, p.path.clone(), now));
+        }
         self.updated.retain(|&d| d != id);
         if let Kind::Slot(s) = p.kind {
             self.roster.detach(id, now);
@@ -1221,8 +1337,8 @@ impl Core {
         if !self.targets.contains_key(&s) || self.is_native(s) {
             return;
         }
-        if let Some(instance) = p.instance.clone() {
-            self.hider.hide(vec![instance]);
+        if !p.instances.is_empty() {
+            self.hider.hide(p.instances.clone());
         }
     }
 
@@ -1419,7 +1535,8 @@ impl Core {
             }
             self.input_changed = true;
             let (kind, state) = (p.kind, p.state);
-            if kind == Kind::Native && (before.buttons ^ state.buttons) & EXTRA_BUTTONS != 0 {
+            // Any button can type keys, not only the extra ones.
+            if kind == Kind::Native && before.buttons != state.buttons {
                 self.type_keys(Owner::Device(id), id, before.buttons, state.buttons);
             }
             if let Kind::Slot(s) = kind {
@@ -1431,7 +1548,7 @@ impl Core {
                 }
                 if self.roster.get(s).and_then(|x| x.source) == Some(id) && !self.is_native(s) {
                     self.resend(s);
-                    if (before.buttons ^ state.buttons) & EXTRA_BUTTONS != 0 || !self.held.is_empty() {
+                    if before.buttons != state.buttons || !self.held.is_empty() {
                         self.type_keys(Owner::Slot(s), id, before.buttons, state.buttons);
                     }
                 }
@@ -1556,7 +1673,7 @@ impl Core {
                     let ids: Vec<String> = self
                         .roster
                         .get(s)
-                        .map(|x| x.devices.iter().filter_map(|d| self.phys.get(d).and_then(|p| p.instance.clone())).collect())
+                        .map(|x| x.devices.iter().filter_map(|d| self.phys.get(d)).flat_map(|p| p.instances.iter().cloned()).collect())
                         .unwrap_or_default();
                     self.hider.reveal(ids);
                 }
@@ -1820,7 +1937,7 @@ impl Core {
 
     fn is_hidden(&self, id: DeviceId) -> bool {
         let Some(p) = self.phys.get(&id) else { return false };
-        p.instance.as_deref().is_some_and(|i| self.hider.is_hidden(i))
+        p.instances.iter().any(|i| self.hider.is_hidden(i))
     }
 
     fn shutdown(&mut self) {

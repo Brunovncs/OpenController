@@ -31,6 +31,26 @@ fn text(p: *const c_char) -> Option<String> {
     (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()).filter(|s| !s.is_empty())
 }
 
+/// A string of HIDAPI's wide characters, read up to its end; empty when there is none.
+///
+/// # Safety
+/// `p` is null or points to a string ending in a zero.
+unsafe fn wide_text<T: Copy + Into<i64>>(p: *const T) -> String {
+    let mut out = String::new();
+    if p.is_null() {
+        return out;
+    }
+    let mut i = 0;
+    loop {
+        let c: i64 = unsafe { *p.add(i) }.into();
+        if c == 0 {
+            return out;
+        }
+        out.push(u32::try_from(c).ok().and_then(char::from_u32).unwrap_or('\u{FFFD}'));
+        i += 1;
+    }
+}
+
 pub fn error() -> String {
     text(SDL_GetError()).unwrap_or_else(|| "unknown SDL error".into())
 }
@@ -52,14 +72,25 @@ pub enum Event {
     Other,
 }
 
+const JOYCON_LEFT: u16 = 0x2006;
+const JOYCON_RIGHT: u16 = 0x2007;
+/// The charging grip, which shows each Joy-Con in it on its own, "(L)" or "(R)" in its name.
+const JOYCON_GRIP: u16 = 0x200E;
+
+fn combine(split_joycons: bool) -> &'static CStr {
+    if split_joycons { c"0" } else { c"1" }
+}
+
 /// SDL, initialised for gamepads only. Not `Send`: it stays on the thread that created it.
 pub struct Sdl {
     _thread_bound: PhantomData<*const ()>,
 }
 
 impl Sdl {
-    pub fn init() -> Result<Sdl, String> {
-        let hints: [(*const c_char, &CStr); 6] = [
+    /// `split_joycons`: each Joy-Con is a controller of its own, held sideways, rather than SDL
+    /// joining a left and a right one into one controller.
+    pub fn init(split_joycons: bool) -> Result<Sdl, String> {
+        let hints: [(*const c_char, &CStr); 7] = [
             // There is no window to have focus; controllers must be read while a game has it.
             (SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, c"1"),
             // Full reports from PlayStation controllers on Bluetooth, which carry everything.
@@ -71,6 +102,7 @@ impl Sdl {
             // A DualShock 3 behind DsHidMini in its SXS mode, which stands in for Sony's
             // sixaxis.sys: without that driver Windows cannot start the controller at all.
             (SDL_HINT_JOYSTICK_HIDAPI_PS3_SIXAXIS_DRIVER, c"1"),
+            (SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, combine(split_joycons)),
         ];
         unsafe {
             for (name, value) in hints {
@@ -120,6 +152,49 @@ impl Sdl {
                 _ => Event::Other,
             }
         })
+    }
+
+    /// Splits the Joy-Cons SDL joined, or joins them again. SDL takes it up on its next look at
+    /// the devices: a pair leaves and its two Joy-Cons come as controllers of their own (over
+    /// Bluetooth, on their next report), or the other way round.
+    pub fn split_joycons(&self, on: bool) {
+        unsafe { SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, combine(on).as_ptr()) };
+    }
+
+    /// The Joy-Cons connected, whatever SDL made of them, in the order SDL found them: whether
+    /// each is a right one, and its device path, as SDL gives it for a Joy-Con on its own.
+    pub fn joycons(&self) -> Vec<(bool, String)> {
+        let mut out = Vec::new();
+        unsafe {
+            let devs = SDL_hid_enumerate(0x057E, 0);
+            let mut d = devs;
+            while !d.is_null() {
+                let info = &*d;
+                let right = match info.product_id {
+                    JOYCON_LEFT => Some(false),
+                    JOYCON_RIGHT => Some(true),
+                    JOYCON_GRIP => {
+                        let name = wide_text(info.product_string);
+                        if name.contains("(L)") {
+                            Some(false)
+                        } else if name.contains("(R)") {
+                            Some(true)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                if let (Some(right), Some(path)) = (right, text(info.path)) {
+                    out.push((right, path));
+                }
+                d = info.next;
+            }
+            if !devs.is_null() {
+                SDL_hid_free_enumeration(devs);
+            }
+        }
+        out
     }
 
     pub fn is_gamepad(&self, id: u32) -> bool {

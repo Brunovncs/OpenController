@@ -12,6 +12,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | `dualsenseEdge` | The DualSense, with the Edge's Fn buttons (`derive_edge.py`) |
 | `ds4`, `ds3` | "Dualshock 4 Layout.svg" and "Dualshock3 Layout.svg" on Wikimedia Commons, by Tokyoship, CC BY 3.0 |
 | `joycons` | "Nintendo Switch Joy-Con illustration.svg" on Wikimedia Commons, public domain |
+| `joyconLeft`, `joyconRight` | One half of `joycons` each, turned a quarter to be held sideways (`derive_joycon.py`) |
 | `xbox` | The front product shot on xbox.com's Xbox Wireless Controller page |
 | `switchPro` | The diagram on Nintendo's support page for the Pro Controller |
 | `g820` | Redragon's front render of the Darkflame G820 on its Brazilian store (`hg04f-927-7k115gx8ht.png`), laid on white; a black pad on a black body has no lines to flood, so every part is measured |

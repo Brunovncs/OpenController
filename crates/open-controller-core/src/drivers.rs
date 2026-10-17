@@ -188,12 +188,17 @@ pub fn package(c: Component) -> &'static Package {
     PACKAGES.iter().find(|p| p.component == c).expect("every component has a package")
 }
 
-/// The installed version, from Programs and Features or next to the unpacked program; `None`
-/// when it is not installed.
-pub fn installed(c: Component) -> Option<String> {
+/// The installed version of each package, from Programs and Features or next to the unpacked
+/// program; `None` when it is not installed. Programs and Features is read once for all of them.
+pub fn installed_all() -> Vec<(Component, Option<String>)> {
+    let programs = installed_programs();
+    PACKAGES.iter().map(|p| (p.component, installed_in(p.component, &programs))).collect()
+}
+
+fn installed_in(c: Component, programs: &[(String, String)]) -> Option<String> {
     match package(c).found {
-        Found::Named(want) => installed_programs().into_iter().find(|(name, _)| name == want).map(|(_, v)| v),
-        Found::Prefixed(start) => installed_programs().into_iter().find(|(name, _)| name.starts_with(start)).map(|(_, v)| v),
+        Found::Named(want) => programs.iter().find(|(name, _)| name == want).map(|(_, v)| v.clone()),
+        Found::Prefixed(start) => programs.iter().find(|(name, _)| name.starts_with(start)).map(|(_, v)| v.clone()),
         Found::Unpacked => crate::viiper::server_exe()
             .is_file()
             .then(|| std::fs::read_to_string(crate::viiper::server_dir().join(VERSION_FILE)).unwrap_or_default().trim().to_string()),
@@ -297,7 +302,9 @@ fn download(p: &Package, dir: &Path) -> Result<PathBuf, String> {
     if !matches(&file, sha256) {
         // curl and tar ship with Windows 10 1803 and later.
         let out = Command::new(system32("curl.exe"))
-            .args(["--silent", "--show-error", "--fail", "--location", "--retry", "2", "--output"])
+            .args(["--silent", "--show-error", "--fail", "--location", "--retry", "2"])
+            // Given up on when it stalls, not after a set time: slow connections take minutes.
+            .args(["--connect-timeout", "15", "--speed-limit", "1024", "--speed-time", "30", "--output"])
             .arg(&file)
             .arg(url)
             .creation_flags(CREATE_NO_WINDOW)

@@ -45,6 +45,10 @@ pub enum ToTray {
     Diagnose(PadKey),
     /// The driver that makes the virtual controllers (Windows).
     SetVirtualDriver(VirtualDriver),
+    /// Each Joy-Con a controller of its own, or left and right ones joined in pairs.
+    SplitJoyCons(bool),
+    /// Whether the window is the one in front: behind a game it is sent live input less often.
+    Focused(bool),
     Quit,
 }
 
@@ -57,6 +61,8 @@ pub struct Prefs {
     pub check_updates: bool,
     pub lang: Lang,
     pub virtual_driver: VirtualDriver,
+    /// Each Joy-Con a controller of its own, held sideways.
+    pub split_joycons: bool,
 }
 
 #[cfg(test)]
@@ -66,7 +72,14 @@ mod tests {
     use crate::engine::Snapshot;
 
     fn prefs() -> Prefs {
-        Prefs { hide_originals: true, autostart: false, check_updates: true, lang: Lang::Pt, virtual_driver: VirtualDriver::Viiper }
+        Prefs {
+            hide_originals: true,
+            autostart: false,
+            check_updates: true,
+            lang: Lang::Pt,
+            virtual_driver: VirtualDriver::Viiper,
+            split_joycons: true,
+        }
     }
 
     #[test]

@@ -114,6 +114,9 @@ pub fn brand(vendor: u16, ty: PadType) -> Brand {
 pub enum Identity {
     Serial(String),
     Path(String),
+    /// Two Joy-Cons SDL joined into one controller, by their own device paths, left then right.
+    /// SDL gives the pair neither a serial nor a path of its own.
+    Pair(String, String),
 }
 
 pub fn identity(vendor: u16, product: u16, serial: Option<&str>, path: &str) -> Identity {
@@ -121,6 +124,23 @@ pub fn identity(vendor: u16, product: u16, serial: Option<&str>, path: &str) -> 
         return Identity::Serial(s);
     }
     Identity::Path(format!("{vendor:04x}:{product:04x}:{}", path.to_ascii_lowercase()))
+}
+
+/// The device path SDL gives every pair of Joy-Cons it joins: the same for all of them, and not
+/// in the device tree.
+pub const JOINED_JOYCONS_PATH: &str = "nintendo_joycons_combined";
+
+/// A Joy-Con's path as a pair of them names it.
+pub fn half(path: &str) -> String {
+    path.to_ascii_lowercase()
+}
+
+/// Which Joy-Cons a pair SDL just joined is made of, out of `joycons` (`(right, path)`, in SDL's
+/// order): as SDL does, the first left one and the first right one whose [`half`] is not `taken`,
+/// already a controller of their own or part of another pair.
+pub fn pair_halves(joycons: &[(bool, String)], taken: &[String]) -> Option<(String, String)> {
+    let free = |right: bool| joycons.iter().find(|(r, p)| *r == right && !taken.contains(&half(p))).map(|(_, p)| p.clone());
+    Some((free(false)?, free(true)?))
 }
 
 /// Lower-case hex digits and letters only, so `AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff` and
@@ -210,6 +230,17 @@ mod tests {
             assert!(matches!(identity(1, 2, s, "P"), Identity::Path(_)), "{s:?}");
         }
         assert_eq!(identity(1, 2, None, "P"), Identity::Path("0001:0002:p".into()));
+    }
+
+    #[test]
+    fn a_pair_is_the_two_joycons_left_over() {
+        let l1 = r"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&0002057e_PID&2006#A";
+        let r1 = r"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&0002057e_PID&2007#B";
+        let l2 = r"\\?\HID#{00001124-0000-1000-8000-00805f9b34fb}_VID&0002057e_PID&2006#C";
+        let joycons = [(false, l1.to_string()), (true, r1.to_string()), (false, l2.to_string())];
+        assert_eq!(pair_halves(&joycons, &[]), Some((l1.into(), r1.into())), "two left ones: SDL takes the first");
+        assert_eq!(pair_halves(&joycons, &[half(l1)]), Some((l2.into(), r1.into())), "the other left one is a controller of its own");
+        assert_eq!(pair_halves(&joycons[..2], &[half(r1)]), None, "the right one is taken");
     }
 
     #[test]

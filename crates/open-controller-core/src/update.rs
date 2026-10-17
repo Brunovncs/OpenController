@@ -49,9 +49,16 @@ fn curl() -> Command {
     Command::new("curl")
 }
 
-fn fetch(url: &str) -> Result<Vec<u8>, String> {
+/// For small answers: all of it within 20 seconds.
+const QUICK: &[&str] = &["--max-time", "20"];
+/// For the installer, which takes minutes on a slow connection: given up on only when it stalls.
+#[cfg(windows)]
+const LONG: &[&str] = &["--connect-timeout", "15", "--speed-limit", "1024", "--speed-time", "30"];
+
+fn fetch(url: &str, timing: &[&str]) -> Result<Vec<u8>, String> {
     let out = curl()
-        .args(["--silent", "--show-error", "--fail", "--location", "--max-time", "20"])
+        .args(["--silent", "--show-error", "--fail", "--location"])
+        .args(timing)
         .args(["--header", "Accept: application/vnd.github+json", "--user-agent", "open-controller"])
         .arg(url)
         .output()
@@ -80,7 +87,7 @@ pub fn parse(json: &[u8]) -> Result<Release, String> {
 
 /// The latest release, if it is newer than this one.
 pub fn check() -> Result<Option<Release>, String> {
-    let r = parse(&fetch(RELEASES_API)?)?;
+    let r = parse(&fetch(RELEASES_API, QUICK)?)?;
     Ok(is_newer(&r.version, &current()).then_some(r))
 }
 
@@ -90,13 +97,13 @@ pub fn check() -> Result<Option<Release>, String> {
 pub fn download_setup(r: &Release, dir: &Path) -> Result<PathBuf, String> {
     use sha2::{Digest, Sha256};
     let (url, sha_url) = r.setup.as_ref().ok_or("this release has no installer")?;
-    let expected = String::from_utf8_lossy(&fetch(sha_url)?).split_whitespace().next().unwrap_or_default().to_lowercase();
+    let expected = String::from_utf8_lossy(&fetch(sha_url, QUICK)?).split_whitespace().next().unwrap_or_default().to_lowercase();
     if expected.len() != 64 {
         return Err("the installer's checksum could not be read".into());
     }
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let file = dir.join(url.rsplit('/').next().unwrap_or("open-controller-setup.exe"));
-    let bytes = fetch(url)?;
+    let bytes = fetch(url, LONG)?;
     let got: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
     if got != expected {
         return Err("the downloaded installer does not match its checksum".into());

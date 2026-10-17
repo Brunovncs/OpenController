@@ -331,7 +331,12 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
             let _ = writeln!(s, "{line}");
         }
     }
-    s.truncate(report::MAX_LEN);
+    // Cut between characters: a name in the log may take more than one byte per letter.
+    let mut end = report::MAX_LEN.min(s.len());
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
     s
 }
 
@@ -475,7 +480,8 @@ impl MainView {
     }
 
     pub fn render_report(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let report_text = self.report.as_ref().filter(|r| r.show_data || r.copied).map(|_| self.report_text(cx));
+        // Only while it is shown: the copy and the send each make their own.
+        let report_text = self.report.as_ref().filter(|r| r.show_data).map(|_| self.report_text(cx));
         let r = self.report.as_ref()?;
         let t = self.theme;
         let m = self.model.read(cx);

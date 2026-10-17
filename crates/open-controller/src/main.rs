@@ -61,12 +61,19 @@ impl Control {
     }
 
     pub fn prefs(&self) -> Prefs {
-        let (hide, updates, lang, driver) = self
+        let (hide, updates, lang, driver, split) = self
             .settings
             .lock()
-            .map(|s| (s.hide_originals, s.check_updates, s.language, s.virtual_driver))
-            .unwrap_or((true, true, Lang::En, VirtualDriver::ViGEmBus));
-        Prefs { hide_originals: hide, autostart: autostart::enabled(), check_updates: updates, lang, virtual_driver: driver }
+            .map(|s| (s.hide_originals, s.check_updates, s.language, s.virtual_driver, s.split_joycons))
+            .unwrap_or((true, true, Lang::En, VirtualDriver::ViGEmBus, false));
+        Prefs {
+            hide_originals: hide,
+            autostart: autostart::enabled(),
+            check_updates: updates,
+            lang,
+            virtual_driver: driver,
+            split_joycons: split,
+        }
     }
 
     pub fn lang(&self) -> Lang {
@@ -117,6 +124,14 @@ impl Control {
                 }
                 self.engine.send(Command::SetVirtualDriver(driver));
             }
+            ToTray::SplitJoyCons(on) => {
+                if let Ok(mut s) = self.settings.lock() {
+                    s.split_joycons = on;
+                    s.save(&self.data_dir);
+                }
+                self.engine.send(Command::SplitJoyCons(on));
+            }
+            ToTray::Focused(on) => return self.engine.send(Command::Focused(on)),
             ToTray::Identify(key) => return self.engine.send(Command::Identify(key)),
             ToTray::PowerOff(key) => return self.engine.send(Command::PowerOff(key)),
             ToTray::SwapPlayers(a, b) => return self.engine.send(Command::SwapPlayers(a, b)),
@@ -262,6 +277,7 @@ fn main() {
         hide: settings.hide_originals,
         profiles: settings.controllers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         driver: settings.virtual_driver,
+        split_joycons: settings.split_joycons,
     };
     let engine = Engine::start(config, on_change);
     if args.smoke {

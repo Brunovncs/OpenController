@@ -129,6 +129,10 @@ impl MainView {
             this.theme = theme(window);
             cx.notify();
         });
+        // Behind a game, the drawings need not follow every frame of input.
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            this.send(ToTray::Focused(window.is_window_active()), cx);
+        });
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let mut view = MainView {
@@ -155,9 +159,18 @@ impl MainView {
             brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
             held: 0,
             moving: false,
-            _subscriptions: vec![observe, theme_change],
+            _subscriptions: vec![observe, theme_change, activation],
         };
-        view.read_installed();
+        view.read_installed(cx);
+        // `--demo` with `OPEN_CONTROLLER_PAGE` set: the first example controller's page, an extra
+        // button picked, for the screenshot of a controller's page.
+        if view.model.read(cx).demo && std::env::var_os("OPEN_CONTROLLER_PAGE").is_some() {
+            let key = PadKey::Slot(1);
+            view.open(key, cx);
+            if let Some(pad) = view.pad(key, cx) {
+                view.edit(&pad, open_controller_core::extras::LEFT_PADDLE1, cx);
+            }
+        }
         view
     }
 
@@ -199,7 +212,7 @@ impl MainView {
     pub fn settings(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Settings;
         self.reset_page();
-        self.read_installed();
+        self.read_installed(cx);
         cx.notify();
     }
 
@@ -209,8 +222,16 @@ impl MainView {
         cx.notify();
     }
 
-    pub fn read_installed(&mut self) {
-        self.installed.extend(requirements::installed());
+    /// Asks what is installed away from the interface thread: on Windows it walks the registry.
+    pub fn read_installed(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let found = cx.background_executor().spawn(async { requirements::installed() }).await;
+            let _ = this.update(cx, |this, cx| {
+                this.installed.extend(found);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Whether something keeps controllers from working fully, for the dot on the settings
@@ -244,7 +265,7 @@ impl MainView {
                         Err(e) => Install::Failed(e),
                     },
                 );
-                this.read_installed();
+                this.read_installed(cx);
                 cx.notify();
             });
         })
@@ -374,7 +395,8 @@ impl MainView {
                 } else if self.editor.is_some() {
                     self.editor = None;
                 } else {
-                    self.screen = Screen::Home;
+                    // Through `home`, so a measurement under way stops with the page.
+                    self.home(cx);
                 }
                 cx.notify();
             }

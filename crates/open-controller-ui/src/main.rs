@@ -75,7 +75,7 @@ impl Model {
             self.demo_profiles.entry(store).or_insert_with(|| current.unwrap_or_default()).apply(edit);
             return self.refresh_demo(cx);
         }
-        if self.demo && matches!(req, ToTray::SetVirtualDriver(_)) {
+        if self.demo && matches!(req, ToTray::SetVirtualDriver(_) | ToTray::SplitJoyCons(_)) {
             // Shown in the window only: the resident process's controllers stay as they are.
             return;
         }

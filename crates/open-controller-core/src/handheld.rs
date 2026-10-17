@@ -215,31 +215,57 @@ fn bios_string(value: &str) -> Option<String> {
 /// A change in the buttons of the machine's built-in controller: all that are held now.
 pub type Held = u64;
 
-#[cfg(not(windows))]
-pub fn start(_: Sender<Held>, _: &'static AtomicBool) {}
-
-/// Starts reading the machine's buttons, if it is a known handheld, sending every change of
-/// what is held. The readers stop when `stop` is set.
-#[cfg(windows)]
-pub fn start(tx: Sender<Held>, stop: &'static AtomicBool) {
-    let Some(m) = this_machine() else { return };
-    if m.buttons.iter().any(|b| matches!(b.source, Source::Key(_))) {
-        hook::start(m, tx.clone());
-    }
-    if let Some(iface) = m.interface {
-        std::thread::Builder::new().name("open-controller-handheld".into()).spawn(move || hid_reader(m, iface, tx, stop)).ok();
-    }
+/// The thread reading the maker's HID interface. Dropped, it stops, is waited for and lets go of
+/// HIDAPI, on the thread SDL runs on, which must drop it before SDL quits: HIDAPI counts its
+/// users without a lock.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub struct Reader {
+    #[cfg(windows)]
+    stop: &'static AtomicBool,
+    #[cfg(windows)]
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 #[cfg(windows)]
-fn hid_reader(m: &'static Machine, iface: Interface, tx: Sender<Held>, stop: &AtomicBool) {
+impl Drop for Reader {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+        unsafe { sdl3_sys::everything::SDL_hid_exit() };
+    }
+}
+
+#[cfg(not(windows))]
+pub fn start(_: Sender<Held>, _: &'static AtomicBool) -> Option<Reader> {
+    None
+}
+
+/// Starts reading the machine's buttons, if it is a known handheld, sending every change of
+/// what is held. Called on SDL's thread; the HID reader stops when `stop` is set or the returned
+/// [`Reader`] is dropped.
+#[cfg(windows)]
+pub fn start(tx: Sender<Held>, stop: &'static AtomicBool) -> Option<Reader> {
+    let m = this_machine()?;
+    if m.buttons.iter().any(|b| matches!(b.source, Source::Key(_))) {
+        hook::start(m, tx.clone());
+    }
+    let iface = m.interface?;
+    if unsafe { sdl3_sys::everything::SDL_hid_init() } != 0 {
+        return None;
+    }
+    let thread = std::thread::Builder::new().name("open-controller-handheld".into()).spawn(move || hid_reader(m, iface, tx, stop)).ok();
+    Some(Reader { stop, thread })
+}
+
+/// The maker's interface, opened; null when it is not there.
+#[cfg(windows)]
+unsafe fn open_interface(iface: Interface) -> *mut sdl3_sys::everything::SDL_hid_device {
     use sdl3_sys::everything::*;
     use std::ffi::CStr;
+    let mut dev: *mut SDL_hid_device = std::ptr::null_mut();
     unsafe {
-        if SDL_hid_init() != 0 {
-            return;
-        }
-        let mut dev: *mut SDL_hid_device = std::ptr::null_mut();
         for &product in iface.products {
             let list = SDL_hid_enumerate(iface.vendor, product);
             let mut info = list;
@@ -259,14 +285,33 @@ fn hid_reader(m: &'static Machine, iface: Interface, tx: Sender<Held>, stop: &At
                 break;
             }
         }
-        if dev.is_null() {
-            SDL_hid_exit();
-            return;
+    }
+    dev
+}
+
+/// Reads the interface while the engine runs, and opens it again when it goes away: a Legion Go
+/// changing modes, or a resume from sleep, finds the controller anew.
+#[cfg(windows)]
+fn hid_reader(m: &'static Machine, iface: Interface, tx: Sender<Held>, stop: &AtomicBool) {
+    use sdl3_sys::everything::*;
+    let pause = |ms: u64| {
+        for _ in 0..ms / 100 {
+            if stop.load(Ordering::Relaxed) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        let mut buf = [0u8; 64];
-        let mut last = 0u64;
+    };
+    let mut buf = [0u8; 64];
+    let mut last = 0u64;
+    while !stop.load(Ordering::Relaxed) {
+        let dev = unsafe { open_interface(iface) };
+        if dev.is_null() {
+            pause(2000);
+            continue;
+        }
         while !stop.load(Ordering::Relaxed) {
-            let n = SDL_hid_read_timeout(dev, buf.as_mut_ptr(), buf.len(), 200);
+            let n = unsafe { SDL_hid_read_timeout(dev, buf.as_mut_ptr(), buf.len(), 200) };
             if n < 0 {
                 break;
             }
@@ -277,16 +322,18 @@ fn hid_reader(m: &'static Machine, iface: Interface, tx: Sender<Held>, stop: &At
             if held != last {
                 last = held;
                 if tx.send(held).is_err() {
-                    break;
+                    unsafe { SDL_hid_close(dev) };
+                    return;
                 }
             }
         }
+        unsafe { SDL_hid_close(dev) };
         // Whatever was held is let go: the engine keeps the last state it was sent.
         if last != 0 {
+            last = 0;
             let _ = tx.send(0);
         }
-        SDL_hid_close(dev);
-        SDL_hid_exit();
+        pause(1000);
     }
 }
 

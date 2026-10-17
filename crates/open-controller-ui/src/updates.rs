@@ -90,6 +90,14 @@ impl MainView {
                 Err(e) => {
                     INSTALLING.store(false, Ordering::SeqCst);
                     this.update = Update::Failed(r, e);
+                    // The resident process already quit for the installer: the window says so
+                    // rather than send changes nobody reads.
+                    this.model.update(cx, |m, cx| {
+                        m.connected = false;
+                        m.pipe = None;
+                        m.snapshot = Default::default();
+                        cx.notify();
+                    });
                     cx.notify();
                 }
             });

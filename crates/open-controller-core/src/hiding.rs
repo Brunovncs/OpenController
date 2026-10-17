@@ -120,6 +120,16 @@ impl Drop for Hider {
     }
 }
 
+/// Makes the changes that failed again, as another program held HidHide: shows what could not be
+/// shown and hides what could not be hidden, or games would see a controller twice, or not at all.
+fn redo(c: &mut Cloak, asked: &HashSet<String>, unrevealed: &mut HashSet<String>) -> Result<(), CloakError> {
+    let stale: Vec<String> = unrevealed.iter().cloned().collect();
+    c.reveal(&stale)?;
+    unrevealed.clear();
+    let pending: Vec<String> = asked.iter().filter(|id| !c.is_hidden(id)).cloned().collect();
+    c.hide(&pending)
+}
+
 fn run(journal: &Path, requests: &Receiver<Request>, reports: &Sender<Report>) {
     let first = Cloak::start(journal);
     let mut state = state_of(&first);
@@ -128,21 +138,36 @@ fn run(journal: &Path, requests: &Receiver<Request>, reports: &Sender<Report>) {
     // What the engine asked to hide, and what of it is hidden.
     let mut asked: HashSet<String> = HashSet::new();
     let mut hidden = HashSet::new();
+    // What the engine asked to show again while HidHide would not let go of it.
+    let mut unrevealed: HashSet<String> = HashSet::new();
     let mut retry_at = Instant::now() + RETRY;
     // When to look again at controllers still being hidden (their nodes arrive one by one).
     let mut look_at: Option<Instant> = None;
     loop {
         // Only a failure is worth retrying; a missing driver stays missing until a restart.
-        let retrying = cloak.is_none() && matches!(state, Driver::Failed(_));
+        let retrying = matches!(state, Driver::Failed(_));
         if retrying && Instant::now() >= retry_at {
             retry_at = Instant::now() + RETRY;
-            let r = Cloak::start(journal);
-            if r.is_ok() {
-                state = state_of(&r);
-                cloak = r.ok();
-                let _ = reports.send(Report::State(state.clone()));
+            match cloak.as_mut() {
+                None => {
+                    let r = Cloak::start(journal);
+                    if r.is_ok() {
+                        state = state_of(&r);
+                        cloak = r.ok();
+                        let _ = reports.send(Report::State(state.clone()));
+                    }
+                }
+                Some(c) => {
+                    if redo(c, &asked, &mut unrevealed).is_ok() {
+                        state = Driver::Ready { version: None };
+                        let _ = reports.send(Report::State(state.clone()));
+                    }
+                    hidden = asked.iter().filter(|id| c.is_hidden(id)).cloned().collect();
+                    let _ = reports.send(Report::Hidden(hidden.clone()));
+                }
             }
         }
+        let retrying = matches!(state, Driver::Failed(_));
         let wake = [retrying.then_some(retry_at), look_at].into_iter().flatten().min();
         let request = match wake {
             Some(at) => requests.recv_deadline(at),
@@ -176,20 +201,29 @@ fn run(journal: &Path, requests: &Receiver<Request>, reports: &Sender<Report>) {
             Request::Hide(ids) => {
                 let r = c.hide(ids);
                 asked.extend(ids.iter().cloned());
-                hidden.extend(ids.iter().filter(|id| c.is_hidden(id)).cloned());
+                unrevealed.retain(|id| !ids.contains(id));
                 look_at = c.follow_up().map(|d| Instant::now() + d);
                 r
             }
             Request::Reveal(ids) => {
                 let r = c.reveal(ids);
                 asked.retain(|id| !ids.contains(id));
-                hidden.retain(|id| !ids.contains(id));
+                if r.is_err() {
+                    unrevealed.extend(ids.iter().cloned());
+                } else {
+                    unrevealed.retain(|id| !ids.contains(id));
+                }
                 r
             }
             Request::RevealAll | Request::Stop => {
-                asked.clear();
-                hidden.clear();
-                c.reveal_all()
+                let all = std::mem::take(&mut asked);
+                let r = c.reveal_all();
+                if r.is_err() {
+                    unrevealed.extend(all);
+                } else {
+                    unrevealed.clear();
+                }
+                r
             }
         };
         if matches!(request, Request::Stop) {
@@ -199,10 +233,18 @@ fn run(journal: &Path, requests: &Receiver<Request>, reports: &Sender<Report>) {
             }
             return;
         }
-        // A failure shows in the settings, and goes away once a later change works.
+        // HidHide answers again: what failed before is made too.
+        let result = if retrying { result.and_then(|()| redo(c, &asked, &mut unrevealed)) } else { result };
+        hidden = asked.iter().filter(|id| c.is_hidden(id)).cloned().collect();
+        // A failure shows in the settings, and goes away once a later change or a retry works.
         let now = match result {
             Ok(()) => Driver::Ready { version: None },
-            Err(e) => Driver::Failed(e.to_string()),
+            Err(e) => {
+                if !retrying {
+                    retry_at = Instant::now() + RETRY;
+                }
+                Driver::Failed(e.to_string())
+            }
         };
         if now != state {
             state = now;

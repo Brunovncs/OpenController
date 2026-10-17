@@ -159,7 +159,7 @@ pub fn ancestry(interface_path: &str) -> Vec<String> {
             == CR_SUCCESS)
             .then(|| from_multi_sz(&hw).into_iter().next())
             .flatten();
-        let mut line = first_hw.unwrap_or_else(|| model_part(&id));
+        let mut line = crate::report::without_address(&first_hw.unwrap_or_else(|| model_part(&id)));
         if let Some(d) = string_property(n, &DEVPKEY_Device_BusReportedDeviceDesc).filter(|d| !d.trim().is_empty()) {
             line.push_str(&format!(" \"{}\"", d.trim()));
         }

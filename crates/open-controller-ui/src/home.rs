@@ -124,6 +124,8 @@ fn banner(message: String, action: Option<AnyElement>, t: &Theme) -> Div {
 #[derive(Clone)]
 pub struct DraggedPad {
     key: PadKey,
+    /// Shown to games as a DualShock 4: it trades players only with another one.
+    ds4: bool,
     name: String,
     theme: Theme,
 }
@@ -211,7 +213,8 @@ impl MainView {
             .children(remapped_chip);
         // Controllers with a virtual controller can trade players by dragging one onto another.
         let swappable = matches!(key, PadKey::Slot(_)) && pad.role != Role::KeptNative;
-        let dragged = DraggedPad { key, name: pad.name.clone(), theme: t };
+        let ds4 = pad.profiles.output == Output::DualShock4 && crate::tuning::can_choose_output(pad);
+        let dragged = DraggedPad { key, ds4, name: pad.name.clone(), theme: t };
         div()
             .id(("tile", i))
             .flex()
@@ -229,9 +232,11 @@ impl MainView {
             .on_click(cx.listener(move |this, _, _, cx| this.open(key, cx)))
             .when(swappable, |d| {
                 d.on_drag(dragged, |d, _, _, cx| cx.new(|_| d.clone()))
-                    .drag_over::<DraggedPad>(move |s, d, _, _| if d.key != key { s.border_color(t.accent).bg(t.accent_soft) } else { s })
+                    .drag_over::<DraggedPad>(
+                        move |s, d, _, _| if d.key != key && d.ds4 == ds4 { s.border_color(t.accent).bg(t.accent_soft) } else { s },
+                    )
                     .on_drop(cx.listener(move |this, d: &DraggedPad, _, cx| {
-                        if d.key != key {
+                        if d.key != key && d.ds4 == ds4 {
                             this.send(ToTray::SwapPlayers(d.key, key), cx);
                         }
                     }))

@@ -114,8 +114,19 @@ pub fn family(vendor: u16, product: u16, ty: PadType) -> Family {
 
 /// What the button is called, as printed on the controller or as its maker names it. `None` for
 /// buttons that have no printed name; the interface then describes where the button is.
-pub fn printed_name(family: Family, b: u8) -> Option<&'static str> {
+pub fn printed_name(family: Family, art: Art, b: u8) -> Option<&'static str> {
     use Family::*;
+    // A Joy-Con held sideways has its shoulder buttons on the end, as extra buttons; its SL and SR
+    // are its bumpers.
+    if matches!(art, Art::JoyConLeft | Art::JoyConRight) {
+        return match b {
+            LEFT_PADDLE1 => Some("L"),
+            LEFT_PADDLE2 => Some("ZL"),
+            RIGHT_PADDLE1 => Some("R"),
+            RIGHT_PADDLE2 => Some("ZR"),
+            _ => None,
+        };
+    }
     Some(match (family, b) {
         (EightBitDoFour, RIGHT_PADDLE1) => "R4",
         (EightBitDoFour, LEFT_PADDLE1) => "L4",
@@ -173,12 +184,17 @@ pub enum Kind {
     Mic,
     Share,
     Assistant,
+    /// The shoulder button and the trigger on the end of a Joy-Con held sideways.
+    EndButton,
+    EndTrigger,
     Extra(u8),
 }
 
-pub fn kind(family: Family, b: u8) -> Kind {
+pub fn kind(family: Family, art: Art, b: u8) -> Kind {
     use Family::*;
     match (family, b) {
+        _ if matches!(art, Art::JoyConLeft | Art::JoyConRight) && matches!(b, LEFT_PADDLE1 | RIGHT_PADDLE1) => Kind::EndButton,
+        _ if matches!(art, Art::JoyConLeft | Art::JoyConRight) && matches!(b, LEFT_PADDLE2 | RIGHT_PADDLE2) => Kind::EndTrigger,
         (SteamDeck, TOUCHPAD) => Kind::TrackpadLeft,
         (SteamDeck, MISC2) => Kind::TrackpadRight,
         (SteamDeck, MISC3) => Kind::StickTouchLeft,
@@ -214,6 +230,10 @@ pub enum Art {
     /// No sticks: SNES, NES and Mega Drive style pads.
     Retro,
     JoyCons,
+    /// A Joy-Con on its own, which SDL reads as a small pad held sideways: the stick on the left,
+    /// the four buttons on the right and SL and SR as the bumpers.
+    JoyConLeft,
+    JoyConRight,
     /// A screen between the hands: Steam Deck.
     Handheld,
 }
@@ -226,6 +246,8 @@ pub fn art(family: Family, vendor: u16, product: u16) -> Art {
     match family {
         DualShock4 | DualSense | DualSenseEdge => Art::PlayStation,
         DualShock3 | Ps2Adapter | EightBitDoPro2 => Art::Symmetric,
+        JoyCons if vendor == 0x057E && product == 0x2006 => Art::JoyConLeft,
+        JoyCons if vendor == 0x057E && product == 0x2007 => Art::JoyConRight,
         JoyCons => Art::JoyCons,
         SteamDeck if product == 0x1205 => Art::Handheld,
         Handheld => Art::Handheld,
@@ -336,7 +358,8 @@ mod tests {
         // SDL: paddle1:b12 (R4), paddle2:b11 (L4), paddle3:b14 (PR), paddle4:b13 (PL).
         let f = family(0x2DC8, 0x6012, PadType::Standard);
         assert_eq!(f, Family::EightBitDoFour);
-        let names: Vec<_> = [RIGHT_PADDLE1, LEFT_PADDLE1, RIGHT_PADDLE2, LEFT_PADDLE2].iter().map(|&b| printed_name(f, b)).collect();
+        let names: Vec<_> =
+            [RIGHT_PADDLE1, LEFT_PADDLE1, RIGHT_PADDLE2, LEFT_PADDLE2].iter().map(|&b| printed_name(f, Art::Offset, b)).collect();
         assert_eq!(names, [Some("R4"), Some("L4"), Some("PR"), Some("PL")]);
         assert_eq!(family(0x2DC8, 0x202F, PadType::Standard), Family::EightBitDoFour, "Ultimate 3");
         assert_eq!(family(0x2DC8, 0x9999, PadType::Standard), Family::EightBitDo, "an 8BitDo pad the table does not know");
@@ -344,11 +367,25 @@ mod tests {
 
     #[test]
     fn misc_button_depends_on_the_maker() {
-        assert_eq!(kind(family(0x057E, 0x2009, PadType::SwitchPro), MISC1), Kind::Capture);
-        assert_eq!(kind(family(0x054C, 0x0CE6, PadType::Ps5), MISC1), Kind::Mic);
-        assert_eq!(kind(Family::Other, MISC1), Kind::Share);
-        assert_eq!(kind(Family::Other, 23), Kind::Extra(3));
-        assert_eq!(kind(Family::SteamDeck, MISC2), Kind::TrackpadRight);
+        assert_eq!(kind(family(0x057E, 0x2009, PadType::SwitchPro), Art::Offset, MISC1), Kind::Capture);
+        assert_eq!(kind(family(0x054C, 0x0CE6, PadType::Ps5), Art::PlayStation, MISC1), Kind::Mic);
+        assert_eq!(kind(Family::Other, Art::Offset, MISC1), Kind::Share);
+        assert_eq!(kind(Family::Other, Art::Offset, 23), Kind::Extra(3));
+        assert_eq!(kind(Family::SteamDeck, Art::Handheld, MISC2), Kind::TrackpadRight);
+    }
+
+    #[test]
+    fn a_joycon_on_its_own_is_held_sideways() {
+        let (l, r, pair) =
+            (art(Family::JoyCons, 0x057E, 0x2006), art(Family::JoyCons, 0x057E, 0x2007), art(Family::JoyCons, 0x057E, 0x2008));
+        assert_eq!((l, r, pair), (Art::JoyConLeft, Art::JoyConRight, Art::JoyCons));
+        // SDL: L and ZL are the left one's paddle2 and paddle4, R and ZR the right one's paddle1 and paddle3.
+        assert_eq!(printed_name(Family::JoyCons, l, LEFT_PADDLE1), Some("L"));
+        assert_eq!(printed_name(Family::JoyCons, l, LEFT_PADDLE2), Some("ZL"));
+        assert_eq!(printed_name(Family::JoyCons, r, RIGHT_PADDLE2), Some("ZR"));
+        assert_eq!(kind(Family::JoyCons, r, RIGHT_PADDLE1), Kind::EndButton);
+        assert_eq!(printed_name(Family::JoyCons, pair, LEFT_PADDLE1), Some("SL (L)"), "in a pair they are SL and SR");
+        assert_eq!(kind(Family::JoyCons, pair, LEFT_PADDLE1), Kind::BackLeft);
     }
 
     #[test]
@@ -358,8 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn art() {
-        use super::art;
+    fn drawings() {
         assert_eq!(art(Family::DualSense, 0x054C, 0x0CE6), Art::PlayStation);
         assert_eq!(art(Family::EightBitDoFour, 0x2DC8, 0x6012), Art::Offset);
         assert_eq!(art(Family::EightBitDoFour, 0x2DC8, 0x6009), Art::Symmetric, "Pro 3");

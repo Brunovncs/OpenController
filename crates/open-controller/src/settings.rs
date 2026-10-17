@@ -27,6 +27,9 @@ pub struct Settings {
     /// VIIPER. A value this version does not know reads as ViGEmBus; a version without the field
     /// ignores it.
     pub virtual_driver: VirtualDriver,
+    /// Each Joy-Con a controller of its own, held sideways, rather than a left and a right one
+    /// joined into one.
+    pub split_joycons: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +40,7 @@ impl Default for Settings {
             language: Lang::En,
             controllers: BTreeMap::new(),
             virtual_driver: VirtualDriver::ViGEmBus,
+            split_joycons: false,
         }
     }
 }
@@ -44,7 +48,7 @@ impl Default for Settings {
 impl Settings {
     pub fn load(dir: &Path) -> Settings {
         let path = dir.join(FILE_NAME);
-        let Ok(bytes) = std::fs::read(&path) else { return Settings::default() };
+        let Some(bytes) = read(&path) else { return Settings::default() };
         let mut s = serde_json::from_slice::<Settings>(&bytes).unwrap_or_else(|_| {
             // A value this version does not know (written by a newer one, or edited by hand)
             // must not take every assignment with it on the next save: the file is kept as it
@@ -75,6 +79,9 @@ impl Settings {
         if let Some(v) = field(&map, "virtual_driver") {
             s.virtual_driver = v;
         }
+        if let Some(v) = field(&map, "split_joycons") {
+            s.split_joycons = v;
+        }
         if let Some(Value::Object(c)) = map.get("controllers") {
             s.controllers = c.iter().filter_map(|(k, v)| Some((k.clone(), Profiles::deserialize(v).ok()?))).collect();
         }
@@ -93,6 +100,29 @@ impl Settings {
         match written.and_then(|()| std::fs::rename(&tmp, dir.join(FILE_NAME))) {
             Ok(()) => {}
             Err(e) => eprintln!("open-controller: could not save the settings: {e}"),
+        }
+    }
+}
+
+/// The file's bytes, `None` when there is none. A file another program holds for a moment (an
+/// antivirus or a backup at sign-in) is waited for: read as missing, the first save would
+/// replace every assignment with the defaults.
+fn read(path: &Path) -> Option<Vec<u8>> {
+    let mut tries = 0;
+    loop {
+        match std::fs::read(path) {
+            Ok(bytes) => return Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) if tries == 20 => {
+                // Moved aside, so the defaults the app starts with never overwrite it.
+                eprintln!("open-controller: could not read the settings: {e}");
+                let _ = std::fs::rename(path, path.with_extension("json.unread"));
+                return None;
+            }
+            Err(_) => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
         }
     }
 }

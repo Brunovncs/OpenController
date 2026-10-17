@@ -19,7 +19,7 @@ use gpui::{
 };
 use open_controller_core::binding::{self, Action, Chord, Step, XboxButton};
 use open_controller_core::device::Power;
-use open_controller_core::extras::{self, Family, HANDHELD, Hint};
+use open_controller_core::extras::{self, Art, Family, HANDHELD, Hint};
 use open_controller_core::handheld;
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
@@ -46,8 +46,8 @@ const SWATCHES: [[u8; 3]; 12] = [
 ];
 
 /// Where the button is or what it is: "Back left", "Touchpad click".
-pub fn place_name(text: &Text, family: Family, b: u8) -> String {
-    match extras::kind(family, b) {
+pub fn place_name(text: &Text, family: Family, art: Art, b: u8) -> String {
+    match extras::kind(family, art, b) {
         extras::Kind::BackLeft => text.back_left.into(),
         extras::Kind::BackRight => text.back_right.into(),
         extras::Kind::BackLeft2 => text.back_left2.into(),
@@ -63,6 +63,8 @@ pub fn place_name(text: &Text, family: Family, b: u8) -> String {
         extras::Kind::Mic => text.mic.into(),
         extras::Kind::Share => text.share.into(),
         extras::Kind::Assistant => text.assistant.into(),
+        extras::Kind::EndButton => text.end_button.into(),
+        extras::Kind::EndTrigger => text.end_trigger.into(),
         extras::Kind::TouchLeft => text.touch_left.into(),
         extras::Kind::TouchRight => text.touch_right.into(),
         extras::Kind::TouchTwo => text.touch_two.into(),
@@ -72,13 +74,13 @@ pub fn place_name(text: &Text, family: Family, b: u8) -> String {
 }
 
 /// The name printed on the button: SDL's families from the table, a handheld's from its machine.
-pub fn printed_name(family: Family, b: u8) -> Option<&'static str> {
+pub fn printed_name(family: Family, art: Art, b: u8) -> Option<&'static str> {
     if family == Family::Handheld
         && let Some(i) = HANDHELD.iter().position(|&h| h == b)
     {
         return handheld::this_machine().and_then(|m| m.buttons.get(i)).map(|x| x.label);
     }
-    extras::printed_name(family, b)
+    extras::printed_name(family, art, b)
 }
 
 /// Whether games read this controller directly, so its buttons can only become keys and macros.
@@ -101,10 +103,16 @@ pub fn remappable(pad: &PadView) -> bool {
 /// N64 and Mega Drive controllers have other letters altogether.
 fn nintendo_letters(pad: &PadView) -> bool {
     match pad.family {
-        Family::SwitchPro | Family::JoyCons | Family::Switch2 => true,
+        // A Joy-Con on its own has its letters, or arrows, somewhere else.
+        Family::JoyCons => !sideways(pad),
+        Family::SwitchPro | Family::Switch2 => true,
         Family::NintendoClassic => pad.product == 0x2017,
         _ => false,
     }
+}
+
+fn sideways(pad: &PadView) -> bool {
+    matches!(pad.art, Art::JoyConLeft | Art::JoyConRight)
 }
 
 /// What is printed on one of `binding::NORMAL`, on this controller.
@@ -113,11 +121,16 @@ fn normal_label(pad: &PadView, b: u8) -> &'static str {
     const NINTENDO: [&str; 15] = ["B", "A", "Y", "X", "L", "R", "−", "+", "⌂", "LS", "RS", "↑", "↓", "←", "→"];
     const DUALSHOCK3: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Select", "Start", "PS", "L3", "R3", "↑", "↓", "←", "→"];
     const DUALSHOCK4: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Share", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
+    // Held sideways, the arrows point where they now do, and SL and SR are the bumpers.
+    const JOYCON_LEFT: [&str; 15] = ["▼", "▶", "◀", "▲", "SL", "SR", "", "−", "Capture", "LS", "", "", "", "", ""];
+    const JOYCON_RIGHT: [&str; 15] = ["A", "X", "B", "Y", "SL", "SR", "", "+", "⌂", "LS", "", "", "", "", ""];
     const DUALSENSE: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Create", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
     let names = match pad.family {
         Family::DualShock3 | Family::Ps2Adapter => &DUALSHOCK3,
         Family::DualShock4 => &DUALSHOCK4,
         Family::DualSense | Family::DualSenseEdge => &DUALSENSE,
+        _ if pad.art == Art::JoyConLeft => &JOYCON_LEFT,
+        _ if pad.art == Art::JoyConRight => &JOYCON_RIGHT,
         _ if nintendo_letters(pad) => &NINTENDO,
         _ => &XBOX,
     };
@@ -239,6 +252,14 @@ impl MainView {
                 d.child(
                     button("off", text.turn_off, Kind::Standard, &t)
                         .on_click(cx.listener(move |this, _, _, cx| this.send(ToTray::PowerOff(key), cx))),
+                )
+            })
+            // Every pair of Joy-Cons splits, or every Joy-Con joins the other side's again.
+            .when(pad.family == Family::JoyCons, |d| {
+                let split = !sideways(pad);
+                d.child(
+                    button("split", if split { text.split_joycons } else { text.join_joycons }, Kind::Standard, &t)
+                        .on_click(cx.listener(move |this, _, _, cx| this.send(ToTray::SplitJoyCons(split), cx))),
                 )
             });
 
@@ -615,7 +636,8 @@ impl MainView {
         let text = self.model.read(cx).text;
         let selected = self.editor.as_ref().is_some_and(|e| e.button == b);
         let pressed = pad.input.pressed(b as u32);
-        let pad_for_click = pad.clone();
+        // Looked up on the click, not copied for every row on every frame.
+        let key = pad.key;
         let t = *t;
         let row = row(&t)
             .id(("button", b as usize))
@@ -623,7 +645,11 @@ impl MainView {
             .when(pressed, |d| d.bg(t.accent_soft).border_color(t.accent))
             .when(selected && !pressed, |d| d.border_color(t.accent))
             .hover(move |s| s.bg(t.layer_hover))
-            .on_click(cx.listener(move |this, _, _, cx| this.edit(&pad_for_click, b, cx)))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if let Some(pad) = this.pad(key, cx) {
+                    this.edit(&pad, b, cx);
+                }
+            }))
             .children(printed.map(|n| {
                 div()
                     .flex()
@@ -664,7 +690,7 @@ impl MainView {
         }
         let mut g = group();
         for &b in &pad.extras {
-            g = g.child(self.button_row(pad, b, printed_name(pad.family, b), place_name(text, pad.family, b), t, cx));
+            g = g.child(self.button_row(pad, b, printed_name(pad.family, pad.art, b), place_name(text, pad.family, pad.art, b), t, cx));
         }
         col.child(caption(text.extras_hint, t.text2).pb(px(12.))).child(g)
     }

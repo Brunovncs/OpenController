@@ -48,7 +48,7 @@ fn list(sdl: &Sdl, wait: Duration) -> Vec<Gamepad> {
 }
 
 fn main() {
-    let sdl = Sdl::init().expect("SDL");
+    let sdl = Sdl::init(false).expect("SDL");
     println!("Gamepads before:");
     let _before = list(&sdl, Duration::from_millis(700));
 

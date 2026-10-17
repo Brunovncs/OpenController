@@ -1,7 +1,7 @@
-# Takes the window's screenshot from the example controllers (`--demo`), dark theme, in English
-# and Portuguese: docs/window.png for the README and, when the site sits next to this repository,
-# public/window.png and public/window-pt.png for its home page. Run it after any change to the
-# window, so the pictures show the version that is out.
+# Takes the window's screenshots from the example controllers (`--demo`), dark theme: docs/window.png
+# and docs/controller.png (a controller's page) for the README and, when the site sits next to this
+# repository, public/window.png and public/window-pt.png, in English and Portuguese, for its home
+# page. Run it after any change to the window, so the pictures show the version that is out.
 #
 #     .\scripts\screenshot.ps1 [-Site ..\open-controller-site]
 #
@@ -35,8 +35,9 @@ public static class ShotWin {
 "@
 [ShotWin]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null
 
-function Shot([string]$lang, [string[]]$outs) {
+function Shot([string]$lang, [string[]]$outs, [int]$w = $Width, [int]$hh = $Height, [switch]$Page) {
     $env:OPEN_CONTROLLER_THEME = "dark"
+    if ($Page) { $env:OPEN_CONTROLLER_PAGE = "1" } else { Remove-Item Env:OPEN_CONTROLLER_PAGE -ErrorAction SilentlyContinue }
     $env:OPEN_CONTROLLER_LANG = $lang
     Get-Process open-controller-ui -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 300
@@ -48,7 +49,7 @@ function Shot([string]$lang, [string[]]$outs) {
     $wr = New-Object ShotWin+RECT; $cr = New-Object ShotWin+RECT
     [ShotWin]::GetWindowRect($h, [ref]$wr) | Out-Null; [ShotWin]::GetClientRect($h, [ref]$cr) | Out-Null
     $dw = ($wr.R - $wr.L) - ($cr.R - $cr.L); $dh = ($wr.B - $wr.T) - ($cr.B - $cr.T)
-    [ShotWin]::SetWindowPos($h, [IntPtr]::Zero, 60, 60, [int]($Width * $scale) + $dw, [int]($Height * $scale) + $dh, 0x0014) | Out-Null
+    [ShotWin]::SetWindowPos($h, [IntPtr]::Zero, 60, 60, [int]($w * $scale) + $dw, [int]($hh * $scale) + $dh, 0x0014) | Out-Null
     Start-Sleep -Milliseconds 2500
     $r = New-Object ShotWin+RECT
     [ShotWin]::GetClientRect($h, [ref]$r) | Out-Null
@@ -72,4 +73,5 @@ if (Test-Path (Join-Path $Site "public")) {
     $pt += Join-Path $Site "public\window-pt.png"
 }
 Shot "en" $en
+Shot "en" @(Join-Path $root "docs\controller.png") 1100 840 -Page
 if ($pt) { Shot "pt" $pt }

@@ -43,6 +43,7 @@ pub enum GyroMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Gyro {
+    #[serde(deserialize_with = "lenient")]
     pub mode: GyroMode,
     /// Turning speed in percent: at 100, turning the controller 180 degrees a second pushes the
     /// stick all the way.
@@ -190,6 +191,18 @@ pub enum DpadStick {
     Right,
 }
 
+/// A value a newer version wrote (or one edited by hand) reads as the default, not as a broken
+/// settings file that takes the controller's every profile with it.
+fn lenient<'de, D: Deserializer<'de>, T: serde::de::DeserializeOwned + Default>(d: D) -> Result<T, D::Error> {
+    Ok(T::deserialize(serde_json::Value::deserialize(d)?).unwrap_or_default())
+}
+
+/// The same for each button's assignment: one this version cannot read is left out, the rest kept.
+fn lenient_bindings<'de, D: Deserializer<'de>>(d: D) -> Result<Bindings, D::Error> {
+    let raw = std::collections::BTreeMap::<u8, serde_json::Value>::deserialize(d)?;
+    Ok(raw.into_iter().filter_map(|(b, v)| Some((b, Action::deserialize(v).ok()?))).collect())
+}
+
 /// A value a newer version wrote reads as off, not as a broken settings file.
 impl<'de> Deserialize<'de> for DpadStick {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -218,7 +231,9 @@ pub struct Pressure {
 pub struct Profile {
     /// Empty for the first profile until it is renamed; the window shows it as "Default".
     pub name: String,
+    #[serde(deserialize_with = "lenient_bindings")]
     pub bindings: Bindings,
+    #[serde(deserialize_with = "lenient")]
     pub light: Light,
     /// How bright a chosen or battery colour is, in percent.
     pub brightness: u8,
@@ -748,6 +763,19 @@ mod tests {
         assert_eq!((newer.output, newer.list[0].sticks.dpad), (Output::Xbox360, DpadStick::Off));
         p.apply(Edit::Output(Output::Xbox360));
         assert!(p.is_default());
+    }
+
+    #[test]
+    fn a_newer_versions_values_lose_only_themselves() {
+        let text = r#"{"list": [{"name": "Racing", "light": {"Rainbow": 3}, "gyro": {"mode": "Flick", "sensitivity": 120},
+            "bindings": {"16": {"Xbox": "A"}, "17": {"Mouse": "Left"}, "19": {"Xbox": "Paddle9"}}}], "active": 0}"#;
+        let p: Profiles = serde_json::from_str(text).unwrap();
+        let first = &p.list[0];
+        assert_eq!(first.name, "Racing");
+        assert_eq!((first.light, first.gyro.mode), (Light::Player, GyroMode::Off));
+        assert_eq!(first.gyro.sensitivity, 120, "the rest of the gyro is kept");
+        assert_eq!(first.bindings.len(), 1, "the button this version can read is kept");
+        assert_eq!(first.bindings.get(&16), Some(&Action::Xbox(XboxButton::A)));
     }
 
     #[test]

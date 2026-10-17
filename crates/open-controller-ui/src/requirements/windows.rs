@@ -6,7 +6,7 @@ use crate::theme::icon as glyph;
 use crate::ui::{Install, MainView};
 use crate::widgets::{Kind, body, button, caption, card, group, icon, title};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
-use open_controller_core::drivers::{self, PACKAGES};
+use open_controller_core::drivers;
 pub use open_controller_core::drivers::{Component, Outcome};
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::platform::VirtualDriver;
@@ -19,7 +19,7 @@ pub fn hint(text: &Text) -> &'static str {
 
 /// What Programs and Features says is installed.
 pub fn installed() -> Vec<(Component, Option<String>)> {
-    PACKAGES.iter().map(|p| (p.component, drivers::installed(p.component))).collect()
+    drivers::installed_all()
 }
 
 pub fn install(c: Component, dir: &Path, silent: bool) -> Result<Outcome, String> {

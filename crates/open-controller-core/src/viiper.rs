@@ -52,6 +52,9 @@ const CONNECT_WAIT: Duration = Duration::from_secs(1);
 const REQUEST_WAIT: Duration = Duration::from_secs(3);
 /// Adding a device waits for usbip-win2 to attach it.
 const ADD_WAIT: Duration = Duration::from_secs(10);
+/// Removing one is asked on the input thread, and the server removes it anyway once its stream
+/// closes: a server that does not answer soon is not waited for.
+const REMOVE_WAIT: Duration = Duration::from_millis(500);
 /// A stream the server refuses is answered at once with a problem; one it takes is silent.
 const STREAM_CHECK: Duration = Duration::from_millis(100);
 /// A report the server does not take this fast means it has stopped reading.
@@ -165,7 +168,7 @@ impl Api {
     }
 
     fn remove(&self, bus: u32, device: &str) -> Result<(), BusError> {
-        self.request(&format!("bus/{bus}/remove"), Some(device), self.wait).map(drop)
+        self.request(&format!("bus/{bus}/remove"), Some(device), self.wait.min(REMOVE_WAIT)).map(drop)
     }
 
     /// Opens a device's stream. The server answers a stream it refuses with a problem and
@@ -474,6 +477,10 @@ impl Bus {
     pub fn unplug(&self, serial: u32) -> Result<(), u32> {
         let pad = self.pads.lock().ok().and_then(|mut p| p.remove(&serial)).ok_or(ERROR_FILE_NOT_FOUND)?;
         pad.close();
+        // A server that stopped or broke would only keep the input thread waiting.
+        if self.lost().is_some() {
+            return Ok(());
+        }
         match self.api.remove(pad.bus, &pad.device) {
             // Already gone with its stream.
             Ok(()) | Err(BusError::Problem(404, _)) => Ok(()),

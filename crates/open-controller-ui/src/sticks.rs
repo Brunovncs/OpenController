@@ -162,6 +162,8 @@ pub struct Measuring {
     rests: [Option<Rest>; 2],
     edges: [Edge; 2],
     filled: Option<Instant>,
+    /// The ticks that move it on, which end with it: a measurement started again never has two.
+    ticker: Option<gpui::Task<()>>,
 }
 
 fn stick_of(input: &PadState, right: bool) -> [i16; 2] {
@@ -491,6 +493,7 @@ impl MainView {
             rests: [None; 2],
             edges: [Edge::default(); 2],
             filled: None,
+            ticker: None,
         };
         if let Some(pad) = self.pad(key, cx) {
             m.sample(&pad.input);
@@ -498,7 +501,7 @@ impl MainView {
         self.measuring = Some(m);
         cx.notify();
         // Snapshots come as the sticks move; these ticks also catch a stick held still.
-        cx.spawn(async move |this, cx| {
+        let ticker = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(Duration::from_millis(50)).await;
                 let going = this.update(cx, |this, cx| this.measure_tick(key, cx)).unwrap_or(false);
@@ -506,8 +509,10 @@ impl MainView {
                     break;
                 }
             }
-        })
-        .detach();
+        });
+        if let Some(m) = self.measuring.as_mut() {
+            m.ticker = Some(ticker);
+        }
     }
 
     fn measure_tick(&mut self, key: PadKey, cx: &mut Context<Self>) -> bool {
@@ -758,6 +763,7 @@ mod tests {
             rests: [None; 2],
             edges: [Edge::default(); 2],
             filled: None,
+            ticker: None,
         };
         (m, now)
     }

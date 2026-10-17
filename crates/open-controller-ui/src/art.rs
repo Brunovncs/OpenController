@@ -34,6 +34,9 @@ pub enum Look {
     Xbox,
     SwitchPro,
     JoyCons,
+    /// A Joy-Con on its own, held sideways.
+    JoyConLeft,
+    JoyConRight,
     Ultimate2,
     Ultimate2C,
     Ultimate,
@@ -50,7 +53,7 @@ pub enum Look {
 
 impl Look {
     #[cfg(test)]
-    pub const ALL: [Look; 15] = [
+    pub const ALL: [Look; 17] = [
         Look::DualSense,
         Look::DualSenseEdge,
         Look::DualShock4,
@@ -58,6 +61,8 @@ impl Look {
         Look::Xbox,
         Look::SwitchPro,
         Look::JoyCons,
+        Look::JoyConLeft,
+        Look::JoyConRight,
         Look::Ultimate2,
         Look::Ultimate2C,
         Look::Ultimate,
@@ -78,6 +83,8 @@ impl Look {
             Look::Xbox => "xbox",
             Look::SwitchPro => "switchPro",
             Look::JoyCons => "joycons",
+            Look::JoyConLeft => "joyconLeft",
+            Look::JoyConRight => "joyconRight",
             Look::Ultimate2 => "ultimate2",
             Look::Ultimate2C => "ultimate2c",
             Look::Ultimate => "ultimate",
@@ -121,6 +128,8 @@ pub fn look(pad: &PadView) -> Look {
         DualShock3 | Ps2Adapter => Look::DualShock3,
         Xbox | XboxElite => Look::Xbox,
         SwitchPro => Look::SwitchPro,
+        JoyCons if pad.art == Art::JoyConLeft => Look::JoyConLeft,
+        JoyCons if pad.art == Art::JoyConRight => Look::JoyConRight,
         JoyCons => Look::JoyCons,
         Switch2 if pad.name.contains("Joy-Con") => Look::JoyCons,
         Switch2 if pad.name.contains("Pro Controller") => Look::SwitchPro,
@@ -136,6 +145,8 @@ pub fn look(pad: &PadView) -> Look {
             Art::Retro => Look::Retro,
             Art::Handheld => Look::Handheld,
             Art::JoyCons => Look::JoyCons,
+            Art::JoyConLeft => Look::JoyConLeft,
+            Art::JoyConRight => Look::JoyConRight,
             Art::PlayStation => Look::DualSense,
             Art::Symmetric => Look::DualShock3,
             Art::Offset => match pad.brand {
@@ -882,14 +893,27 @@ mod tests {
         for l in Look::ALL.into_iter().chain(traced) {
             let p = all.get(l.key()).unwrap_or_else(|| panic!("{l:?} has no drawing in pads.json"));
             assert!(p.body.len() > 4 && p.body.iter().any(|o| matches!(o, Op::Z)), "{l:?}: a closed outline");
+            // A Joy-Con on its own has one stick, and its arrows are its face buttons.
+            let single = matches!(l, Look::JoyConLeft | Look::JoyConRight);
             if matches!(l, Look::Traced(_)) {
                 assert!(matches!(p.glyphs.as_deref(), Some("xbox" | "ps" | "nintendo" | "numbers")), "{l:?}: glyphs");
             } else {
-                assert_eq!(p.sticks.len(), if l == Look::Retro { 0 } else { 2 }, "{l:?}: sticks");
+                assert_eq!(
+                    p.sticks.len(),
+                    if l == Look::Retro {
+                        0
+                    } else if single {
+                        1
+                    } else {
+                        2
+                    },
+                    "{l:?}: sticks"
+                );
             }
             // A Genesis pad has three face buttons; every other look has all four.
             let faces: &[&str] = if l == Look::Traced("genesis3b") { &["south", "east"] } else { &["south", "east", "west", "north"] };
-            for &input in faces.iter().chain(&["up", "down", "left", "right"]) {
+            let dpad: &[&str] = if single { &[] } else { &["up", "down", "left", "right"] };
+            for &input in faces.iter().chain(dpad) {
                 let i = super::input(input);
                 assert!(p.buttons.iter().any(|b| b.input == i), "{l:?}: {input}");
             }

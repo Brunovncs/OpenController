@@ -83,7 +83,27 @@ pub struct GyroFacts {
 /// Cuts a device path down to its first two parts (`\\?\HID#VID_054C&PID_09CC&MI_03`): what
 /// follows on Windows is an instance id, which can hold a Bluetooth address.
 pub fn model_path(path: &str) -> String {
-    if path.contains('#') { path.split('#').take(2).collect::<Vec<_>>().join("#") } else { path.to_string() }
+    let kept = if path.contains('#') { path.split('#').take(2).collect::<Vec<_>>().join("#") } else { path.to_string() };
+    without_address(&kept)
+}
+
+/// Blanks the Bluetooth address a Bluetooth LE controller carries after its ids, in its path and
+/// its parents' ids (`..._REV&0509_c83f26a1b2c3&Col01`, `BTHLE\Dev_c83f26a1b2c3`): twelve hex
+/// digits after an underscore. A GUID's last twelve follow a hyphen and stay.
+pub fn without_address(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(c) = rest.chars().next() {
+        let run = rest.bytes().take_while(u8::is_ascii_hexdigit).count();
+        if run == 0 {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+            continue;
+        }
+        out.push_str(if run == 12 && out.ends_with('_') { "xxxxxxxxxxxx" } else { &rest[..run] });
+        rest = &rest[run..];
+    }
+    out
 }
 
 /// What the user adds and what the window knows, sent with the text of the report.
@@ -196,6 +216,21 @@ mod tests {
         );
         assert_eq!(model_path("/dev/input/event12"), "/dev/input/event12");
         assert_eq!(model_path("XInput#0"), "XInput#0");
+    }
+
+    #[test]
+    fn bluetooth_le_addresses_are_blanked() {
+        assert_eq!(
+            model_path(
+                r"\\?\HID#{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02045e_PID&0b13_REV&0509_c83f26a1b2c3&Col01#a&1b2c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}"
+            ),
+            r"\\?\HID#{00001812-0000-1000-8000-00805f9b34fb}_Dev_VID&02045e_PID&0b13_REV&0509_xxxxxxxxxxxx&Col01"
+        );
+        assert_eq!(without_address(r"BTHLE\Dev_C83F26A1B2C3"), r"BTHLE\Dev_xxxxxxxxxxxx");
+        assert_eq!(
+            without_address("USB\\VID_054C&PID_09CC&MI_03 \"Wireless Controller\""),
+            "USB\\VID_054C&PID_09CC&MI_03 \"Wireless Controller\""
+        );
     }
 
     #[test]
