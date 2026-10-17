@@ -3,6 +3,11 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+Updating HidHide now warns that its installer asks to restart Windows and opens again afterwards
+to finish. That second window is expected.
+
 ## 0.8.8
 
 Joy-Cons can now be two controllers instead of one. On a pair's page, Split Joy-Cons makes each

@@ -78,7 +78,10 @@ impl MainView {
             }
             Some(Install::Done(Outcome::Cancelled)) => Some((text.install_cancelled.to_string(), t.text2)),
             Some(Install::Failed(e)) => Some((fill(text.install_failed, e), t.critical)),
-            _ if outdated => Some((fill(text.update_available, pkg.version), t.text2)),
+            _ if outdated => {
+                let available = if c == Component::HidHide { text.hidhide_update_available } else { text.update_available };
+                Some((fill(available, pkg.version), t.text2))
+            }
             _ => None,
         };
         let action: Option<AnyElement> = match progress {
