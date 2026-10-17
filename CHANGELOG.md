@@ -3,6 +3,26 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.8.8
+
+Joy-Cons can now be two controllers instead of one. On a pair's page, Split Joy-Cons makes each
+Joy-Con a controller of its own, held sideways: the stick on the left, the four buttons on the
+right, SL and SR as the bumpers, and the shoulder button and trigger on the end free to assign.
+Join Joy-Cons puts them back together. The left Joy-Con keeps the pair's player, so games see no
+controller leave. This is experimental.
+
+A face button, bumper or any other regular button set to a key or a macro now types it. Since
+0.8.6 it did nothing. Two controllers can no longer swap players when one is shown to games as a
+DualShock 4 and the other as an Xbox controller, as each ended up as the other kind. When another
+program held HidHide at the wrong moment, a controller could stay visible to games twice, or
+hidden. OpenController now tries again until it works.
+
+Updating from the window and installing drivers no longer fail on a slow connection. Start with
+Windows now shows as off when it was turned off in Task Manager, and turning it on here works
+again. Settings that an antivirus held for a moment at sign-in are no longer replaced by the
+defaults. Report a problem no longer includes the address of a Bluetooth LE controller. The window
+does less work while a game is in front of it. Settings carry over.
+
 ## 0.8.7
 
 Sticks get more settings. Full tilt at makes a worn stick that no longer reaches its edge count as
