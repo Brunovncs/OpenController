@@ -213,7 +213,9 @@ pub fn kind(family: Family, art: Art, b: u8) -> Kind {
         (SwitchPro | JoyCons | NintendoClassic | Switch2 | Stadia, MISC1) => Kind::Capture,
         (DualSense | DualSenseEdge | Luna, MISC1) => Kind::Mic,
         (_, MISC1) => Kind::Share,
-        (_, other) => Kind::Extra(other - 20),
+        // Numbered from MISC2 on. The buttons every gamepad has are not extras, but one asked for
+        // all the same must not overflow.
+        (_, other) => Kind::Extra(other.saturating_sub(20)),
     }
 }
 
@@ -371,6 +373,7 @@ mod tests {
         assert_eq!(kind(family(0x054C, 0x0CE6, PadType::Ps5), Art::PlayStation, MISC1), Kind::Mic);
         assert_eq!(kind(Family::Other, Art::Offset, MISC1), Kind::Share);
         assert_eq!(kind(Family::Other, Art::Offset, 23), Kind::Extra(3));
+        assert_eq!(kind(Family::Other, Art::Offset, 3), Kind::Extra(0), "a normal button does not overflow");
         assert_eq!(kind(Family::SteamDeck, Art::Handheld, MISC2), Kind::TrackpadRight);
     }
 

@@ -11,6 +11,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROGRAMS = ("open-controller", "open-controller-ui")
+# Every target a release is built for.
+TARGETS = (
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+)
 
 HEADER = """# Third-party notices
 
@@ -45,6 +54,36 @@ statically. It is under the zlib license:
 The Windows entries of [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB)
 are bundled in `open-controller.exe`, under the same zlib license as SDL.
 
+## Controller drawings
+
+The DualShock 4 and DualShock 3 drawings in `assets/pads.json` are traced from "Dualshock 4
+Layout.svg" and "Dualshock3 Layout.svg" by Tokyoship on Wikimedia Commons, under
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); the Joy-Con, from "Nintendo Switch
+Joy-Con illustration.svg", in the public domain. `scripts/pads/README.md` lists every source.
+
+## GamepadMotionHelpers
+
+The way OpenController works out a DualShock 3's tilt from its accelerometer (`motion::TiltRate`)
+follows the sensor fusion step of [GamepadMotionHelpers](https://github.com/JibbSmart/GamepadMotionHelpers),
+under the MIT license:
+
+> Copyright (c) 2020-2023 Julian "Jibb" Smart
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+> associated documentation files (the "Software"), to deal in the Software without restriction,
+> including without limitation the rights to use, copy, modify, merge, publish, distribute,
+> sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or
+> substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+> NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+> DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+> OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## VIIPER
 
 [VIIPER](https://github.com/Alia5/VIIPER) is an experimental option on Windows, off by default.
@@ -76,10 +115,12 @@ choice of licenses, OpenController uses it under the first one that applies.
 """
 
 
-def main() -> None:
+def linked(target: str) -> tuple[dict, set, set]:
+    """The packages, the workspace members and what the two programs link when built for `target`,
+    following normal dependencies only (no build scripts, no tests)."""
     meta = json.loads(
         subprocess.run(
-            ["cargo", "metadata", "--format-version", "1", "--filter-platform", "x86_64-pc-windows-msvc"],
+            ["cargo", "metadata", "--format-version", "1", "--locked", "--filter-platform", target],
             cwd=ROOT,
             check=True,
             capture_output=True,
@@ -88,8 +129,6 @@ def main() -> None:
     packages = {p["id"]: p for p in meta["packages"]}
     nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
     members = set(meta["workspace_members"])
-    # Everything the two programs link, following normal dependencies only (no build scripts,
-    # no tests).
     todo = [i for i in members if packages[i]["name"] in PROGRAMS]
     seen = set()
     while todo:
@@ -100,6 +139,17 @@ def main() -> None:
         for dep in nodes[i]["deps"]:
             if any(k["kind"] is None for k in dep["dep_kinds"]):
                 todo.append(dep["pkg"])
+    return packages, members, seen
+
+
+def main() -> None:
+    # Every archive ships the same notices, so they cover what any of the builds links.
+    packages, members, seen = {}, set(), set()
+    for target in TARGETS:
+        p, m, s = linked(target)
+        packages |= p
+        members |= m
+        seen |= s
     rows = sorted(
         {
             (packages[i]["name"], packages[i]["version"], packages[i].get("license") or "see repository", packages[i].get("repository") or "")

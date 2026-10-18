@@ -113,16 +113,25 @@ impl Detector {
 /// The gyro's reading at rest, learnt while the controller lies still and taken off what it
 /// reads. DsHidMini already zeroes a genuine controller; this catches the rest, such as a clone or
 /// an older DsHidMini, without taking a slow, deliberate turn for drift.
+///
+/// Turning around gravity leaves the accelerometer as it was, so a turn lying on a table looks
+/// still to it: only a yaw this close to the bias is taken for drift.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RestBias {
     pub bias: f32,
     still: f32,
-    last: Option<[f32; 3]>,
+    /// The yaw averaged over a fraction of a second, so the gyro's noise does not read as turns.
+    mean: Option<f32>,
+    /// The accelerometer when the controller last moved, which it must stay near while still.
+    anchor: Option<[f32; 3]>,
 }
 
 impl RestBias {
-    /// Below this the gyro may be resting, in radians per second (about 2.5 °/s).
-    const SLOW: f32 = 0.044;
+    /// Within this of the bias the gyro may be resting, in radians per second: about 1.1 °/s,
+    /// a count and a half of the gyro, where a deliberate turn is slower than anyone aims.
+    const NEAR: f32 = 0.02;
+    /// How long the yaw is averaged over, in seconds.
+    const AVERAGE: f32 = 0.25;
     /// How long it must look still before the bias follows it, and how slowly it follows.
     const SETTLE: f32 = 1.0;
     const FOLLOW: f32 = 2.0;
@@ -130,16 +139,21 @@ impl RestBias {
     /// `yaw` as read, `accel` in m/s², `dt` in seconds since the last reading. Returns the yaw
     /// with the bias taken off.
     pub fn update(&mut self, yaw: f32, accel: [f32; 3], dt: f32) -> f32 {
+        let blend = |tau: f32| if dt > 0. { 1. - (-dt / tau).exp() } else { 0. };
+        let mean = self.mean.map_or(yaw, |m| m + (yaw - m) * blend(Self::AVERAGE));
+        self.mean = Some(mean);
         let g = length(accel) / STANDARD_GRAVITY;
-        let steady = self.last.is_some_and(|l| length([accel[0] - l[0], accel[1] - l[1], accel[2] - l[2]]) < 0.3);
-        self.last = Some(accel);
-        if steady && (0.85..1.15).contains(&g) && (yaw - self.bias).abs() < Self::SLOW {
+        let steady = self.anchor.is_some_and(|a| length([accel[0] - a[0], accel[1] - a[1], accel[2] - a[2]]) < 0.3);
+        if !steady {
+            self.anchor = Some(accel);
+        }
+        if steady && (0.85..1.15).contains(&g) && (mean - self.bias).abs() < Self::NEAR {
             self.still += dt;
         } else {
             self.still = 0.;
         }
-        if self.still > Self::SETTLE && dt > 0. {
-            self.bias += (yaw - self.bias) * (1. - (-dt / Self::FOLLOW).exp());
+        if self.still > Self::SETTLE {
+            self.bias += (mean - self.bias) * blend(Self::FOLLOW);
         }
         yaw - self.bias
     }
@@ -302,11 +316,19 @@ mod tests {
     fn rest_bias_is_learnt_when_still_only() {
         let flat = [0., STANDARD_GRAVITY, 0.];
         let mut b = RestBias::default();
-        let drift = 0.03;
-        for _ in 0..2000 {
-            b.update(drift, flat, 0.004);
+        // A count of the gyro off, with a count of noise either way.
+        let count = (90f32 / 123.).to_radians();
+        let drift = count;
+        for i in 0..2000 {
+            b.update(drift + count * ((i % 3) as f32 - 1.), flat, 0.004);
         }
         assert!((b.update(drift, flat, 0.004)).abs() < 0.005, "eight seconds still: the drift is gone ({})", b.bias);
+        let mut b = RestBias::default();
+        for _ in 0..1250 {
+            // Turned slowly on a table: the accelerometer does not change.
+            b.update(0.035, flat, 0.004);
+        }
+        assert_eq!(b.bias, 0., "five seconds of a slow turn are not drift");
         let mut b = RestBias::default();
         for i in 0..1000 {
             // Held in a hand that moves: the accelerometer never settles.

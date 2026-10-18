@@ -191,10 +191,15 @@ impl Calibration {
     pub fn from_usb_report(r: &[u8; 37]) -> Calibration {
         let w = |i: usize| i32::from(i16::from_le_bytes([r[i], r[i + 1]]));
         let speed = (w(19) + w(21)) as f32;
-        let gyro = |bias: i32, plus: i32, minus: i32| (bias as f32, ((plus - bias).abs() + (minus - bias).abs()) as f32 / speed);
+        // A report without a speed or a range would scale by infinity or by nothing: such an
+        // axis takes the counts a real controller has, VIIPER's.
+        let or = |per: f32, real: f32| if per.is_finite() && per > 0. { per } else { real };
+        let gyro = |bias: i32, plus: i32, minus: i32| {
+            (bias as f32, or(((plus - bias).abs() + (minus - bias).abs()) as f32 / speed, Calibration::VIIPER.gyro[0].1))
+        };
         let accel = |plus: i32, minus: i32| {
             let range = plus - minus;
-            ((plus - range / 2) as f32, range as f32 / 2.)
+            ((plus - range / 2) as f32, or(range as f32 / 2., Calibration::VIIPER.accel[0].1))
         };
         Calibration {
             gyro: [gyro(w(1), w(7), w(9)), gyro(w(3), w(11), w(13)), gyro(w(5), w(15), w(17))],
@@ -276,6 +281,8 @@ mod tests {
         assert!((c.gyro[0].1 - 17676. / 1080.).abs() < 1e-4, "{:?}", c.gyro[0]);
         // X: plus 7807, minus -8402, so 8104 counts per g around -297.
         assert_eq!(c.accel[0], (7807. - 8104., 8104.5));
+        let blank = Calibration::from_usb_report(&[0; 37]);
+        assert_eq!(blank, Calibration::VIIPER, "a report without a speed or a range scales by finite counts");
     }
 
     /// What SDL makes of a raw value, with its own formulas, to check `encode` against.

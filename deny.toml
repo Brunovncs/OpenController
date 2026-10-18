@@ -1,0 +1,50 @@
+# `cargo deny check advisories licenses sources`, run by CI. Only what the shipped builds link
+# counts: the targets a release is built for.
+
+[graph]
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+# Unmaintained crates with no maintained release to move to, reached only through the window's
+# toolkit (GPUI and its SVG, text and accessibility crates) and, on Linux, the tray icon's GTK.
+# Each goes when those move off it.
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste, unmaintained: through GPUI (metal on macOS, image's exr)" },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error, unmaintained: through tray-icon's GTK 3 bindings on Linux" },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz, unmaintained: through GPUI's usvg" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser, unmaintained: through GPUI's usvg, fontdb and cosmic-text" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant, unmaintained as a crate of its own: through GPUI's accesskit and portals on Linux" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names, unmaintained as a crate of its own: through GPUI's accesskit and portals on Linux" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, unmaintained as a crate of its own: through GPUI's accesskit and portals on Linux" },
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CC0-1.0",
+    "MIT-0",
+    "0BSD",
+    "BSL-1.0",
+    "Unlicense",
+    "bzip2-1.0.6",
+    "ISC",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

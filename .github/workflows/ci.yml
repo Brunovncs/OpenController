@@ -5,13 +5,17 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # New advisories and a newer stable Rust show up without a commit.
+  schedule:
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Main's runs all finish, so each of its commits has a result and the cache it saves.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   windows:
@@ -26,25 +30,30 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.arch }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Format
+        if: matrix.arch == 'x64'
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # Mapping, roster, device identity, the driver request layouts and a real pipe round trip.
       # The HidHide test is ignored here: it needs the driver.
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build
-        run: cargo build --workspace
+        run: cargo build --workspace --locked
 
       # The runner has neither ViGEmBus nor HidHide: the engine must still start, report them
       # missing and exit 0, and the window must open and draw.
@@ -86,7 +95,7 @@ jobs:
           while ((Test-Path "$app\open-controller.exe") -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
           if (Test-Path "$app\open-controller.exe") { throw "the uninstaller left the program behind" }
           if (Get-Process open-controller* -ErrorAction SilentlyContinue) { throw "the uninstaller left the program running" }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-${{ matrix.arch }}-setup
           path: dist/*-setup.exe
@@ -103,26 +112,30 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libudev-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev \
             libfontconfig1-dev libfreetype6-dev libvulkan-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.arch }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # Includes the uinput request numbers, the udev rule and a real Unix socket round trip.
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build
-        run: cargo build --workspace --bins --examples
+        run: cargo build --workspace --bins --examples --locked
       - name: Smoke test, resident process
         run: target/debug/open-controller --smoke --data-dir "$RUNNER_TEMP/smoke"
       # The runner's kernel has uinput: the whole path, from SDL's virtual controller to the
@@ -131,22 +144,69 @@ jobs:
         run: |
           sudo modprobe uinput
           sudo target/debug/examples/linux_loopback
+      # Every archive ships THIRD_PARTY_NOTICES.md: it must list what the builds link now.
+      - name: Third-party notices
+        if: matrix.arch == 'x64'
+        run: |
+          python3 scripts/third_party_notices.py
+          git diff --exit-code THIRD_PARTY_NOTICES.md
 
   macos:
     runs-on: macos-15
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build
-        run: cargo build --workspace
+        run: cargo build --workspace --locked
       - name: Smoke test, resident process
         run: target/debug/open-controller --smoke --data-dir "$RUNNER_TEMP/smoke"
+
+  # The oldest Rust the workspace says it builds with (rust-version in Cargo.toml).
+  msrv:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev \
+            libfontconfig1-dev libfreetype6-dev libvulkan-dev
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: "1.97"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: msrv
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Named on the command line: rust-toolchain.toml would pick stable over the default.
+      - name: Check
+        run: cargo +1.97 check --workspace --all-targets --locked
+
+  # Known vulnerabilities, unmaintained crates, licenses and where crates come from (deny.toml).
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check advisories licenses sources

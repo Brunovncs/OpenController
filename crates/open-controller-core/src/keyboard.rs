@@ -1,12 +1,14 @@
 //! Keys pressed on the user's behalf for extra buttons, and key names for the interface.
 //!
-//! Keys go out from a thread of their own, so a macro's waits never hold up the input thread.
+//! Keys go out from a thread of their own, so the input thread never waits on them, and macros
+//! play from another, so a macro's waits never hold up a key a button presses or lets go of.
 //! Chords are Windows virtual-key codes on every system, so settings carry over between them;
 //! each system's module turns them into its own key codes.
 
 use crate::binding::{Chord, Step, modifier};
-use crossbeam_channel::{Sender, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 #[cfg_attr(windows, path = "keyboard/windows.rs")]
@@ -16,23 +18,30 @@ mod sys;
 
 pub use sys::{key_name, vk_for_char};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Out {
     Down(Chord),
     Up(Chord),
-    Play(Vec<Step>),
 }
 
-/// The thread that types. Dropping it lets the thread finish what is queued and end.
+/// The threads that type. Dropping it stops the macro playing, lets go of its keys, and lets
+/// the threads end.
 pub struct Keyboard {
-    tx: Sender<Out>,
+    keys: Sender<Out>,
+    macros: Sender<Vec<Step>>,
+    plays: Arc<Mutex<Plays>>,
+    /// Never sent on: closed when the keyboard is dropped, which cuts a macro's wait short.
+    _stop: Sender<()>,
 }
 
 impl Keyboard {
     pub fn start() -> Keyboard {
-        let (tx, rx) = unbounded::<Out>();
+        let (keys, rx) = unbounded::<Out>();
         std::thread::Builder::new()
             .name("open-controller-keys".into())
             .spawn(move || {
+                // The only owner of the sink and of the counts of held keys: macros send their
+                // keys here too, so a key a button holds and one a macro taps are counted together.
                 // Without a way to type (Linux before the device rule is in place), keys are
                 // dropped, and it is tried again with the next one.
                 let mut sink = None;
@@ -45,40 +54,89 @@ impl Keyboard {
                     match out {
                         Out::Down(c) => sink.down(held.down(c)),
                         Out::Up(c) => sink.up(held.up(c)),
-                        Out::Play(steps) => play(sink, &mut held, &steps),
                     }
                 }
             })
             .expect("could not start the keyboard thread");
-        Keyboard { tx }
+        let (macros, queued) = unbounded::<Vec<Step>>();
+        let (stop_tx, stop) = crossbeam_channel::bounded::<()>(0);
+        let plays = Arc::new(Mutex::new(Plays::default()));
+        let (to_keys, done) = (keys.clone(), plays.clone());
+        std::thread::Builder::new()
+            .name("open-controller-macros".into())
+            .spawn(move || {
+                while let Ok(steps) = queued.recv() {
+                    play(&to_keys, &steps, &stop);
+                    done.lock().unwrap_or_else(PoisonError::into_inner).done(&steps);
+                }
+            })
+            .expect("could not start the macro thread");
+        Keyboard { keys, macros, plays, _stop: stop_tx }
     }
 
     pub fn press(&self, c: Chord) {
-        let _ = self.tx.send(Out::Down(c));
+        let _ = self.keys.send(Out::Down(c));
     }
 
     pub fn release(&self, c: Chord) {
-        let _ = self.tx.send(Out::Up(c));
+        let _ = self.keys.send(Out::Up(c));
     }
 
     pub fn play(&self, steps: Vec<Step>) {
-        let _ = self.tx.send(Out::Play(steps));
+        if self.plays.lock().unwrap_or_else(PoisonError::into_inner).admit(&steps) {
+            let _ = self.macros.send(steps);
+        }
     }
 }
 
 /// Gap between the keys of a macro step, so programs that poll the keyboard see each one.
 const TAP: Duration = Duration::from_millis(15);
 
-fn play(sink: &sys::Sink, held: &mut Held, steps: &[Step]) {
+/// Macros playing or waiting their turn, at most.
+const MAX_PLAYS: usize = 4;
+
+/// The macros playing or waiting their turn. A button pressed again while its macro is still
+/// playing or waiting is ignored, and only a few wait at all, so pressing a button over and over
+/// never queues minutes of typing.
+#[derive(Default)]
+struct Plays(Vec<Vec<Step>>);
+
+impl Plays {
+    /// Whether `steps` is to be played.
+    fn admit(&mut self, steps: &[Step]) -> bool {
+        if self.0.len() >= MAX_PLAYS || self.0.iter().any(|p| p == steps) {
+            return false;
+        }
+        self.0.push(steps.to_vec());
+        true
+    }
+
+    fn done(&mut self, steps: &[Step]) {
+        if let Some(i) = self.0.iter().position(|p| p == steps) {
+            self.0.remove(i);
+        }
+    }
+}
+
+/// Plays `steps` through the key thread. Once `stop` closes it ends early, with every key it
+/// pressed let go of.
+fn play(keys: &Sender<Out>, steps: &[Step], stop: &Receiver<()>) {
+    let wait = |d: Duration| !matches!(stop.recv_timeout(d), Err(RecvTimeoutError::Disconnected));
     for s in steps {
         match *s {
             Step::Keys(c) => {
-                sink.down(held.down(c));
-                std::thread::sleep(TAP);
-                sink.up(held.up(c));
-                std::thread::sleep(TAP);
+                let _ = keys.send(Out::Down(c));
+                let on = wait(TAP);
+                let _ = keys.send(Out::Up(c));
+                if !on || !wait(TAP) {
+                    return;
+                }
             }
-            Step::Wait(ms) => std::thread::sleep(Duration::from_millis(ms as u64)),
+            Step::Wait(ms) => {
+                if !wait(Duration::from_millis(ms.into())) {
+                    return;
+                }
+            }
         }
     }
 }
@@ -264,5 +322,36 @@ mod tests {
         assert_eq!(held.up(paste), paste);
         // Let go of without having been pressed here: let go of all the same.
         assert_eq!(held.up(copy), copy);
+    }
+
+    #[test]
+    fn a_macro_pressed_again_while_it_plays_is_not_queued() {
+        let (a, b) = (vec![Step::Keys(Chord { mods: 0, key: 0x41 })], vec![Step::Wait(10)]);
+        let mut plays = Plays::default();
+        assert!(plays.admit(&a));
+        assert!(!plays.admit(&a), "already playing");
+        assert!(plays.admit(&b));
+        plays.done(&a);
+        assert!(plays.admit(&a), "played, so it plays again");
+        for n in 0..10 {
+            plays.admit(&[Step::Wait(n)]);
+        }
+        assert_eq!(plays.0.len(), MAX_PLAYS, "only a few wait their turn");
+    }
+
+    #[test]
+    fn a_stopped_macro_lets_go_of_its_keys_at_once() {
+        let c = Chord { mods: modifier::CTRL, key: 0x43 };
+        let (keys, typed) = unbounded();
+        let (stop_tx, stop) = crossbeam_channel::bounded(0);
+        let steps = [Step::Keys(c), Step::Wait(5000), Step::Keys(c)];
+        let started = std::time::Instant::now();
+        let player = std::thread::spawn(move || play(&keys, &steps, &stop));
+        assert_eq!(typed.recv().unwrap(), Out::Down(c));
+        drop(stop_tx);
+        player.join().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(2), "the wait was cut short");
+        let rest: Vec<Out> = typed.try_iter().collect();
+        assert_eq!(rest, [Out::Up(c)]);
     }
 }
