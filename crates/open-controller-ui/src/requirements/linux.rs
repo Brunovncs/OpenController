@@ -59,6 +59,7 @@ impl MainView {
             Some(Install::Done(Outcome::Installed)) => Some((text.reconnect_controllers.to_string(), t.text2)),
             Some(Install::Done(Outcome::Cancelled)) => Some((text.install_cancelled.to_string(), t.text2)),
             Some(Install::Done(Outcome::NoAuthorization)) => Some((text.no_password_prompt.to_string(), t.critical)),
+            Some(Install::Done(Outcome::NoPassword)) => Some((text.steam_deck_password.to_string(), t.critical)),
             Some(Install::Failed(e)) => Some((fill(text.install_failed, e), t.critical)),
             _ if outdated => Some((text.device_access_outdated.to_string(), t.text2)),
             _ => None,

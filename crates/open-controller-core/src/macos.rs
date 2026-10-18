@@ -166,6 +166,86 @@ pub mod accessibility {
     }
 }
 
+/// The main thread's run loop. AppKit keeps what the workspace knows, such as the application
+/// in front, up to date from there, so a process that never turns it reads the state it had at
+/// start.
+pub mod run_loop {
+    use std::ffi::c_void;
+    use std::time::Duration;
+
+    #[repr(C)]
+    struct TimerContext {
+        version: isize,
+        info: *mut c_void,
+        retain: *const c_void,
+        release: *const c_void,
+        copy_description: *const c_void,
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFRunLoopGetMain() -> *mut c_void;
+        fn CFRunLoopRunInMode(mode: *const c_void, seconds: f64, return_after_source_handled: u8) -> i32;
+        fn CFRunLoopStop(rl: *mut c_void);
+        fn CFAbsoluteTimeGetCurrent() -> f64;
+        fn CFRunLoopTimerCreate(
+            allocator: *const c_void,
+            fire_date: f64,
+            interval: f64,
+            flags: usize,
+            order: isize,
+            callout: extern "C" fn(*mut c_void, *mut c_void),
+            context: *mut TimerContext,
+        ) -> *mut c_void;
+        fn CFRunLoopAddTimer(rl: *mut c_void, timer: *mut c_void, mode: *const c_void);
+        #[allow(non_upper_case_globals)]
+        static kCFRunLoopDefaultMode: *const c_void;
+        #[allow(non_upper_case_globals)]
+        static kCFRunLoopCommonModes: *const c_void;
+    }
+
+    /// `kCFRunLoopRunFinished`: the loop has nothing to wait for and returns at once.
+    const FINISHED: i32 = 1;
+
+    /// Turns the main run loop for up to `time`, or until `stop`. Called on the main thread.
+    pub fn run_for(time: Duration) {
+        let r = unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, time.as_secs_f64(), 0) };
+        if r == FINISHED {
+            std::thread::sleep(time);
+        }
+    }
+
+    /// Makes the main thread's `run_for` return now. Callable from any thread; a stop that comes
+    /// while the loop is not turning is lost, so the caller checks for work before each turn.
+    pub fn stop() {
+        unsafe { CFRunLoopStop(CFRunLoopGetMain()) }
+    }
+
+    extern "C" fn fire(_: *mut c_void, info: *mut c_void) {
+        let f: fn() = unsafe { std::mem::transmute::<*mut c_void, fn()>(info) };
+        f();
+    }
+
+    /// Calls `f` on the main thread every `interval`, while its run loop turns, for good.
+    pub fn every(interval: Duration, f: fn()) {
+        let mut context = TimerContext {
+            version: 0,
+            info: f as *mut c_void,
+            retain: std::ptr::null(),
+            release: std::ptr::null(),
+            copy_description: std::ptr::null(),
+        };
+        let secs = interval.as_secs_f64();
+        unsafe {
+            let timer = CFRunLoopTimerCreate(std::ptr::null(), CFAbsoluteTimeGetCurrent() + secs, secs, 0, 0, fire, &mut context);
+            if !timer.is_null() {
+                // The run loop keeps its own reference, and the timer is never removed.
+                CFRunLoopAddTimer(CFRunLoopGetMain(), timer, kCFRunLoopCommonModes);
+            }
+        }
+    }
+}
+
 /// The program in front and the programs running, from the workspace.
 pub mod workspace {
     use crate::profile::program_name;

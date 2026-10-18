@@ -86,35 +86,59 @@ jobs:
           name: linux
           path: dist/*.tar.gz*
 
+  # One universal app for Apple silicon and Intel. Signed with the certificate in the
+  # MACOS_CERT_P12 secret (base64 of a .p12, its password in MACOS_CERT_PASSWORD) when there is
+  # one, so the Accessibility permission survives updates; ad hoc otherwise.
   macos:
     needs: version
     runs-on: macos-15
     timeout-minutes: 90
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            arch: arm64
-          - target: x86_64-apple-darwin
-            arch: x64
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
       - name: Tests
-        if: matrix.arch == 'arm64'
         run: cargo test --workspace
       - name: Build
-        run: cargo build --release --workspace --target ${{ matrix.target }}
+        run: |
+          cargo build --release --workspace --target aarch64-apple-darwin
+          cargo build --release --workspace --target x86_64-apple-darwin
+          mkdir -p target/universal/release
+          for bin in open-controller open-controller-ui; do
+            lipo -create -output "target/universal/release/$bin" \
+              "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
+          done
+      - name: Signing certificate
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          [ -n "$CERT" ] || { echo "MACOS_CERT_P12 is not set; the app is signed ad hoc"; exit 0; }
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -hex 16)
+          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # A self-signed certificate is not trusted, so it is looked up without -v, by its hash.
+          identity=$(security find-identity -p codesigning "$keychain" | awk '/^ *1\)/ { print $2; exit }')
+          [ -n "$identity" ] || { echo "No code signing identity in MACOS_CERT_P12"; exit 1; }
+          echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
       - name: Package
-        run: sh packaging/package.sh macos "${{ needs.version.outputs.version }}" target/${{ matrix.target }}/release ${{ matrix.arch }}
+        run: sh packaging/package.sh macos "${{ needs.version.outputs.version }}" target/universal/release universal
+      - name: Remove the signing keychain
+        if: always()
+        run: '[ -z "${KEYCHAIN:-}" ] || security delete-keychain "$KEYCHAIN"'
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
+          name: macos
           path: dist/*.zip*
 
   publish:

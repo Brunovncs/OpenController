@@ -85,6 +85,10 @@ if [ "${1:-}" != "--no-rule" ]; then
     if ! { as_root install -m 0644 "$here/70-open-controller.rules" "$rules" &&
         printf 'uinput\n' | as_root tee "$modules" >/dev/null; }; then
         echo "The udev rule was not installed. Run ./install.sh again, or set it up in the window under Settings, Requirements." >&2
+        # The Steam Deck's user has no password until one is set, so sudo can't ask for it.
+        if grep -qx 'ID=steamos' /etc/os-release 2>/dev/null; then
+            echo "On a Steam Deck, set a password first: run passwd in Konsole, then ./install.sh again." >&2
+        fi
         exit 1
     fi
     as_root modprobe uinput 2>/dev/null || true

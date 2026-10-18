@@ -32,7 +32,8 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.8.8-windows-x64-setup.exe` and run it. It installs for your user only,
+Download `open-controller-0.8.8-windows-x64-setup.exe` (on an ARM PC,
+`open-controller-0.8.8-windows-arm64-setup.exe`) and run it. It installs for your user only,
 without administrator rights, adds OpenController to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
@@ -40,10 +41,10 @@ do it, and it updates in place: the running copy quits first, and your settings,
 too. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.8.8-windows-x64.zip`, extract it anywhere
-and run `open-controller.exe`. The programs are not code-signed yet, so Windows SmartScreen warns
-on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs
-administrator rights.
+To run it without installing, download `open-controller-0.8.8-windows-x64.zip` (or
+`open-controller-0.8.8-windows-arm64.zip`), extract it anywhere and run `open-controller.exe`.
+The programs are not code-signed yet, so Windows SmartScreen warns on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs administrator
+rights.
 
 OpenController needs two free drivers by Nefarius:
 [ViGEmBus](https://github.com/nefarius/ViGEmBus), which creates the virtual Xbox controllers games
@@ -73,22 +74,27 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.8.8-linux-x64.tar.gz` (built on Ubuntu 22.04; any distribution as
-recent works), extract it and run `./install.sh`. It installs the two programs to `~/.local/bin`
-with an entry in your applications menu, and a udev rule, which asks for your password once. The
-rule lets the user at the seat create virtual controllers through `/dev/uinput` and read the HID
-reports of the controllers in the model table (their extra buttons, gyro and light), as Steam's
-own rules do; without it OpenController can do neither. `./install.sh --no-rule` skips it, and
+Download `open-controller-0.8.8-linux-x64.tar.gz` (or `open-controller-0.8.8-linux-arm64.tar.gz`),
+extract it and run `./install.sh`. The programs are built on Ubuntu 22.04 and need glibc 2.35 or
+newer, as in Ubuntu 22.04, Debian 12 and Fedora 36 and later; `ldd --version` shows yours.
+
+`install.sh` installs the two programs to `~/.local/bin` with an entry in your applications menu,
+and a udev rule, which asks for your password once. The rule lets the user at the seat create
+virtual controllers through `/dev/uinput` and read the HID reports of the controllers in the model
+table (their extra buttons, gyro and light), as Steam's own rules do; without it OpenController
+can do neither. `./install.sh --no-rule` skips it, and
 Settings, Requirements in the window installs it later through polkit. Run with `sudo`, the script
 installs for the user who ran it. It stops with an error when the rule can't be installed or the
 kernel has no uinput, as on WSL. `./uninstall.sh` removes it all again and asks whether to delete
-your settings too.
+your settings too. On a Steam Deck, set a password first by running `passwd` in Konsole: the
+`deck` user has none, and the rule can't be installed without one.
 
 The window needs `libxkbcommon-x11` (`libxkbcommon-x11-0` on Ubuntu and Debian, `libxkbcommon-x11`
 on Fedora and Arch) and Vulkan or OpenGL drivers, which desktops have; `install.sh` lists any
 library that is missing. The resident process runs in the background without an icon of its own:
-the window is opened from the applications menu, and "Start when you sign in" adds an XDG
-autostart entry.
+the window is opened from the applications menu. "Start when you sign in" adds a systemd user
+service on desktops that start one with the session, as GNOME and Plasma do, which also brings
+OpenController back if it crashes. Elsewhere it adds an XDG autostart entry.
 
 Games that read a PlayStation or Nintendo controller directly, as Steam Input and many SDL games
 do, still see it next to its Xbox controller, so a press can count twice. Turn off PlayStation and
@@ -97,13 +103,15 @@ controller keeps moving the pointer, as it does without OpenController.
 
 ### macOS
 
-Download `open-controller-0.8.8-macos-arm64.zip` (Apple silicon) or `-macos-x64.zip` (Intel) and
-move OpenController to Applications. It is not notarised: the first time, open it with a
-right-click and Open. macOS lets no program create game controllers without an entitlement Apple
-grants case by case, and games there already read PlayStation, Xbox and Switch Pro controllers
-directly, so on macOS OpenController leaves controllers as they are and adds what games do not
-do: extra buttons as keys and macros, the light bar and its low-battery blink, battery levels and
-profiles. Typing keys for other apps needs the Accessibility permission, which the window asks for.
+Download `open-controller-0.8.8-macos-universal.zip`, which runs on Apple silicon and Intel, and
+move OpenController to Applications. It is not notarised, so macOS refuses to open it the first
+time. Open it once, then go to System Settings, Privacy & Security, and click Open Anyway.
+
+macOS lets no program create game controllers without an entitlement Apple grants case by case,
+and games there already read PlayStation, Xbox and Switch Pro controllers directly, so on macOS
+OpenController leaves controllers as they are and adds what games do not do: extra buttons as keys
+and macros, the light bar and its low-battery blink, battery levels and profiles. Typing keys for other apps needs the Accessibility permission, which the window asks for.
+"Start when you sign in" adds OpenController to Login Items in System Settings, General.
 
 ## What it does
 
@@ -375,7 +383,8 @@ their virtual controllers were made, with no limit of four, since Linux has no X
 read back; when one leaves, the ones after it move up, as games count them.
 
 The window talks to the resident process over a named pipe private to the user and the session
-(a Unix socket in the user's runtime directory on Linux and macOS), with JSON messages: snapshots one way (60 per second while it is open, so the input view is live),
+(a Unix socket in the user's runtime directory on Linux, and in
+`~/Library/Application Support/OpenController` on macOS), with JSON messages: snapshots one way (60 per second while it is open, so the input view is live),
 requests the other. While no window is connected, snapshots carry no live input and are only taken
 when something changes.
 

@@ -45,6 +45,8 @@ pub fn program_of_pid(pid: u32) -> Option<String> {
     Some(name)
 }
 
+/// None when no X window is active, as when a native Wayland window, the desktop's own shell or
+/// Steam's overlay is in front: the X server cannot see those.
 fn active(conn: &RustConnection, root: Window, a: &Atoms) -> Option<String> {
     let w = *windows(conn, root, a.active).first()?;
     program_of_pid(pid_of(conn, w, a.pid)?)
@@ -76,6 +78,10 @@ pub fn watch(f: impl Fn(String) + Send + 'static) -> bool {
         .name("open-controller-foreground".into())
         .spawn(move || {
             let mut last = String::new();
+            // With no X window active the last program stays in front as far as profiles go. On
+            // a Wayland desktop that is often a native window the X server cannot name, and a
+            // game's profile should not drop to the default each time the overlay, a chat
+            // window or the shell takes the focus for a moment.
             let mut report = |conn: &RustConnection| {
                 if let Some(p) = active(conn, root, &a)
                     && p != last
