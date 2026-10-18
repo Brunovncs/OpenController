@@ -6,6 +6,8 @@ use crate::mapping::XusbReport;
 use windows_sys::Win32::UI::Input::XboxController::{XINPUT_STATE, XInputGetState};
 
 pub const SLOTS: u8 = 4;
+/// `XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE`; the right one is larger.
+const DEADZONE: i16 = 7849;
 
 /// The sticks of the controller in `slot`, or `None` if the slot is free.
 fn sticks(slot: u8) -> Option<[i16; 4]> {
@@ -22,6 +24,15 @@ pub fn marker(serial: u32) -> XusbReport {
     let a = 1000 + (serial % 64) as i16 * 61;
     let b = 1500 + (serial % 64) as i16 * 47;
     XusbReport { thumb_lx: a, thumb_ly: -b, thumb_rx: -a, thumb_ry: b, ..XusbReport::default() }
+}
+
+/// Whether games read a report as a controller nobody touches: no button or trigger, and the
+/// sticks inside the deadzone, as a marker is.
+pub fn at_rest(r: &XusbReport) -> bool {
+    r.buttons == 0
+        && r.left_trigger == 0
+        && r.right_trigger == 0
+        && [r.thumb_lx, r.thumb_ly, r.thumb_rx, r.thumb_ry].iter().all(|v| v.unsigned_abs() < DEADZONE as u16)
 }
 
 /// The slot whose controller currently shows `marker`.
@@ -41,13 +52,22 @@ mod tests {
 
     #[test]
     fn markers_are_distinct_and_inside_the_deadzone() {
-        // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE; the right one is larger.
-        const DEADZONE: i16 = 7849;
         let all: Vec<XusbReport> = (1..=16).map(marker).collect();
         for (i, m) in all.iter().enumerate() {
             assert!([m.thumb_lx, m.thumb_ly, m.thumb_rx, m.thumb_ry].iter().all(|v| v.abs() < DEADZONE && *v != 0));
             assert_eq!((m.buttons, m.left_trigger, m.right_trigger), (0, 0, 0));
             assert!(all[i + 1..].iter().all(|o| o != m));
+            assert!(at_rest(m));
         }
+    }
+
+    #[test]
+    fn only_an_untouched_controller_is_at_rest() {
+        assert!(at_rest(&XusbReport::default()));
+        assert!(at_rest(&XusbReport { thumb_lx: -1200, thumb_ry: 3000, ..XusbReport::default() }), "stick drift");
+        assert!(!at_rest(&XusbReport { buttons: 0x1000, ..XusbReport::default() }));
+        assert!(!at_rest(&XusbReport { right_trigger: 1, ..XusbReport::default() }));
+        assert!(!at_rest(&XusbReport { thumb_lx: -32768, ..XusbReport::default() }));
+        assert!(!at_rest(&XusbReport { thumb_ry: DEADZONE, ..XusbReport::default() }));
     }
 }

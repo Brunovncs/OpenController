@@ -24,8 +24,10 @@ static MAPPINGS: &str = include_str!("../assets/gamecontrollerdb.txt");
 /// A rumble request that takes this long means a controller that hardly answers (one behind a
 /// stuck uinput driver takes 30 s): it gets no more, so it cannot hold SDL up again.
 const RUMBLE_STALL: Duration = Duration::from_secs(5);
-/// Rumble threads of closed controllers, which must be done before SDL quits.
+/// Rumble threads of closed controllers, which must be done before SDL quits, and how long
+/// quitting waits for them.
 static LEAVING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
+const LEAVE_WAIT: Duration = Duration::from_secs(1);
 
 fn text(p: *const c_char) -> Option<String> {
     (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()).filter(|s| !s.is_empty())
@@ -403,12 +405,25 @@ unsafe fn joystick_counts(js: *mut SDL_Joystick, f: &mut Facts) {
 }
 
 impl Drop for Sdl {
+    /// A rumble request that has not come back by then may still be inside SDL: SDL is then left
+    /// running, for the process's end to clean up, rather than quit under it or waited on.
     fn drop(&mut self) {
         let leaving = LEAVING.lock().map(|mut l| std::mem::take(&mut *l)).unwrap_or_default();
+        let until = Instant::now() + LEAVE_WAIT;
+        let mut stuck = false;
         for t in leaving {
-            let _ = t.join();
+            while !t.is_finished() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            if t.is_finished() {
+                let _ = t.join();
+            } else {
+                stuck = true;
+            }
         }
-        unsafe { SDL_Quit() };
+        if !stuck {
+            unsafe { SDL_Quit() };
+        }
     }
 }
 
@@ -473,6 +488,10 @@ impl Gamepad {
             SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT => PadType::JoyConRight,
             SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR => PadType::JoyConPair,
             SDL_GAMEPAD_TYPE_GAMECUBE => PadType::GameCube,
+            // Valve's controllers have the standard layout, Xbox-style face buttons included.
+            // Not an Xbox type: on Linux that would leave one to games as an Xbox controller the
+            // kernel already reads, which it is not.
+            SDL_GAMEPAD_TYPE_STEAM => PadType::Standard,
             _ => PadType::Unknown,
         }
     }
