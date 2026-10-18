@@ -371,23 +371,36 @@ impl Cloak {
     }
 }
 
-/// For uninstalling: undoes what a run that was killed left hidden and removes this program
-/// from HidHide's list of programs that see hidden devices. Nothing to do without HidHide.
+/// The journal a run left, for `restore`: `None` when there is none, an error when there is one
+/// that cannot be read, which may list hidden controllers.
+fn stale_journal(path: &Path) -> Result<Option<Journal>, CloakError> {
+    match std::fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(CloakError::Journal(e.to_string())),
+        Ok(b) => serde_json::from_slice(&b).map(Some).map_err(|e| CloakError::Journal(e.to_string())),
+    }
+}
+
+/// For uninstalling, and after a crash: undoes what a run that was killed left hidden and
+/// removes this program from HidHide's list of programs that see hidden devices. Nothing to do
+/// without HidHide. An error means controllers may still be hidden and the journal is still
+/// there: the uninstaller then keeps it.
 pub fn restore(journal_path: &Path) -> Result<(), CloakError> {
     let driver = match HidHide::open_patiently(OPEN_ATTEMPTS_AT_EXIT) {
         Err(CloakError::NotInstalled) => return Ok(()),
         other => other?,
     };
-    if let Some(mut stale) = read_journal(journal_path) {
+    if let Some(mut stale) = stale_journal(journal_path)? {
         let all = stale.hidden.clone();
         reveal_on(&driver, &mut stale, &all)?;
         write_journal(journal_path, &stale).map_err(|e| CloakError::Journal(e.to_string()))?;
     }
-    if let Some(me) = own_image_path() {
-        let list = driver.whitelist()?;
-        if contains(&list, &me) {
-            driver.set_whitelist(&without(&list, &[me]))?;
-        }
+    // Best effort: an entry left in the program list hides nothing, so it does not fail this.
+    if let Some(me) = own_image_path()
+        && let Ok(list) = driver.whitelist()
+        && contains(&list, &me)
+    {
+        let _ = driver.set_whitelist(&without(&list, &[me]));
     }
     Ok(())
 }
@@ -481,5 +494,18 @@ mod tests {
         write_journal(&path, &Journal::default()).unwrap();
         assert!(!path.exists());
         write_journal(&path, &Journal::default()).unwrap();
+    }
+
+    #[test]
+    fn a_journal_restore_cannot_read_is_an_error() {
+        let path = std::env::temp_dir().join(format!("oc-stale-{}.json", std::process::id()));
+        assert_eq!(stale_journal(&path), Ok(None));
+        let j = Journal { hidden: s(&["A"]), enabled: false };
+        write_journal(&path, &j).unwrap();
+        assert_eq!(stale_journal(&path), Ok(Some(j)));
+        // Cut short: it may still list hidden controllers, so it is not taken for none.
+        std::fs::write(&path, b"{\"hidden\":[\"A\"").unwrap();
+        assert!(matches!(stale_journal(&path), Err(CloakError::Journal(_))));
+        let _ = std::fs::remove_file(&path);
     }
 }

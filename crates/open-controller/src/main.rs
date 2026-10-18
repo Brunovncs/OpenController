@@ -24,11 +24,13 @@ use open_controller_core::instance::{self, Instance};
 use open_controller_core::ipc::{Prefs, ToTray};
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::profile::{Edit, Profiles};
-use open_controller_core::{Command, Config, Engine};
+use open_controller_core::report::Diagnosis;
+use open_controller_core::{Command, Config, Engine, PadKey, Snapshot};
 use server::Notify;
 use settings::Settings;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 #[cfg(unix)]
 use unix as sys;
@@ -46,9 +48,106 @@ pub enum Msg {
     Quit = 4,
 }
 
+/// The engine, while it runs. On Windows it runs only while this session is the one at the
+/// console: ViGEmBus and HidHide serve the whole machine, so with two users signed in an engine
+/// in each session would plug every controller in twice, and each would undo the other's hiding.
+pub struct Input {
+    engine: RwLock<Option<Engine>>,
+    /// Held while the engine starts or stops, so the last stop waits for one under way; true
+    /// once the engine has stopped for good.
+    turning: Mutex<bool>,
+    on_change: Arc<dyn Fn() + Send + Sync>,
+    /// What the window and the foreground watcher last said, for an engine started again.
+    watching: AtomicBool,
+    focused: AtomicBool,
+    foreground: Mutex<Option<String>>,
+}
+
+impl Input {
+    fn new(on_change: impl Fn() + Send + Sync + 'static) -> Input {
+        Input {
+            engine: RwLock::new(None),
+            turning: Mutex::new(false),
+            on_change: Arc::new(on_change),
+            watching: AtomicBool::new(false),
+            focused: AtomicBool::new(true),
+            foreground: Mutex::new(None),
+        }
+    }
+
+    pub fn send(&self, c: Command) {
+        // Noted before the engine is reached, so an engine starting meanwhile gets it either way.
+        match &c {
+            Command::Watch(on) => {
+                self.watching.store(*on, Ordering::Release);
+                self.focused.store(true, Ordering::Release);
+            }
+            Command::Focused(on) => self.focused.store(*on, Ordering::Release),
+            Command::Foreground(p) => *self.foreground.lock().unwrap_or_else(PoisonError::into_inner) = Some(p.clone()),
+            _ => {}
+        }
+        if let Some(e) = self.engine.read().unwrap_or_else(PoisonError::into_inner).as_ref() {
+            e.send(c);
+        }
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        self.engine.read().unwrap_or_else(PoisonError::into_inner).as_ref().map(Engine::snapshot).unwrap_or_default()
+    }
+
+    pub fn pad_count(&self) -> usize {
+        self.engine.read().unwrap_or_else(PoisonError::into_inner).as_ref().map_or(0, Engine::pad_count)
+    }
+
+    pub fn diagnose(&self, key: PadKey) -> Option<Diagnosis> {
+        self.engine.read().unwrap_or_else(PoisonError::into_inner).as_ref().and_then(|e| e.diagnose(key))
+    }
+
+    /// Starts the engine, unless it runs already or has stopped for good.
+    fn start(&self, config: impl FnOnce() -> Config) {
+        let ended = self.turning.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut slot = self.engine.write().unwrap_or_else(PoisonError::into_inner);
+        if *ended || slot.is_some() {
+            return;
+        }
+        let on_change = self.on_change.clone();
+        let engine = Engine::start(config(), move || on_change());
+        if self.watching.load(Ordering::Acquire) {
+            engine.send(Command::Watch(true));
+            engine.send(Command::Focused(self.focused.load(Ordering::Acquire)));
+        }
+        if let Some(p) = self.foreground.lock().unwrap_or_else(PoisonError::into_inner).clone() {
+            engine.send(Command::Foreground(p));
+        }
+        *slot = Some(engine);
+    }
+
+    /// Unplugs the virtual controllers, shows the hidden ones again and waits for the engine's
+    /// thread. `for_good` keeps it from starting again.
+    fn halt(&self, for_good: bool) {
+        let mut ended = self.turning.lock().unwrap_or_else(PoisonError::into_inner);
+        *ended |= for_good;
+        let engine = self.engine.write().unwrap_or_else(PoisonError::into_inner).take();
+        if let Some(e) = engine {
+            e.stop();
+            (self.on_change)();
+        }
+    }
+
+    /// Until `start`: this session has left the console.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn pause(&self) {
+        self.halt(false);
+    }
+
+    pub fn stop(&self) {
+        self.halt(true);
+    }
+}
+
 /// What every thread shares: the engine and the preferences.
 pub struct Control {
-    pub engine: Engine,
+    pub engine: Input,
     settings: Mutex<Settings>,
     data_dir: PathBuf,
     notify: Arc<Notify>,
@@ -58,6 +157,14 @@ pub struct Control {
 impl Control {
     pub fn post(&self, m: Msg) {
         self.waker.post(m);
+    }
+
+    /// Starts the engine with the current settings, if it is not running.
+    pub fn resume(&self) {
+        self.engine.start(|| {
+            let s = self.settings.lock().unwrap_or_else(PoisonError::into_inner);
+            config(&self.data_dir, &s)
+        });
     }
 
     pub fn prefs(&self) -> Prefs {
@@ -204,6 +311,30 @@ fn leave() {
 /// Reachable from the window procedure and the foreground watcher without borrowing anything.
 pub static CONTROL: OnceLock<Arc<Control>> = OnceLock::new();
 
+fn config(data_dir: &Path, settings: &Settings) -> Config {
+    Config {
+        data_dir: data_dir.to_path_buf(),
+        hide: settings.hide_originals,
+        profiles: settings.controllers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        driver: settings.virtual_driver,
+        split_joycons: settings.split_joycons,
+    }
+}
+
+/// Logs a panic to `crash.log`. Release builds abort right after, so on Windows a `--restore` of
+/// its own then shows again the controllers this process hid, instead of leaving them hidden
+/// until the next start.
+fn on_panic(data_dir: &Path) {
+    let dir = data_dir.to_path_buf();
+    open_controller_core::crash::install(data_dir, move || {
+        if cfg!(all(windows, panic = "abort"))
+            && let Ok(exe) = std::env::current_exe()
+        {
+            let _ = std::process::Command::new(exe).arg("--restore").arg("--data-dir").arg(&dir).spawn();
+        }
+    });
+}
+
 /// `--smoke`: the engine must come up (SDL initialised; drivers may be missing, as on CI).
 fn smoke(engine: &Engine, data_dir: &std::path::Path) -> i32 {
     let start = Instant::now();
@@ -259,6 +390,8 @@ fn main() {
     }
     let Instance::First { _mutex, show } = instance::claim(APP_NAME) else { return };
     let _ = std::fs::create_dir_all(&data_dir);
+    // Only the copy that runs the engine: a `--restore` that panicked would start another.
+    on_panic(&data_dir);
     let settings = Settings::load(&data_dir);
     autostart::refresh();
 
@@ -272,22 +405,20 @@ fn main() {
             waker.post(Msg::Snapshot);
         }
     };
-    let config = Config {
-        data_dir: data_dir.clone(),
-        hide: settings.hide_originals,
-        profiles: settings.controllers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        driver: settings.virtual_driver,
-        split_joycons: settings.split_joycons,
-    };
-    let engine = Engine::start(config, on_change);
     if args.smoke {
+        let engine = Engine::start(config(&data_dir, &settings), on_change);
         let code = smoke(&engine, &data_dir);
         engine.stop();
         leave();
         std::process::exit(code);
     }
+    let engine = Input::new(on_change);
     let control = Arc::new(Control { engine, settings: Mutex::new(settings), data_dir, notify: notify.clone(), waker });
     let _ = CONTROL.set(control.clone());
+    #[cfg(windows)]
+    windows::follow_console(control.clone());
+    #[cfg(not(windows))]
+    control.resume();
     server::start(control.clone(), notify);
     let c = control.clone();
     instance::on_signal(show, move || c.post(Msg::Open));

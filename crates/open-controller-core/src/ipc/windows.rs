@@ -13,17 +13,22 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
-use windows_sys::Win32::Security::{GetTokenInformation, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser};
+use windows_sys::Win32::Security::{
+    EqualSid, GetTokenInformation, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
+};
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, OPEN_EXISTING, PIPE_ACCESS_DUPLEX, ReadFile, WriteFile,
+    CreateFileW, FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_FLAG_OVERLAPPED, OPEN_EXISTING, PIPE_ACCESS_DUPLEX, ReadFile, SECURITY_IDENTIFICATION,
+    SECURITY_SQOS_PRESENT, WriteFile,
 };
 use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
-    WaitNamedPipeW,
+    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeServerProcessId, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
+    PIPE_TYPE_BYTE, PIPE_WAIT, WaitNamedPipeW,
 };
 use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
-use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess, GetCurrentProcessId, OpenProcessToken};
+use windows_sys::Win32::System::Threading::{
+    CreateEventW, GetCurrentProcess, GetCurrentProcessId, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 
 /// One pipe per Windows session, so two users signed in at once each have their own.
 pub(super) fn pipe_name() -> String {
@@ -32,28 +37,64 @@ pub(super) fn pipe_name() -> String {
     format!(r"\\.\pipe\io.github.brunovncs.open-controller.{session}")
 }
 
+/// A process's user, as its token gives it. `TOKEN_USER` starts with a pointer, so the buffer is
+/// made of `u64`s to keep it aligned.
+struct TokenUserBuf(Vec<u64>);
+
+impl TokenUserBuf {
+    fn of(process: HANDLE) -> Option<TokenUserBuf> {
+        unsafe {
+            let mut token = null_mut();
+            if OpenProcessToken(process, TOKEN_QUERY, &mut token) == 0 {
+                return None;
+            }
+            let token = Handle(token);
+            let mut n = 0u32;
+            GetTokenInformation(token.0, TokenUser, null_mut(), 0, &mut n);
+            if (n as usize) < size_of::<TOKEN_USER>() {
+                return None;
+            }
+            let mut buf = vec![0u64; (n as usize).div_ceil(8)];
+            if GetTokenInformation(token.0, TokenUser, buf.as_mut_ptr().cast(), n, &mut n) == 0 {
+                return None;
+            }
+            Some(TokenUserBuf(buf))
+        }
+    }
+
+    fn sid(&self) -> PSID {
+        unsafe { (*(self.0.as_ptr() as *const TOKEN_USER)).User.Sid }
+    }
+}
+
 /// The current user's SID as a string (`S-1-5-21-...`).
 fn user_sid() -> Option<String> {
+    let user = TokenUserBuf::of(unsafe { GetCurrentProcess() })?;
     unsafe {
-        let mut token = null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
-            return None;
-        }
-        let token = Handle(token);
-        let mut buf = vec![0u8; 256];
-        let mut n = 0u32;
-        if GetTokenInformation(token.0, TokenUser, buf.as_mut_ptr().cast(), buf.len() as u32, &mut n) == 0 {
-            return None;
-        }
-        let user = &*(buf.as_ptr() as *const TOKEN_USER);
         let mut s = null_mut();
-        if ConvertSidToStringSidW(user.User.Sid, &mut s) == 0 {
+        if ConvertSidToStringSidW(user.sid(), &mut s) == 0 {
             return None;
         }
         let len = (0..).take_while(|&i| *s.add(i) != 0).count();
         let out = String::from_utf16_lossy(std::slice::from_raw_parts(s, len));
         LocalFree(s.cast());
         Some(out)
+    }
+}
+
+/// Whether the process serving the pipe runs as this user. Pipe names are machine-wide, so
+/// another user's program could create this session's name before the resident does.
+fn served_by_this_user(pipe: HANDLE) -> bool {
+    unsafe {
+        let mut pid = 0u32;
+        if GetNamedPipeServerProcessId(pipe, &mut pid) == 0 {
+            return false;
+        }
+        let Some(process) = Handle::valid(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)) else { return false };
+        match (TokenUserBuf::of(process.0), TokenUserBuf::of(GetCurrentProcess())) {
+            (Some(theirs), Some(mine)) => EqualSid(theirs.sid(), mine.sid()) != 0,
+            _ => false,
+        }
     }
 }
 
@@ -134,12 +175,11 @@ impl Pipe {
     }
 
     pub(super) fn create_at(name: &str) -> io::Result<Pipe> {
-        let security = Security::for_user();
-        let attrs = SECURITY_ATTRIBUTES {
-            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: security.as_ref().map(|s| s.0).unwrap_or(null_mut()),
-            bInheritHandle: 0,
-        };
+        // Without its owner-only access list the pipe would get the default one, which lets
+        // everyone read it: better no window than that.
+        let security = Security::for_user().ok_or_else(|| io::Error::other("could not build the pipe's access list"))?;
+        let attrs =
+            SECURITY_ATTRIBUTES { nLength: size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: security.0, bInheritHandle: 0 };
         let h = unsafe {
             CreateNamedPipeW(
                 wide(name).as_ptr(),
@@ -172,18 +212,22 @@ impl Pipe {
         unsafe { DisconnectNamedPipe(self.handle.0) };
     }
 
-    /// Opens the client end. `Ok(None)` when no resident process is running.
+    /// Opens the client end. `Ok(None)` when no resident process is running; an error of kind
+    /// `PermissionDenied` when the pipe is served by another user's program.
     pub fn connect() -> io::Result<Option<Pipe>> {
         Self::connect_at(&pipe_name())
     }
 
     pub(super) fn connect_at(name: &str) -> io::Result<Option<Pipe>> {
         let name = wide(name);
+        // The server may learn who connected but not act as this user.
+        let flags = FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION;
         for _ in 0..10 {
-            let h = unsafe {
-                CreateFileW(name.as_ptr(), GENERIC_READ | GENERIC_WRITE, 0, null(), OPEN_EXISTING, FILE_FLAG_OVERLAPPED, null_mut())
-            };
+            let h = unsafe { CreateFileW(name.as_ptr(), GENERIC_READ | GENERIC_WRITE, 0, null(), OPEN_EXISTING, flags, null_mut()) };
             if let Some(handle) = Handle::valid(h) {
+                if !served_by_this_user(handle.0) {
+                    return Err(io::Error::new(io::ErrorKind::PermissionDenied, "the pipe is served by another user's program"));
+                }
                 return Ok(Some(Pipe { handle, write: Mutex::new(Io::new()), server: false }));
             }
             match unsafe { GetLastError() } {
@@ -264,5 +308,28 @@ impl Reader<'_> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn this_user_is_read_from_the_token() {
+        assert!(user_sid().is_some_and(|s| s.starts_with("S-1-5-")), "{:?}", user_sid());
+        let a = TokenUserBuf::of(unsafe { GetCurrentProcess() }).unwrap();
+        assert_eq!(a.0.as_ptr() as usize % align_of::<TOKEN_USER>(), 0);
+        let b = TokenUserBuf::of(unsafe { GetCurrentProcess() }).unwrap();
+        assert_ne!(unsafe { EqualSid(a.sid(), b.sid()) }, 0);
+    }
+
+    #[test]
+    fn a_pipe_this_process_serves_is_this_users() {
+        let name = format!(r"\\.\pipe\io.github.brunovncs.open-controller.test-owner-{}", std::process::id());
+        let server = Pipe::create_at(&name).unwrap();
+        let client = Pipe::connect_at(&name).unwrap().expect("the pipe is there");
+        assert!(served_by_this_user(client.handle.0));
+        drop((client, server));
     }
 }
