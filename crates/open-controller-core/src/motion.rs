@@ -388,6 +388,10 @@ impl OneEuro {
 
     fn filter(&mut self, x: f32, dt: f32) -> f32 {
         let dt = dt.clamp(0.0005, 0.1);
+        // One bad sample would otherwise stay in the filter for good.
+        if !x.is_finite() {
+            return self.value.unwrap_or(0.);
+        }
         let Some(prev) = self.value else {
             self.value = Some(x);
             return x;
@@ -428,6 +432,15 @@ pub fn touch_buttons(clicked: bool, fingers: &[Finger]) -> (bool, bool, bool) {
 mod tests {
     use super::*;
     use crate::profile::Acceleration;
+
+    #[test]
+    fn a_bad_gyro_sample_does_not_stick_in_the_filter() {
+        let mut f = OneEuro::default();
+        f.filter(0.5, 0.004);
+        assert_eq!(f.filter(f32::NAN, 0.004), 0.5);
+        assert!(f.filter(0.6, 0.004).is_finite());
+        assert_eq!(OneEuro::default().filter(f32::INFINITY, 0.004), 0.);
+    }
 
     #[test]
     fn sticks_pass_through_untouched_by_default() {

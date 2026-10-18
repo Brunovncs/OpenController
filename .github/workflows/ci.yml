@@ -6,13 +6,24 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -21,6 +32,8 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
 
       - name: Format
         run: cargo fmt --all --check
@@ -55,7 +68,7 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
-          & $iscc /Qp /DVersion=0.0.0 /DBuild=target\debug packaging\windows\open-controller.iss
+          & $iscc /Qp /DVersion=0.0.0 /DBuild=target\debug /DArch=${{ matrix.arch }} packaging\windows\open-controller.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       # Only the installer is waited for: Start-Process -Wait would also wait for the app it starts.
       - name: Install, update and uninstall
@@ -75,11 +88,19 @@ jobs:
           if (Get-Process open-controller* -ErrorAction SilentlyContinue) { throw "the uninstaller left the program running" }
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-setup
+          name: windows-${{ matrix.arch }}-setup
           path: dist/*-setup.exe
 
   linux:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -92,6 +113,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

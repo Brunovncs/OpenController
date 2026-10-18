@@ -57,7 +57,7 @@ const LONG: &[&str] = &["--connect-timeout", "15", "--speed-limit", "1024", "--s
 
 fn fetch(url: &str, timing: &[&str]) -> Result<Vec<u8>, String> {
     let out = curl()
-        .args(["--silent", "--show-error", "--fail", "--location"])
+        .args(["--silent", "--show-error", "--fail", "--location", "--proto", "=https", "--proto-redir", "=https"])
         .args(timing)
         .args(["--header", "Accept: application/vnd.github+json", "--user-agent", "open-controller"])
         .arg(url)
@@ -66,7 +66,25 @@ fn fetch(url: &str, timing: &[&str]) -> Result<Vec<u8>, String> {
     if out.status.success() { Ok(out.stdout) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
 }
 
+/// Which Windows installer this machine takes: the ARM64 one on ARM64 Windows, also from the x64
+/// build running emulated there, so that an update moves it to the native build.
+fn arch() -> &'static str {
+    #[cfg(windows)]
+    {
+        if crate::drivers::native_arm64() {
+            return "arm64";
+        }
+    }
+    "x64"
+}
+
 pub fn parse(json: &[u8]) -> Result<Release, String> {
+    parse_for(json, arch())
+}
+
+/// The release, with the installer for `arch`, or the x64 one for a release made before there
+/// was an ARM64 build.
+fn parse_for(json: &[u8], arch: &str) -> Result<Release, String> {
     let v: serde_json::Value = serde_json::from_slice(json).map_err(|e| e.to_string())?;
     let tag = v["tag_name"].as_str().ok_or("the release has no tag")?;
     let assets = v["assets"].as_array().cloned().unwrap_or_default();
@@ -77,7 +95,8 @@ pub fn parse(json: &[u8]) -> Result<Release, String> {
             .and_then(|a| a["browser_download_url"].as_str())
             .map(String::from)
     };
-    let setup = url_of("-windows-x64-setup.exe").zip(url_of("-windows-x64-setup.exe.sha256"));
+    let setup_for = |arch: &str| url_of(&format!("-windows-{arch}-setup.exe")).zip(url_of(&format!("-windows-{arch}-setup.exe.sha256")));
+    let setup = setup_for(arch).or_else(|| setup_for("x64"));
     Ok(Release {
         version: tag.trim_start_matches('v').to_string(),
         page: v["html_url"].as_str().unwrap_or(RELEASES_PAGE).to_string(),
@@ -143,12 +162,25 @@ mod tests {
             {"name":"open-controller-0.3.0-windows-x64.zip","browser_download_url":"https://example/zip"},
             {"name":"open-controller-0.3.0-windows-x64-setup.exe","browser_download_url":"https://example/setup"},
             {"name":"open-controller-0.3.0-windows-x64-setup.exe.sha256","browser_download_url":"https://example/sha"}]}"#;
-        let r = parse(json).unwrap();
+        let r = parse_for(json, "x64").unwrap();
         assert_eq!(r.version, "0.3.0");
         assert_eq!(r.page, "https://example/v0.3.0");
         assert_eq!(r.setup, Some(("https://example/setup".into(), "https://example/sha".into())));
-        let without = parse(br#"{"tag_name":"v0.2.0","assets":[]}"#).unwrap();
+        // A release from before the ARM64 build: ARM64 machines keep the x64 one.
+        assert_eq!(parse_for(json, "arm64").unwrap().setup, r.setup);
+        let without = parse_for(br#"{"tag_name":"v0.2.0","assets":[]}"#, "x64").unwrap();
         assert_eq!(without.setup, None);
         assert_eq!(without.page, RELEASES_PAGE);
+    }
+
+    #[test]
+    fn each_architecture_takes_its_own_installer() {
+        let json = br#"{"tag_name":"v0.9.0","assets":[
+            {"name":"open-controller-0.9.0-windows-arm64-setup.exe","browser_download_url":"https://example/arm"},
+            {"name":"open-controller-0.9.0-windows-arm64-setup.exe.sha256","browser_download_url":"https://example/arm-sha"},
+            {"name":"open-controller-0.9.0-windows-x64-setup.exe","browser_download_url":"https://example/x64"},
+            {"name":"open-controller-0.9.0-windows-x64-setup.exe.sha256","browser_download_url":"https://example/x64-sha"}]}"#;
+        assert_eq!(parse_for(json, "x64").unwrap().setup, Some(("https://example/x64".into(), "https://example/x64-sha".into())));
+        assert_eq!(parse_for(json, "arm64").unwrap().setup, Some(("https://example/arm".into(), "https://example/arm-sha".into())));
     }
 }

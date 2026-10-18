@@ -216,7 +216,8 @@ fn source(p: &Package) -> &Source {
     p.arm64.as_ref().filter(|_| native_arm64()).unwrap_or(&p.source)
 }
 
-fn native_arm64() -> bool {
+/// Whether this is ARM64 Windows, whichever build of this program is running on it.
+pub fn native_arm64() -> bool {
     let (mut process, mut native) = (0, 0);
     unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) != 0 && native == IMAGE_FILE_MACHINE_ARM64 }
 }
@@ -250,13 +251,21 @@ pub fn install(c: Component, dir: &Path, silent: bool) -> Result<Outcome, String
         let _ = std::fs::remove_file(&file);
         return done.map(|()| Outcome::Installed);
     }
+    // Held open without write or delete sharing from the check until the installer is done, so
+    // nothing can swap the file between its hash and the administrator prompt.
+    let lock = locked(&file, source(p).sha256)?;
     let (exe, args) = match p.setup {
-        Setup::Msi => ("msiexec.exe".to_string(), format!("/i \"{}\" {} /norestart", file.display(), if silent { "/passive" } else { "" })),
+        Setup::Msi => (
+            system32("msiexec.exe").display().to_string(),
+            format!("/i \"{}\" {} /norestart", file.display(), if silent { "/passive" } else { "" }),
+        ),
         Setup::Inno => (file.display().to_string(), if silent { "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" } else { "/NORESTART" }.into()),
         _ => (file.display().to_string(), if silent { "/exenoui /qn /norestart".to_string() } else { String::new() }),
     };
-    let code = run_elevated(&exe, &args)?;
+    let code = run_elevated(&exe, &args);
+    drop(lock);
     let _ = std::fs::remove_file(&file);
+    let code = code?;
     match (code, p.setup) {
         (0, Setup::Inno) => Ok(Outcome::RestartNeeded),
         (0, _) => Ok(Outcome::Installed),
@@ -302,7 +311,7 @@ fn download(p: &Package, dir: &Path) -> Result<PathBuf, String> {
     if !matches(&file, sha256) {
         // curl and tar ship with Windows 10 1803 and later.
         let out = Command::new(system32("curl.exe"))
-            .args(["--silent", "--show-error", "--fail", "--location", "--retry", "2"])
+            .args(["--silent", "--show-error", "--fail", "--location", "--proto", "=https", "--proto-redir", "=https", "--retry", "2"])
             // Given up on when it stalls, not after a set time: slow connections take minutes.
             .args(["--connect-timeout", "15", "--speed-limit", "1024", "--speed-time", "30", "--output"])
             .arg(&file)
@@ -319,6 +328,21 @@ fn download(p: &Package, dir: &Path) -> Result<PathBuf, String> {
         }
     }
     Ok(file)
+}
+
+/// `file` opened so that others can read it but neither change nor delete it, once its contents
+/// are checked through that same handle.
+fn locked(file: &Path, sha256: &str) -> Result<std::fs::File, String> {
+    use std::io::Read;
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+    let mut f = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(file).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if hex(&Sha256::digest(&bytes)) != sha256 {
+        return Err("the downloaded installer changed before it could run".into());
+    }
+    Ok(f)
 }
 
 fn matches(file: &Path, sha256: &str) -> bool {

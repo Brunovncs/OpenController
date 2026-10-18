@@ -238,9 +238,11 @@ fn write_journal(path: &Path, journal: &Journal) -> std::io::Result<()> {
 }
 
 /// Removes this program's entries (`journal.hidden` ∩ `ids`) from the hidden list, and turns
-/// hiding off again once none is left if this program had turned it on.
+/// hiding off again once none is left if this program had turned it on. Devices another program
+/// hid in the meantime keep it on.
 fn reveal_on(driver: &HidHide, journal: &mut Journal, ids: &[String]) -> Result<(), CloakError> {
     let mine: Vec<String> = journal.hidden.iter().filter(|x| contains(ids, x)).cloned().collect();
+    let mut left = None;
     if !mine.is_empty() {
         let list = driver.blacklist()?;
         let kept = without(&list, &mine);
@@ -248,9 +250,16 @@ fn reveal_on(driver: &HidHide, journal: &mut Journal, ids: &[String]) -> Result<
             driver.set_blacklist(&kept)?;
         }
         journal.hidden = without(&journal.hidden, &mine);
+        left = Some(kept);
     }
     if journal.hidden.is_empty() && journal.enabled {
-        driver.set_active(false)?;
+        let others = match left {
+            Some(kept) => !kept.is_empty(),
+            None => !driver.blacklist()?.is_empty(),
+        };
+        if !others {
+            driver.set_active(false)?;
+        }
         journal.enabled = false;
     }
     Ok(())

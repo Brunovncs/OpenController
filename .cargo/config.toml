@@ -1,0 +1,4 @@
+# The C runtime linked in on Windows, so the programs start on a machine without the Visual C++
+# Redistributable (VCRUNTIME140.dll). The cmake and cc crates follow it: SDL is built with /MT.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

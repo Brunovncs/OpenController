@@ -137,7 +137,7 @@ impl Cloak {
 #[cfg(test)]
 mod tests {
     #[test]
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     fn grab_request_number() {
         assert_eq!(super::EVIOCGRAB, 0x4004_4590);
     }

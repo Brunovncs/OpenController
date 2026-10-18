@@ -6,6 +6,7 @@
 
 use crate::binding::{Chord, Step, modifier};
 use crossbeam_channel::{Sender, unbounded};
+use std::collections::HashMap;
 use std::time::Duration;
 
 #[cfg_attr(windows, path = "keyboard/windows.rs")]
@@ -32,14 +33,19 @@ impl Keyboard {
         std::thread::Builder::new()
             .name("open-controller-keys".into())
             .spawn(move || {
-                // Without a way to type (Linux without the device rule), keys are dropped.
-                let sink = sys::Sink::open();
+                // Without a way to type (Linux before the device rule is in place), keys are
+                // dropped, and it is tried again with the next one.
+                let mut sink = None;
+                let mut held = Held::default();
                 while let Ok(out) = rx.recv() {
+                    if sink.is_none() {
+                        sink = sys::Sink::open();
+                    }
                     let Some(sink) = sink.as_ref() else { continue };
                     match out {
-                        Out::Down(c) => sink.down(c),
-                        Out::Up(c) => sink.up(c),
-                        Out::Play(steps) => play(sink, &steps),
+                        Out::Down(c) => sink.down(held.down(c)),
+                        Out::Up(c) => sink.up(held.up(c)),
+                        Out::Play(steps) => play(sink, &mut held, &steps),
                     }
                 }
             })
@@ -63,17 +69,65 @@ impl Keyboard {
 /// Gap between the keys of a macro step, so programs that poll the keyboard see each one.
 const TAP: Duration = Duration::from_millis(15);
 
-fn play(sink: &sys::Sink, steps: &[Step]) {
+fn play(sink: &sys::Sink, held: &mut Held, steps: &[Step]) {
     for s in steps {
         match *s {
             Step::Keys(c) => {
-                sink.down(c);
+                sink.down(held.down(c));
                 std::thread::sleep(TAP);
-                sink.up(c);
+                sink.up(held.up(c));
                 std::thread::sleep(TAP);
             }
             Step::Wait(ms) => std::thread::sleep(Duration::from_millis(ms as u64)),
         }
+    }
+}
+
+const MODIFIER_BITS: [u8; 4] = [modifier::CTRL, modifier::SHIFT, modifier::ALT, modifier::WIN];
+
+/// How many chords hold each key down, so that letting go of one never lets go of a key another
+/// still holds: Ctrl, with two buttons on Ctrl+C and Ctrl+V.
+#[derive(Default)]
+struct Held {
+    mods: [u32; 4],
+    keys: HashMap<u16, u32>,
+}
+
+impl Held {
+    /// The chord to press: all of it, since a key already down stays down when pressed again
+    /// and some systems read the modifiers from the key's own event.
+    fn down(&mut self, c: Chord) -> Chord {
+        for (n, &m) in self.mods.iter_mut().zip(&MODIFIER_BITS) {
+            if c.mods & m != 0 {
+                *n += 1;
+            }
+        }
+        if c.key != 0 {
+            *self.keys.entry(c.key).or_default() += 1;
+        }
+        c
+    }
+
+    /// The part of the chord no other one holds. A key nothing pressed is let go of anyway.
+    fn up(&mut self, c: Chord) -> Chord {
+        let mut out = Chord { mods: 0, key: 0 };
+        for (n, &m) in self.mods.iter_mut().zip(&MODIFIER_BITS) {
+            if c.mods & m != 0 {
+                *n = n.saturating_sub(1);
+                if *n == 0 {
+                    out.mods |= m;
+                }
+            }
+        }
+        if c.key != 0 {
+            let n = self.keys.remove(&c.key).unwrap_or(0).saturating_sub(1);
+            if n == 0 {
+                out.key = c.key;
+            } else {
+                self.keys.insert(c.key, n);
+            }
+        }
+        out
     }
 }
 
@@ -197,5 +251,18 @@ mod tests {
         assert_eq!(us_vk_for_char('7'), Some(0x37));
         assert_eq!(us_vk_for_char('['), Some(0xDB));
         assert_eq!(us_vk_for_char('ç'), None);
+    }
+
+    #[test]
+    fn a_key_two_chords_hold_stays_down_until_both_let_go() {
+        use modifier::{CTRL, SHIFT};
+        let mut held = Held::default();
+        let (copy, paste) = (Chord { mods: CTRL, key: 0x43 }, Chord { mods: CTRL | SHIFT, key: 0x56 });
+        assert_eq!(held.down(copy), copy);
+        assert_eq!(held.down(paste), paste);
+        assert_eq!(held.up(copy), Chord { mods: 0, key: 0x43 }, "Ctrl stays down for the other");
+        assert_eq!(held.up(paste), paste);
+        // Let go of without having been pressed here: let go of all the same.
+        assert_eq!(held.up(copy), copy);
     }
 }

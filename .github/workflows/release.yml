@@ -1,15 +1,17 @@
 name: Release
 
-# Push a tag like v0.2.0, matching the version in Cargo.toml, to build the Windows zip, the Linux
-# tarball and the macOS apps, and publish them as a release whose notes are that version's
-# section of CHANGELOG.md. Nothing is signed by a vendor: SmartScreen warns on first launch, and
-# macOS asks to open the app with a right-click the first time.
+# Push a tag like v0.2.0, matching the version in Cargo.toml, to build the Windows zips and
+# installers and the Linux tarballs (x64 and ARM64 each) and the macOS apps, and publish them as
+# a release whose notes are that version's section of CHANGELOG.md. Nothing is signed by a
+# vendor: SmartScreen warns on first launch, and macOS asks to open the app with a right-click the
+# first time.
 on:
   push:
     tags: ["v*"]
 
+# Only the job that publishes may write: the builds run hundreds of crates' build scripts.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   version:
@@ -18,6 +20,8 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Check the tag against Cargo.toml and CHANGELOG.md
         id: check
         run: |
@@ -26,22 +30,45 @@ jobs:
           grep -qx "## $version" CHANGELOG.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  # Each architecture built natively on its own runner. A tag's cache is never used again, so
+  # none is saved here: it would only push main's out.
   windows:
     needs: version
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
+          save-if: false
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build
-        run: cargo build --release --workspace
+        run: cargo build --release --workspace --locked
+      # The release build compiles the window's shaders ahead of time, which the debug build in
+      # CI never does: both programs are started once as they ship.
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $p = Start-Process target\release\open-controller.exe -ArgumentList '--smoke','--data-dir',"$env:RUNNER_TEMP\smoke" -PassThru -Wait -NoNewWindow
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+          $p = Start-Process target\release\open-controller-ui.exe -ArgumentList '--smoke' -PassThru -Wait -NoNewWindow
+          exit $p.ExitCode
       - name: Package
         shell: pwsh
         run: |
-          $name = "open-controller-${{ needs.version.outputs.version }}-windows-x64"
+          $name = "open-controller-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}"
           New-Item -ItemType Directory "dist\$name" | Out-Null
           Copy-Item target\release\open-controller.exe, target\release\open-controller-ui.exe, README.md, LICENSE, THIRD_PARTY_NOTICES.md, CHANGELOG.md "dist\$name"
           Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip"
@@ -51,23 +78,34 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
-          & $iscc /Qp /DVersion=${{ needs.version.outputs.version }} /DBuild=target\release packaging\windows\open-controller.iss
+          & $iscc /Qp /DVersion=${{ needs.version.outputs.version }} /DBuild=target\release /DArch=${{ matrix.arch }} packaging\windows\open-controller.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $setup = "open-controller-${{ needs.version.outputs.version }}-windows-x64-setup.exe"
+          $setup = "open-controller-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}-setup.exe"
           (Get-FileHash "dist\$setup" -Algorithm SHA256).Hash.ToLower() + "  $setup" | Out-File -Encoding ascii "dist\$setup.sha256"
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: windows-${{ matrix.arch }}
           path: |
             dist/*.zip*
             dist/*-setup.exe*
 
+  # 22.04 on both, so the binaries need no newer glibc than 2.35 (Raspberry Pi OS Bookworm has
+  # 2.36). Built natively: packaging runs the new binary for the udev rule.
   linux:
     needs: version
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Build dependencies
         run: |
           sudo apt-get update
@@ -75,15 +113,18 @@ jobs:
             libfontconfig1-dev libfreetype6-dev libvulkan-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
+          save-if: false
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build
-        run: cargo build --release --workspace
+        run: cargo build --release --workspace --locked
       - name: Package
-        run: sh packaging/package.sh linux "${{ needs.version.outputs.version }}" target/release
+        run: sh packaging/package.sh linux "${{ needs.version.outputs.version }}" target/release ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: linux
+          name: linux-${{ matrix.arch }}
           path: dist/*.tar.gz*
 
   macos:
@@ -99,17 +140,20 @@ jobs:
             arch: x64
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          save-if: false
       - name: Tests
         if: matrix.arch == 'arm64'
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build
-        run: cargo build --release --workspace --target ${{ matrix.target }}
+        run: cargo build --release --workspace --locked --target ${{ matrix.target }}
       - name: Package
         run: sh packaging/package.sh macos "${{ needs.version.outputs.version }}" target/${{ matrix.target }}/release ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
@@ -120,8 +164,12 @@ jobs:
   publish:
     needs: [version, windows, linux, macos]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           path: dist

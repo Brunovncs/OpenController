@@ -408,9 +408,9 @@ impl Rumble {
 mod tests {
     use super::*;
 
-    /// The request numbers `<linux/uinput.h>` gives on x86-64.
+    /// The request numbers `<linux/uinput.h>` gives on x86-64, the same on ARM64.
     #[test]
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     fn request_numbers_match_the_kernel_headers() {
         assert_eq!(UI_DEV_CREATE, 0x5501);
         assert_eq!(UI_DEV_DESTROY, 0x5502);

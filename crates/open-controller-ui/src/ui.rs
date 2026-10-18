@@ -417,10 +417,16 @@ impl MainView {
             }
             _ => {
                 let now = Instant::now();
+                let room = binding::MAX_STEPS.saturating_sub(e.steps.len());
+                if room == 0 {
+                    e.recording = false;
+                    cx.notify();
+                    return;
+                }
                 if let Some(gap) = e.last_key.map(|t| now.duration_since(t).as_millis() as u64) {
                     // Gaps are kept to the nearest 10 ms; shorter ones are just typing.
                     let ms = ((gap + 5) / 10 * 10).min(binding::MAX_WAIT_MS as u64) as u16;
-                    if ms >= 30 {
+                    if ms >= 30 && room >= 2 {
                         e.steps.push(Step::Wait(ms));
                     }
                 }

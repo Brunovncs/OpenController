@@ -382,6 +382,8 @@ impl Profiles {
 
     pub fn apply(&mut self, edit: Edit) {
         match edit {
+            // The same limit `sanitised` keeps: buttons are bits of a u64.
+            Edit::Bind { button: 64.., .. } => {}
             Edit::Bind { button, action } => {
                 let b = &mut self.active_mut().bindings;
                 match action.and_then(|a| a.sanitised()) {
@@ -571,6 +573,8 @@ mod tests {
         assert_eq!(p.active().bindings.len(), 1, "a new profile starts as a copy");
         p.apply(Edit::Bind { button: 17, action: None });
         assert!(p.active().bindings.is_empty());
+        p.apply(Edit::Bind { button: 64, action: Some(Action::Xbox(XboxButton::A)) });
+        assert!(p.active().bindings.is_empty(), "past the 64 buttons a u64 holds");
         assert_eq!(p.list[0].bindings.len(), 1);
         p.apply(Edit::Select(0));
         assert_eq!(p.active().name, "Default");

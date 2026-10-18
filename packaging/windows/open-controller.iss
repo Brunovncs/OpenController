@@ -12,6 +12,11 @@
 #ifndef Build
   #define Build "target\release"
 #endif
+; x64 or arm64, the build's architecture. The x64 installer also runs on ARM64 Windows, which is
+; what versions up to 0.8.8 download as their update; from then on they take the arm64 one.
+#ifndef Arch
+  #define Arch "x64"
+#endif
 #define Root "..\.."
 
 [Setup]
@@ -29,8 +34,13 @@ DisableDirPage=auto
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 PrivilegesRequired=lowest
+#if Arch == "arm64"
+ArchitecturesAllowed=arm64
+ArchitecturesInstallIn64BitMode=arm64
+#else
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+#endif
 MinVersion=10.0
 WizardStyle=modern
 SetupIconFile={#Root}\assets\icon.ico
@@ -41,7 +51,7 @@ RestartApplications=no
 Compression=lzma2/max
 SolidCompression=yes
 OutputDir={#Root}\dist
-OutputBaseFilename=open-controller-{#Version}-windows-x64-setup
+OutputBaseFilename=open-controller-{#Version}-windows-{#Arch}-setup
 LicenseFile={#Root}\LICENSE
 
 [Languages]

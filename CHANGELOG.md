@@ -11,6 +11,18 @@ to finish. That second window is expected.
 Twin USB Joystick adapters that report the id 0815:0005 now work as controllers. Before, they
 showed up as not mapped.
 
+Windows on ARM gets its own build, and an update moves an ARM PC to it. HidHide has no ARM
+version yet, so there the original controller can't be hidden. Linux also gets an ARM build.
+
+The Windows build no longer needs the Visual C++ runtime installed to start.
+
+Two buttons holding shortcuts that share a key, like Ctrl+C and Ctrl+V, no longer let go of Ctrl
+when one of them is released. On Linux, keys from extra buttons work as soon as device access is
+set up, without signing out first.
+
+When OpenController quits, it leaves HidHide on if another program is still hiding a controller
+with it. If the settings file can't be read at startup, it is no longer replaced by the defaults.
+
 ## 0.8.8
 
 Joy-Cons can now be two controllers instead of one. On a pair's page, Split Joy-Cons makes each

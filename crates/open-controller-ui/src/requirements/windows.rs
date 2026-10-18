@@ -26,11 +26,17 @@ pub fn install(c: Component, dir: &Path, silent: bool) -> Result<Outcome, String
     drivers::install(c, dir, silent)
 }
 
+/// HidHide is published for x64 only, and a driver cannot run emulated: on ARM64 Windows it
+/// can be neither installed nor asked for.
+fn unavailable(c: Component) -> bool {
+    c == Component::HidHide && drivers::native_arm64()
+}
+
 /// What keeps controllers from working fully, for the banner on the home screen.
 pub fn attention(snap: &Snapshot, text: &'static Text) -> Option<&'static str> {
     if !matches!(snap.vigem, Driver::Ready { .. }) {
         Some(text.vigem_missing)
-    } else if snap.hiding && !matches!(snap.hidhide, Driver::Ready { .. }) {
+    } else if snap.hiding && !matches!(snap.hidhide, Driver::Ready { .. }) && !unavailable(Component::HidHide) {
         Some(text.hidhide_missing)
     } else if matches!(snap.viiper, Driver::Missing | Driver::Failed(_)) {
         Some(text.viiper_fallback)
@@ -67,9 +73,10 @@ impl MainView {
         let status = match (&version, works) {
             (Some(v), _) if !v.is_empty() => fill(text.installed_version, v),
             (_, true) => text.installed.to_string(),
+            _ if unavailable(c) => text.hidhide_no_arm64.to_string(),
             _ => text.not_installed.to_string(),
         };
-        let progress = self.installs.get(&c).cloned();
+        let progress = self.installs.get(&c).cloned().filter(|_| !unavailable(c));
         let note = match &progress {
             Some(Install::Done(Outcome::RestartNeeded)) => Some((text.restart_needed.to_string(), t.caution)),
             // HidHide's driver starts only after a restart, whatever its installer says.
@@ -94,6 +101,7 @@ impl MainView {
                     .child(body(text.installing, t.text2))
                     .into_any_element(),
             ),
+            _ if unavailable(c) => None,
             _ if !works || version.is_none() => Some(
                 button(("install", c as usize), text.install, Kind::Primary, &t)
                     .on_click(cx.listener(move |this, _, _, cx| this.install(c, true, cx)))

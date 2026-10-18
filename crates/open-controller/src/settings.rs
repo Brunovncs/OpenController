@@ -9,8 +9,13 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const FILE_NAME: &str = "settings.json";
+
+/// Set when `settings.json` could be neither read nor moved aside: it still holds the user's
+/// assignments, so no save may replace it.
+static UNREAD: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -91,13 +96,21 @@ impl Settings {
     /// Written to a temporary file first and flushed to the disk before it replaces the old
     /// one, so neither a crash nor a power cut mid-write can lose the assignments.
     pub fn save(&self, dir: &Path) {
+        let path = dir.join(FILE_NAME);
+        if UNREAD.load(Ordering::Relaxed) {
+            if let Err(e) = std::fs::rename(&path, path.with_extension("json.unread")) {
+                eprintln!("open-controller: not saving the settings over a file that could not be read: {e}");
+                return;
+            }
+            UNREAD.store(false, Ordering::Relaxed);
+        }
         let Ok(text) = serde_json::to_vec_pretty(self) else { return };
         let tmp = dir.join(format!("{FILE_NAME}.tmp"));
         let written = std::fs::File::create(&tmp).and_then(|mut f| {
             f.write_all(&text)?;
             f.sync_all()
         });
-        match written.and_then(|()| std::fs::rename(&tmp, dir.join(FILE_NAME))) {
+        match written.and_then(|()| std::fs::rename(&tmp, &path)) {
             Ok(()) => {}
             Err(e) => eprintln!("open-controller: could not save the settings: {e}"),
         }
@@ -114,9 +127,12 @@ fn read(path: &Path) -> Option<Vec<u8>> {
             Ok(bytes) => return Some(bytes),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
             Err(e) if tries == 20 => {
-                // Moved aside, so the defaults the app starts with never overwrite it.
+                // Moved aside, so the defaults the app starts with never overwrite it. When even
+                // that fails, `save` tries again and leaves the file alone until it can.
                 eprintln!("open-controller: could not read the settings: {e}");
-                let _ = std::fs::rename(path, path.with_extension("json.unread"));
+                if std::fs::rename(path, path.with_extension("json.unread")).is_err() {
+                    UNREAD.store(true, Ordering::Relaxed);
+                }
                 return None;
             }
             Err(_) => {
