@@ -1,10 +1,10 @@
 name: Release
 
 # Push a tag like v0.2.0, matching the version in Cargo.toml, to build the Windows zips and
-# installers and the Linux tarballs (x64 and ARM64 each) and the macOS apps, and publish them as
-# a release whose notes are that version's section of CHANGELOG.md. Nothing is signed by a
-# vendor: SmartScreen warns on first launch, and macOS asks to open the app with a right-click the
-# first time.
+# installers and the Linux tarballs (x64 and ARM64 each) and the macOS app (universal), and
+# publish them as a release whose notes are that version's section of CHANGELOG.md. Nothing is
+# signed by a vendor: SmartScreen warns on first launch, and macOS blocks the first start until
+# the user allows it in System Settings, Privacy & Security.
 on:
   push:
     tags: ["v*"]
@@ -131,38 +131,62 @@ jobs:
           name: linux-${{ matrix.arch }}
           path: dist/*.tar.gz*
 
+  # One app for both kinds of Mac: each architecture built, then joined with lipo.
   macos:
     needs: version
     runs-on: macos-15
     timeout-minutes: 90
-    strategy:
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            arch: arm64
-          - target: x86_64-apple-darwin
-            arch: x64
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+          toolchain: stable
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: ${{ matrix.target }}
           save-if: false
       - name: Tests
-        if: matrix.arch == 'arm64'
         run: cargo test --workspace --locked
       - name: Build
-        run: cargo build --release --workspace --locked --target ${{ matrix.target }}
+        run: |
+          cargo build --release --workspace --locked --target aarch64-apple-darwin
+          cargo build --release --workspace --locked --target x86_64-apple-darwin
+          mkdir -p target/universal/release
+          for bin in open-controller open-controller-ui; do
+            lipo -create -output "target/universal/release/$bin" \
+              "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
+          done
+      - name: Signing certificate
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          [ -n "$CERT" ] || { echo "MACOS_CERT_P12 is not set; the app is signed ad hoc"; exit 0; }
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -hex 16)
+          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # A self-signed certificate is not trusted, so it is looked up without -v, by its hash.
+          identity=$(security find-identity -p codesigning "$keychain" | awk '/^ *1\)/ { print $2; exit }')
+          [ -n "$identity" ] || { echo "No code signing identity in MACOS_CERT_P12"; exit 1; }
+          echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
       - name: Package
-        run: sh packaging/package.sh macos "${{ needs.version.outputs.version }}" target/${{ matrix.target }}/release ${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
+        run: sh packaging/package.sh macos "${{ needs.version.outputs.version }}" target/universal/release universal
+      - name: Remove the signing keychain
+        if: always()
+        run: '[ -z "${KEYCHAIN:-}" ] || security delete-keychain "$KEYCHAIN"'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: macos-${{ matrix.arch }}
+          name: macos
           path: dist/*.zip*
 
   publish:

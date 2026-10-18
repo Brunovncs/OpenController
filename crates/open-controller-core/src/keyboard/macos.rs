@@ -54,6 +54,7 @@ impl Sink {
     }
 
     pub fn down(&self, c: Chord) {
+        warn_untrusted();
         let mut flags = 0;
         for &(m, key, flag) in &MODIFIERS {
             if c.mods & m != 0 {
@@ -77,6 +78,21 @@ impl Sink {
                 self.post(key, false, flags);
             }
         }
+    }
+}
+
+/// macOS drops the events of a process without the Accessibility permission, without a word.
+/// The window asks for the permission for itself, and the keys come from this process, which
+/// macOS may judge on its own when the login item started it; this says so once each time the
+/// permission is found missing.
+fn warn_untrusted() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    let trusted = crate::macos::accessibility::granted();
+    if !trusted && !WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!("open-controller: keys are not reaching other apps: this process lacks the Accessibility permission");
+    } else if trusted {
+        WARNED.store(false, Ordering::Relaxed);
     }
 }
 

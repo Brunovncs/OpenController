@@ -1,5 +1,7 @@
 //! Linux and macOS: no icon of its own; the main thread waits for the other threads' messages
-//! and for the system asking it to stop (SIGTERM at shutdown, SIGINT, SIGHUP at sign-out).
+//! and for the system asking it to stop (SIGTERM at shutdown, SIGINT, SIGHUP at sign-out). On
+//! macOS it also turns its run loop while it waits, which the workspace needs to see the
+//! application in front change.
 
 use crate::{Args, Control, Msg, foreground, open_window};
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -16,11 +18,34 @@ impl Waker {
     pub fn post(&self, m: Msg) {
         if matches!(m, Msg::Open | Msg::Quit) {
             let _ = self.0.send(m);
+            #[cfg(target_os = "macos")]
+            open_controller_core::macos::run_loop::stop();
         }
     }
 }
 
 pub struct MainLoop(Receiver<Msg>);
+
+impl MainLoop {
+    #[cfg(not(target_os = "macos"))]
+    fn next(&self) -> Option<Msg> {
+        self.0.recv().ok()
+    }
+
+    /// The run loop turns in short spells, and messages are looked for between them, since a
+    /// stop that comes between two spells is lost.
+    #[cfg(target_os = "macos")]
+    fn next(&self) -> Option<Msg> {
+        use crossbeam_channel::TryRecvError;
+        loop {
+            match self.0.try_recv() {
+                Ok(m) => return Some(m),
+                Err(TryRecvError::Disconnected) => return None,
+                Err(TryRecvError::Empty) => open_controller_core::macos::run_loop::run_for(std::time::Duration::from_millis(500)),
+            }
+        }
+    }
+}
 
 /// Nothing is left hidden by a run that was killed: grabs end with the process.
 pub fn restore(_: &std::path::Path) -> i32 {
@@ -41,6 +66,7 @@ pub fn window_failed(lang: Lang) {
 /// thread that waits for them. Called before any other thread starts.
 pub fn prepare() -> (Waker, MainLoop) {
     let (tx, rx) = unbounded();
+    let waker = Waker(tx);
     unsafe {
         let mut set: libc::sigset_t = std::mem::zeroed();
         libc::sigemptyset(&mut set);
@@ -48,17 +74,17 @@ pub fn prepare() -> (Waker, MainLoop) {
             libc::sigaddset(&mut set, s);
         }
         libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
-        let quit = tx.clone();
+        let quit = waker.clone();
         std::thread::Builder::new()
             .name("open-controller-signals".into())
             .spawn(move || {
                 let mut sig = 0;
                 libc::sigwait(&set, &mut sig);
-                let _ = quit.send(Msg::Quit);
+                quit.post(Msg::Quit);
             })
             .expect("could not start the signal thread");
     }
-    (Waker(tx), MainLoop(rx))
+    (waker, MainLoop(rx))
 }
 
 pub fn run(_: &Arc<Control>, main_loop: MainLoop, args: &Args) {
@@ -66,7 +92,7 @@ pub fn run(_: &Arc<Control>, main_loop: MainLoop, args: &Args) {
     if !args.minimized {
         open_window();
     }
-    while let Ok(m) = main_loop.0.recv() {
+    while let Some(m) = main_loop.next() {
         match m {
             Msg::Open => open_window(),
             Msg::Quit => return,

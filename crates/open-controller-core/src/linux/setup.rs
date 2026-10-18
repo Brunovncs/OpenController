@@ -54,6 +54,8 @@ pub enum Outcome {
     Cancelled,
     /// The password could not be asked: no polkit agent is running, or polkit refused.
     NoAuthorization,
+    /// The same on SteamOS, where the user has no password until they set one.
+    NoPassword,
     /// The rule is in place, but the kernel has no uinput, so no controller can be made.
     NoUinput,
 }
@@ -100,7 +102,15 @@ pub fn install_rule() -> Result<Outcome, String> {
         let _ = stdin.write_all(rule().as_bytes());
     }
     let status = child.wait().map_err(|e| format!("pkexec: {e}"))?;
-    outcome(status.code())
+    match outcome(status.code()) {
+        Ok(Outcome::NoAuthorization) if std::fs::read_to_string("/etc/os-release").is_ok_and(|r| is_steamos(&r)) => Ok(Outcome::NoPassword),
+        other => other,
+    }
+}
+
+/// The Steam Deck's `deck` user has no password by default, so polkit has nothing to check.
+fn is_steamos(os_release: &str) -> bool {
+    os_release.lines().any(|l| matches!(l.trim(), "ID=steamos" | "ID=\"steamos\""))
 }
 
 #[cfg(test)]
@@ -127,5 +137,12 @@ mod tests {
         assert!(outcome(Some(NOT_WRITTEN)).is_err());
         assert!(outcome(None).is_err());
         assert!(!script().contains("/tmp"), "the rule comes in on standard input");
+    }
+
+    #[test]
+    fn steamos_is_recognised() {
+        assert!(is_steamos("NAME=\"SteamOS\"\nID=steamos\nID_LIKE=arch\n"));
+        assert!(is_steamos("ID=\"steamos\"\n"));
+        assert!(!is_steamos("ID=arch\nID_LIKE=steamos\n"));
     }
 }

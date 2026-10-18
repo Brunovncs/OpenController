@@ -21,6 +21,11 @@ serde_json.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The login item, registered with the system from inside the app bundle.
+objc2-service-management = { version = "0.3", default-features = false, features = ["std", "objc2", "objc2-foundation", "SMAppService"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSError", "NSString"] }
+
 [target.'cfg(windows)'.dependencies]
 tray-icon = "0.26"
 windows-sys = { workspace = true, features = [

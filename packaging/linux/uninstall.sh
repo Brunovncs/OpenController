@@ -36,13 +36,17 @@ if [ -x "$bin/open-controller" ]; then
 fi
 rm -f "$bin/open-controller" "$bin/open-controller-ui" "$prefix/applications/$id.desktop" \
     "$prefix/icons/hicolor/512x512/apps/$id.png" "$prefix/icons/hicolor/scalable/apps/$id.svg" \
-    "$config/autostart/$id.desktop"
+    "$config/autostart/$id.desktop" "$config/systemd/user/$id.service" \
+    "$config/systemd/user/graphical-session.target.wants/$id.service"
+if [ -z "$user" ] && command -v systemctl >/dev/null; then
+    systemctl --user daemon-reload 2>/dev/null
+fi
 # Left by versions before 0.8.1, which staged the rule there.
 rm -rf "${TMPDIR:-/tmp}/open-controller-setup" 2>/dev/null
 # Only the folders that are empty now.
 for d in "$bin" "$prefix/applications" "$prefix/icons/hicolor/512x512/apps" "$prefix/icons/hicolor/512x512" \
     "$prefix/icons/hicolor/scalable/apps" "$prefix/icons/hicolor/scalable" "$prefix/icons/hicolor" "$prefix/icons" \
-    "$config/autostart"; do
+    "$config/autostart" "$config/systemd/user/graphical-session.target.wants" "$config/systemd/user" "$config/systemd"; do
     rmdir "$d" 2>/dev/null
 done
 

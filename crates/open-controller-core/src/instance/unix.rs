@@ -4,35 +4,79 @@
 
 use std::fs::{File, OpenOptions};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixDatagram;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-/// Where the user's sockets and locks live: `$XDG_RUNTIME_DIR` (private to the user, emptied at
-/// sign-out), else a private directory in /tmp. Not under macOS's per-user temporary directory:
-/// that path alone is about half of the 104 bytes a socket path may have there, and the signal
-/// sockets did not fit.
+/// Where the user's sockets and locks live, the first of `candidates` that is the user's alone.
+/// When none is, a path that cannot exist, so a start fails rather than trust a folder someone
+/// else can reach.
 pub fn runtime_dir() -> PathBuf {
-    if let Some(d) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).filter(|d| d.is_dir()) {
-        return d;
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let uid = unsafe { libc::getuid() };
+        let candidates = candidates(uid);
+        if let Some(d) = candidates.iter().find(|d| private_dir(d, uid)) {
+            return d.clone();
+        }
+        eprintln!("open-controller: no private folder for its sockets; tried {candidates:?}");
+        PathBuf::from("/dev/null/open-controller")
+    })
+    .clone()
+}
+
+/// `$XDG_RUNTIME_DIR` (private to the user, emptied at sign-out), else a folder of the user's in
+/// /tmp, the temporary directory or the cache.
+#[cfg(not(target_os = "macos"))]
+fn candidates(uid: u32) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).into_iter().collect();
+    out.push(PathBuf::from(format!("/tmp/open-controller-{uid}")));
+    if let Some(tmp) = std::env::var_os("TMPDIR").filter(|t| Path::new(t) != Path::new("/tmp")) {
+        out.push(Path::new(&tmp).join(format!("open-controller-{uid}")));
     }
-    let uid = unsafe { libc::getuid() };
-    let short = PathBuf::from(format!("/tmp/open-controller-{uid}"));
-    if private_dir(&short, uid) {
-        return short;
+    if let Some(home) = std::env::var_os("HOME") {
+        out.push(Path::new(&home).join(".cache/open-controller"));
     }
-    // Someone else made that one first: the longer way is still the user's own.
-    let dir = std::env::temp_dir().join(format!("open-controller-{uid}"));
-    let _ = std::fs::DirBuilder::new().mode(0o700).create(&dir);
-    dir
+    out
+}
+
+/// A folder in the user's Library, which nobody else can create first and no periodic cleanup
+/// empties, as it does /tmp after three days. Its name is short and so are the files in it
+/// (`file_name`), since a socket path may have 104 bytes there. The per-user temporary
+/// directory is the fallback.
+#[cfg(target_os = "macos")]
+fn candidates(_: u32) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(home) = std::env::var_os("HOME") {
+        out.push(Path::new(&home).join("Library/Application Support/OpenController"));
+    }
+    out.push(std::env::temp_dir().join("open-controller"));
+    out
 }
 
 /// Creates `dir` if needed, and whether it is a directory of `uid`'s that nobody else can reach.
-fn private_dir(dir: &std::path::Path, uid: u32) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    let _ = std::fs::DirBuilder::new().mode(0o700).create(dir);
-    std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && m.uid() == uid && m.mode() & 0o077 == 0)
+/// A directory of the user's that others can reach is closed first.
+fn private_dir(dir: &Path, uid: u32) -> bool {
+    let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir);
+    let Ok(m) = std::fs::symlink_metadata(dir) else { return false };
+    if !m.is_dir() || m.uid() != uid {
+        return false;
+    }
+    m.mode() & 0o077 == 0 || std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).is_ok()
+}
+
+/// macOS keeps the names short, without the reverse-DNS prefix every name shares
+/// (`ui.show`, `lock`); elsewhere they stay as earlier versions made them, so a new start still
+/// finds an older instance.
+fn file_name(name: &str, suffix: &str) -> String {
+    let what = if suffix.is_empty() { "lock" } else { suffix };
+    if cfg!(target_os = "macos") {
+        let rest = name.strip_prefix("io.github.brunovncs.open-controller").map(|r| r.trim_start_matches('.')).unwrap_or(name);
+        return if rest.is_empty() { what.to_string() } else { format!("{rest}.{what}") };
+    }
+    format!("{name}.{what}")
 }
 
 /// Holds the instance lock while alive.
@@ -56,24 +100,59 @@ pub enum Instance {
 }
 
 fn path(name: &str, suffix: &str) -> PathBuf {
-    runtime_dir().join(if suffix.is_empty() { format!("{name}.lock") } else { format!("{name}.{suffix}") })
+    runtime_dir().join(file_name(name, suffix))
 }
 
 fn try_lock(name: &str) -> Option<File> {
-    let f = OpenOptions::new().create(true).truncate(false).write(true).mode(0o600).open(path(name, "")).ok()?;
-    (unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0).then_some(f)
+    let path = path(name, "");
+    // An instance on its way out removes the file while it still holds the lock, so the lock
+    // taken may be on a file that is gone; then it counts for nothing, and the new file decides.
+    for _ in 0..3 {
+        let f = OpenOptions::new().create(true).truncate(false).write(true).mode(0o600).open(&path).ok()?;
+        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return None;
+        }
+        let (Ok(held), Ok(now)) = (f.metadata(), std::fs::metadata(&path)) else { continue };
+        if held.dev() == now.dev() && held.ino() == now.ino() {
+            return Some(f);
+        }
+    }
+    None
 }
 
 /// `name` names the program, such as `io.github.brunovncs.open-controller`. A second start
-/// signals the first one's "show" event.
+/// signals the first one's "show" event, unless the login item started it: that happens when
+/// the user turns starting at sign-in on with the app already running, and shows nothing.
 pub fn claim(name: &str) -> Instance {
     let Some(lock) = try_lock(name) else {
-        signal(name, "show");
+        if !started_at_sign_in(name) {
+            signal(name, "show");
+        }
         return Instance::Second;
     };
+    #[cfg(target_os = "macos")]
+    quit_legacy(name);
     match event(name, "show") {
         Some(show) => Instance::First { _mutex: Lock(lock), show },
         None => Instance::Second,
+    }
+}
+
+/// launchd names the job that started a program in `XPC_SERVICE_NAME`; the login item's label
+/// starts with the program's name. On Linux the login entries never start a second copy.
+fn started_at_sign_in(name: &str) -> bool {
+    cfg!(target_os = "macos") && std::env::var("XPC_SERVICE_NAME").is_ok_and(|job| job.starts_with(name))
+}
+
+/// Versions up to 0.8.8 kept their files in /tmp on macOS. One still running from before an
+/// update is asked to quit, so two copies do not type every key twice.
+#[cfg(target_os = "macos")]
+fn quit_legacy(name: &str) {
+    let uid = unsafe { libc::getuid() };
+    let old = PathBuf::from(format!("/tmp/open-controller-{uid}"));
+    let ours = std::fs::symlink_metadata(&old).is_ok_and(|m| m.is_dir() && m.uid() == uid);
+    if ours && old != runtime_dir() {
+        let _ = UnixDatagram::unbound().and_then(|s| s.send_to(b"!", old.join(format!("{name}.quit"))));
     }
 }
 
@@ -151,6 +230,17 @@ mod tests {
         drop((_mutex, show, quit));
         assert!(!running(&name));
         assert!(!path(&name, "").exists(), "asking left a lock file");
+    }
+
+    #[test]
+    fn a_lock_on_a_removed_file_counts_for_nothing() {
+        let name = format!("io.github.brunovncs.open-controller.race{}", std::process::id());
+        let old = try_lock(&name).expect("first lock");
+        std::fs::remove_file(path(&name, "")).unwrap();
+        let new = try_lock(&name).expect("the file that is there now is free");
+        assert!(try_lock(&name).is_none());
+        drop((old, new));
+        let _ = std::fs::remove_file(path(&name, ""));
     }
 
     /// macOS takes socket paths of up to 104 bytes, Linux 108.
