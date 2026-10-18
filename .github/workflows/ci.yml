@@ -54,6 +54,14 @@ jobs:
         run: cargo test --workspace --locked
       - name: Build
         run: cargo build --workspace --locked
+      # The runner has the Visual C++ Redistributable, so a program that needs it would still start
+      # here: its import table is checked instead.
+      - name: No Visual C++ runtime needed
+        shell: pwsh
+        run: |
+          foreach ($exe in 'open-controller.exe', 'open-controller-ui.exe') {
+            if (Select-String -Path "target\debug\$exe" -Pattern 'vcruntime140' -SimpleMatch -Quiet) { throw "$exe needs VCRUNTIME140.dll" }
+          }
 
       # The runner has neither ViGEmBus nor HidHide: the engine must still start, report them
       # missing and exit 0, and the window must open and draw.
