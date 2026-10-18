@@ -7,6 +7,7 @@
 //! tested on its own.
 
 pub mod binding;
+pub mod crash;
 pub mod device;
 pub mod ds3;
 pub mod ds4;

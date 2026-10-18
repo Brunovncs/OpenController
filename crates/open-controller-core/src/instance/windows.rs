@@ -23,15 +23,22 @@ fn object(name: &str, suffix: &str) -> Vec<u16> {
 /// `name` is a session-local object name, such as `io.github.brunovncs.open-controller`.
 /// A second start signals the first one's "show" event.
 pub fn claim(name: &str) -> Instance {
+    // The event comes before the mutex, so whoever finds the mutex taken finds the event too:
+    // a start in between would otherwise have nothing to signal and exit without a word. Each
+    // start creates or opens the same event, and setting it through its own handle reaches the
+    // first one, which waits on it.
+    let show = event(name, "show");
     unsafe {
         let mutex = Handle::valid(CreateMutexW(null(), 0, object(name, "").as_ptr()));
-        if mutex.is_none() || GetLastError() == ERROR_ALREADY_EXISTS {
-            signal(name, "show");
-            return Instance::Second;
-        }
-        match (mutex, event(name, "show")) {
-            (Some(m), Some(show)) => Instance::First { _mutex: m, show },
-            _ => Instance::Second,
+        let taken = mutex.is_none() || GetLastError() == ERROR_ALREADY_EXISTS;
+        match (mutex, show) {
+            (Some(m), Some(show)) if !taken => Instance::First { _mutex: m, show },
+            (_, show) => {
+                if let Some(s) = show {
+                    SetEvent(s.0);
+                }
+                Instance::Second
+            }
         }
     }
 }
@@ -82,4 +89,21 @@ pub fn on_signal(event: Handle, f: impl Fn() + Send + 'static) {
             }
         })
         .expect("could not start the signal thread");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+
+    #[test]
+    fn a_second_start_shows_the_first() {
+        let name = format!("io.github.brunovncs.open-controller.test-claim-{}", std::process::id());
+        let Instance::First { _mutex, show } = claim(&name) else { panic!("not first") };
+        assert!(running(&name));
+        assert!(matches!(claim(&name), Instance::Second));
+        assert_eq!(unsafe { WaitForSingleObject(show.0, 0) }, WAIT_OBJECT_0, "the second start signalled \"show\"");
+        drop(_mutex);
+        assert!(!running(&name));
+    }
 }

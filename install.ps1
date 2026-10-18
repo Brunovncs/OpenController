@@ -18,7 +18,9 @@ New-Item -ItemType Directory -Force $dest | Out-Null
 # hidden ones again before its files are replaced.
 $exe = Join-Path $dest 'open-controller.exe'
 if (Test-Path $exe) { & $exe --quit | Out-Null }
-Get-Process open-controller-ui -ErrorAction SilentlyContinue | ForEach-Object { $_.Kill(); $_.WaitForExit(3000) | Out-Null }
+$session = (Get-Process -Id $PID).SessionId
+Get-Process open-controller-ui -ErrorAction SilentlyContinue | Where-Object SessionId -eq $session |
+    ForEach-Object { $_.Kill(); $_.WaitForExit(3000) | Out-Null }
 
 Copy-Item "target\$profile\open-controller.exe", "target\$profile\open-controller-ui.exe" $dest -Force
 
