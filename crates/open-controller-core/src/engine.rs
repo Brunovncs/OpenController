@@ -23,6 +23,8 @@ use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
 use crate::sdl::{Event, Gamepad, Sdl};
 #[cfg(windows)]
+use crate::vigem::gone;
+#[cfg(windows)]
 use crate::xinput;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use serde::{Deserialize, Serialize};
@@ -49,6 +51,10 @@ mod xinput {
     pub fn has_free_slot() -> bool {
         false
     }
+
+    pub fn at_rest(_: &XusbReport) -> bool {
+        true
+    }
 }
 
 /// How many lines of what happened a report carries.
@@ -69,6 +75,12 @@ const RESEARCH: Duration = Duration::from_millis(100);
 const SEARCH_BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// How often a controller without a slot checks whether one has freed up.
 const FREE_SLOT_POLL: Duration = Duration::from_millis(500);
+/// How often XInput is read for a marker while a slot is looked for: reading an empty slot is
+/// slow, and the input thread runs every millisecond.
+const MARKER_POLL: Duration = Duration::from_millis(10);
+/// A controller SDL could not open is tried again after this, at growing intervals.
+const OPEN_RETRY: Duration = Duration::from_millis(500);
+const OPEN_RETRY_MAX: Duration = Duration::from_secs(30);
 /// How long a request to turn a controller off is waited on; past it, the controller leaving
 /// is taken as any other disconnect, with the grace period.
 const TURN_OFF_WAIT: Duration = Duration::from_secs(10);
@@ -84,6 +96,17 @@ const VIEW_PERIOD_AWAY: Duration = Duration::from_millis(250);
 const HALVES_WAIT: Duration = Duration::from_secs(2);
 /// Below this charge, a light bar set to blink does.
 const LOW_BATTERY: u8 = 15;
+/// A report the bus refused is sent again after this.
+const RESEND_PAUSE: Duration = Duration::from_millis(10);
+/// How long the bus may refuse the reports of a controller it took reports for before it is taken
+/// for gone and connected to again.
+const BUS_LOST_AFTER: Duration = Duration::from_secs(1);
+/// How far the gyro must move, in radians per second, for the window to be told: a controller
+/// lying still reads a few hundredths either way.
+const GYRO_DEADBAND: f32 = 0.05;
+/// How long stopping waits for the input thread to close the controllers and SDL, once the
+/// hidden ones are shown again. Past it the thread is left to the process's end.
+const LET_GO_WAIT: Duration = Duration::from_secs(2);
 /// Stops the handheld button readers when the engine stops.
 static HANDHELD_STOP: AtomicBool = AtomicBool::new(false);
 
@@ -128,8 +151,8 @@ pub enum Command {
     /// What SDL says about a controller and what happened lately, for a report on it, with its
     /// device path for the caller to look up in the device tree away from the input thread.
     Diagnose(PadKey, Sender<Option<(Diagnosis, String)>>),
-    /// Makes the virtual controllers again with this driver. Choosing VIIPER again after it
-    /// failed tries it again.
+    /// Makes the virtual controllers again with this driver, the one in use too. Choosing VIIPER
+    /// again after it failed tries it again.
     SetVirtualDriver(VirtualDriver),
     /// Splits every pair of Joy-Cons into two controllers held sideways, or joins them again.
     /// The left Joy-Con keeps the pair's player, and a pair its left Joy-Con's.
@@ -260,6 +283,9 @@ pub struct Engine {
     tx: Sender<Msg>,
     shared: Arc<Mutex<Snapshot>>,
     thread: Mutex<Option<JoinHandle<()>>>,
+    /// Told once the virtual controllers are unplugged and the hidden ones shown again; closed
+    /// without a word when the thread ends otherwise.
+    shown: Receiver<()>,
 }
 
 enum Msg {
@@ -271,13 +297,14 @@ impl Engine {
     /// Starts the input thread. `on_change` is called from it whenever the snapshot changes.
     pub fn start(config: Config, on_change: impl Fn() + Send + 'static) -> Engine {
         let (tx, rx) = unbounded();
+        let (shown_tx, shown) = crossbeam_channel::bounded(1);
         let shared = Arc::new(Mutex::new(Snapshot::default()));
         let s = shared.clone();
         let thread = std::thread::Builder::new()
             .name("open-controller-input".into())
-            .spawn(move || run(config, rx, s, Box::new(on_change)))
+            .spawn(move || run(config, rx, s, Box::new(on_change), shown_tx))
             .expect("could not start the input thread");
-        Engine { tx, shared, thread: Mutex::new(Some(thread)) }
+        Engine { tx, shared, thread: Mutex::new(Some(thread)), shown }
     }
 
     pub fn snapshot(&self) -> Snapshot {
@@ -304,10 +331,18 @@ impl Engine {
     }
 
     /// Unplugs the virtual controllers, shows the hidden ones again and waits for the thread.
+    /// Showing the controllers again is waited for whatever it takes; the rest only so long, as
+    /// closing a controller stuck in a slow rumble request can take as long as that request.
     pub fn stop(&self) {
         let _ = self.tx.send(Msg::Quit);
         let thread = self.thread.lock().ok().and_then(|mut t| t.take());
-        if let Some(t) = thread {
+        let Some(t) = thread else { return };
+        let _ = self.shown.recv();
+        let until = Instant::now() + LET_GO_WAIT;
+        while !t.is_finished() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if t.is_finished() {
             let _ = t.join();
         }
     }
@@ -362,6 +397,8 @@ struct Phys {
     /// failed, for reports.
     rate: Option<[f32; 3]>,
     gyro_error: Option<String>,
+    /// The gyro reading the window was last told of, which noise does not move.
+    rate_shown: Option<[f32; 3]>,
     /// Whether its accelerometer's reports are on, for a virtual DualShock 4, and their last
     /// reading in m/s².
     accel_on: bool,
@@ -438,14 +475,23 @@ struct Target {
     /// when. Input waits until the slot is found; XInput devices seen meanwhile wait to be
     /// classified.
     search: Option<(XusbReport, Instant)>,
+    /// Whether the search is a later look, by a controller already in use without a slot: it
+    /// shows its marker only while the controller is at rest, and is given up once it is not.
+    research: bool,
+    /// When XInput is read for the marker next.
+    next_look: Instant,
     /// Without a slot, when to look again, and the interval after that.
     next_search: Instant,
     backoff: Duration,
     /// What the game should see.
     want: Report,
     /// What the bus last took. Right after plugging in, it refuses a report or two until the
-    /// Xbox 360 driver has opened the controller; a refused report is sent again next pass.
+    /// Xbox 360 driver has opened the controller; a refused report is sent again shortly.
     last: Option<Report>,
+    /// Whether the bus has taken a report for it, and while it refuses them, since when and
+    /// when to try again.
+    accepted: bool,
+    refused: Option<(Instant, Instant)>,
     rumble: (u8, u8),
     rumble_sent: Instant,
     rumble_to: Option<DeviceId>,
@@ -453,9 +499,18 @@ struct Target {
 }
 
 impl Target {
-    /// What it should show now: its marker while its slot is looked for, its input otherwise.
+    /// What it should show now: its marker while its slot is looked for, its input otherwise. A
+    /// later look never takes the place of input in use.
     fn showing(&self) -> Report {
-        self.search.map(|(marker, _)| Report::Xusb(marker)).unwrap_or(self.want)
+        match self.search {
+            Some((marker, _)) if !self.research || self.at_rest() => Report::Xusb(marker),
+            _ => self.want,
+        }
+    }
+
+    /// Whether its input is one games read as untouched, which the marker can stand in for.
+    fn at_rest(&self) -> bool {
+        matches!(self.want, Report::Xusb(r) if xinput::at_rest(&r))
     }
 }
 
@@ -465,6 +520,8 @@ struct Core {
     bus_version: Option<String>,
     bus_error: Option<Driver>,
     bus_retry: Instant,
+    /// Why the bus seems gone, from the reports it refused; it is connected to again.
+    bus_refused: Option<String>,
     /// The driver chosen, the one making the controllers, and why VIIPER is not when it was
     /// chosen and failed. It is tried once per choice.
     driver: VirtualDriver,
@@ -479,6 +536,8 @@ struct Core {
     roster: Roster,
     phys: HashMap<DeviceId, Phys>,
     unmapped: HashMap<DeviceId, Unmapped>,
+    /// Controllers SDL could not open: when to try again, and the interval after that.
+    unopened: Vec<(DeviceId, Instant, Duration)>,
     targets: HashMap<SlotId, Target>,
     failed: HashMap<SlotId, Instant>,
     feedback_tx: Sender<Feedback>,
@@ -517,7 +576,7 @@ struct Core {
     sdl: Sdl,
 }
 
-fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_change: Box<dyn Fn() + Send>) {
+fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_change: Box<dyn Fn() + Send>, shown: Sender<()>) {
     let _boost = rt::boost_current_thread();
     let mut pacer = rt::Pacer::new();
     let publish = |s: Snapshot| {
@@ -551,6 +610,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         bus_version: None,
         bus_error: None,
         bus_retry: Instant::now(),
+        bus_refused: None,
         driver: config.driver,
         bus_driver: VirtualDriver::ViGEmBus,
         viiper_error: None,
@@ -561,6 +621,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         roster: Roster::new(GRACE),
         phys: HashMap::new(),
         unmapped: HashMap::new(),
+        unopened: Vec::new(),
         targets: HashMap::new(),
         failed: HashMap::new(),
         feedback_tx,
@@ -631,6 +692,9 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
     }
     HANDHELD_STOP.store(true, Ordering::Relaxed);
     core.shutdown();
+    let _ = shown.send(());
+    // Closing a controller waits for SDL's lock, which a rumble request still being sent holds.
+    core.phys.clear();
     publish(Snapshot::default());
 }
 
@@ -700,6 +764,7 @@ impl Core {
         if let Some(bus) = self.bus.take() {
             bus.cancel_all();
         }
+        self.bus_refused = None;
         self.failed.clear();
         self.changed = true;
     }
@@ -756,18 +821,17 @@ impl Core {
                 }
                 self.profiles_changed(&devices);
             }
+            // The same program again changes nothing, the window included.
+            Command::Foreground(program) if program == self.foreground => return,
             Command::Foreground(program) => {
-                if program != self.foreground {
-                    let before: Vec<(DeviceId, usize)> = self.in_use_by_device();
-                    self.foreground = program;
-                    // Only controllers whose profile in use changed are touched.
-                    let devices: Vec<DeviceId> =
-                        self.in_use_by_device().into_iter().filter(|x| !before.contains(x)).map(|(d, _)| d).collect();
-                    for &d in &devices {
-                        self.release_keys(self.owner_of(d));
-                    }
-                    self.profiles_changed(&devices);
+                let before: Vec<(DeviceId, usize)> = self.in_use_by_device();
+                self.foreground = program;
+                // Only controllers whose profile in use changed are touched.
+                let devices: Vec<DeviceId> = self.in_use_by_device().into_iter().filter(|x| !before.contains(x)).map(|(d, _)| d).collect();
+                for &d in &devices {
+                    self.release_keys(self.owner_of(d));
                 }
+                self.profiles_changed(&devices);
             }
             Command::SwapPlayers(PadKey::Slot(a), PadKey::Slot(b)) if a != b => self.swap(SlotId(a), SlotId(b)),
             Command::SwapPlayers(..) => {}
@@ -800,15 +864,14 @@ impl Core {
                 return;
             }
             Command::SetVirtualDriver(_) if !DRIVER_CHOICE => {}
+            // The driver in use, chosen again, is connected to again too: a way back from one that
+            // stopped answering without a sign.
             Command::SetVirtualDriver(d) => {
-                let retry = d == VirtualDriver::Viiper && self.viiper_error.is_some();
                 self.driver = d;
                 self.viiper_error = None;
-                if retry || self.bus.is_none() || self.bus_driver != d {
-                    self.note(format!("virtual controllers now from {d:?}"));
-                    self.close_bus();
-                    self.connect_bus();
-                }
+                self.note(format!("virtual controllers now from {d:?}"));
+                self.close_bus();
+                self.connect_bus();
             }
             Command::SplitJoyCons(on) => {
                 self.note(format!("Joy-Cons {}", if on { "split" } else { "joined" }));
@@ -1058,6 +1121,7 @@ impl Core {
                     }
                 }
                 Event::JoystickRemoved(id) => {
+                    self.unopened.retain(|u| u.0 != id);
                     self.changed |= self.unmapped.remove(&id).is_some();
                 }
                 Event::Other => {}
@@ -1067,7 +1131,23 @@ impl Core {
 
     fn added(&mut self, id: DeviceId) {
         self.unmapped.remove(&id);
-        let Some(pad) = self.sdl.open(id) else { return };
+        let Some(pad) = self.sdl.open(id) else {
+            // Still starting, or held by another program for a moment: it is tried again, less
+            // and less often, for as long as SDL lists it.
+            let at = Instant::now();
+            match self.unopened.iter_mut().find(|u| u.0 == id) {
+                Some(u) => {
+                    u.2 = (u.2 * 2).min(OPEN_RETRY_MAX);
+                    u.1 = at + u.2;
+                }
+                None => {
+                    self.note(format!("could not open controller {id}: {}", crate::sdl::error()));
+                    self.unopened.push((id, at + OPEN_RETRY, OPEN_RETRY));
+                }
+            }
+            return;
+        };
+        self.unopened.retain(|u| u.0 != id);
         let (vendor, product, path) = (pad.vendor(), pad.product(), pad.path());
         // SDL gives every pair of Joy-Cons it joins the same made-up path: the two Joy-Cons are
         // what is connected, what tells one pair from another and what HidHide hides.
@@ -1159,6 +1239,7 @@ impl Core {
             aim_at: None,
             rate: None,
             gyro_error: None,
+            rate_shown: None,
             accel_on: false,
             accel: None,
             sixaxis: None,
@@ -1298,8 +1379,12 @@ impl Core {
     }
 
     fn removed(&mut self, id: DeviceId, now: Instant) {
-        self.release_keys(self.owner_of(id));
-        let Some(p) = self.phys.remove(&id) else { return };
+        self.unopened.retain(|u| u.0 != id);
+        let owner = self.owner_of(id);
+        let Some(p) = self.phys.remove(&id) else {
+            self.release_keys(owner);
+            return;
+        };
         self.note(format!("removed {:04x}:{:04x} \"{}\" ({:?})", p.model.vendor, p.model.product, p.model.name, p.link));
         if p.model.half.is_some() {
             self.gone_halves.retain(|(_, _, at)| now.duration_since(*at) < HALVES_WAIT);
@@ -1322,6 +1407,15 @@ impl Core {
                 self.resend(s);
                 self.move_rumble(s);
             }
+        }
+        // The keys stay down for the buttons the controller's other connection still holds.
+        let other = match p.kind {
+            Kind::Slot(s) if !self.is_native(s) => self.roster.get(s).and_then(|x| x.source),
+            _ => None,
+        };
+        match other.and_then(|d| self.phys.get(&d).map(|q| (d, q.state.buttons))) {
+            Some((d, held)) => self.type_keys(owner, d, held, held),
+            None => self.release_keys(owner),
         }
         self.changed = true;
     }
@@ -1483,12 +1577,31 @@ impl Core {
     }
 
     /// Sends a virtual controller what it should show: its marker while its slot is looked
-    /// for, its input otherwise.
+    /// for, its input otherwise. A refused report is sent again after a pause, not on every
+    /// pass, and refusals that show the bus has gone are noted for `housekeeping`.
     fn send(&mut self, s: SlotId) {
         let (Some(bus), Some(t)) = (self.bus.as_ref(), self.targets.get_mut(&s)) else { return };
         let report = t.showing();
-        if t.last != Some(report) && platform::submit(bus, &mut self.io, t.serial, &report).is_ok() {
-            t.last = Some(report);
+        if t.last == Some(report) {
+            return;
+        }
+        let now = Instant::now();
+        if t.refused.is_some_and(|(_, again)| now < again) {
+            return;
+        }
+        match platform::submit(bus, &mut self.io, t.serial, &report) {
+            Ok(()) => {
+                t.last = Some(report);
+                t.accepted = true;
+                t.refused = None;
+            }
+            Err(code) => {
+                let since = t.refused.map_or(now, |(since, _)| since);
+                t.refused = Some((since, now + RESEND_PAUSE));
+                if bus_gone(code, t.accepted, now.duration_since(since)) {
+                    self.bus_refused.get_or_insert(format!("error {code}"));
+                }
+            }
         }
     }
 
@@ -1526,14 +1639,18 @@ impl Core {
                 }
             }
             let moved = p.rate != rate_before || p.accel != accel_before;
+            // The window shows the gyro's reading too, but not its noise at rest: that alone would
+            // send it every reading.
+            let shown = gyro_moved(p.rate_shown, p.rate);
+            if shown {
+                p.rate_shown = p.rate;
+            }
+            self.input_changed |= shown || p.state != before || p.aim_out != aim_before;
             // A DualShock 4 carries the motion to games, so it is sent on as it changes.
             let carries_motion = matches!(p.kind, Kind::Slot(s) if self.targets.get(&s).is_some_and(|t| t.output == Output::DualShock4));
             if p.state == before && p.aim_out == aim_before && !(moved && carries_motion) {
-                // Otherwise only the window shows the gyro's own reading, so nothing else needs doing.
-                self.input_changed |= moved;
                 continue;
             }
-            self.input_changed = true;
             let (kind, state) = (p.kind, p.state);
             // Any button can type keys, not only the extra ones.
             if kind == Kind::Native && before.buttons != state.buttons {
@@ -1612,6 +1729,23 @@ impl Core {
         }
         if let Some(why) = self.bus.as_deref().and_then(platform::bus_lost) {
             self.leave_viiper(why);
+        }
+        // The slots keep their controllers, shown to games until the bus is back. Connecting is
+        // tried at most every `RETRY`, so a bus that keeps refusing is not reconnected in a loop.
+        if now >= self.bus_retry
+            && let Some(why) = self.bus_refused.take()
+        {
+            self.note(format!("virtual controller bus refuses reports ({why}); connecting again"));
+            self.close_bus();
+            self.connect_bus();
+        }
+        let due: Vec<DeviceId> = self.unopened.iter().filter(|u| now >= u.1).map(|u| u.0).collect();
+        for id in due {
+            if self.sdl.is_gamepad(id) {
+                self.added(id);
+            } else {
+                self.unopened.retain(|u| u.0 != id);
+            }
         }
         self.follow_hider();
         self.plug_missing(now);
@@ -1707,10 +1841,14 @@ impl Core {
                 output,
                 player: None,
                 search: (PLAYER_SLOTS && xinput).then(|| (xinput::marker(serial), now + SLOT_WAIT)),
+                research: false,
+                next_look: now,
                 next_search: now,
                 backoff: Duration::from_secs(1),
                 want: Report::rest(output),
                 last: None,
+                accepted: false,
+                refused: None,
                 rumble: (0, 0),
                 rumble_sent: now,
                 rumble_to: None,
@@ -1741,8 +1879,17 @@ impl Core {
                 continue;
             }
             match t.search {
+                // Picked up while looked for again: its input goes on, and it looks later.
+                Some(_) if t.research && !t.at_rest() => {
+                    t.search = None;
+                    t.next_search = now + t.backoff;
+                }
                 Some((marker, until)) => {
-                    if let Some(i) = (t.last == Some(Report::Xusb(marker))).then(|| xinput::find(&marker)).flatten() {
+                    let shown = t.last == Some(Report::Xusb(marker)) && now >= t.next_look;
+                    if shown {
+                        t.next_look = now + MARKER_POLL;
+                    }
+                    if let Some(i) = shown.then(|| xinput::find(&marker)).flatten() {
                         t.player = Some(i);
                         t.search = None;
                         lit.push((s, i));
@@ -1754,9 +1901,12 @@ impl Core {
                         self.changed = true;
                     }
                 }
+                // Looked for again only while nobody is using it, so its input is never cut.
+                None if now >= t.next_search && !t.at_rest() => t.next_search = now + FREE_SLOT_POLL,
                 None if now >= t.next_search => {
                     if *free.get_or_insert_with(xinput::has_free_slot) {
                         t.search = Some((xinput::marker(t.serial), now + RESEARCH));
+                        t.research = true;
                     } else {
                         // All four taken: look again later, not on every pass.
                         t.next_search = now + FREE_SLOT_POLL;
@@ -1949,7 +2099,29 @@ impl Core {
         }
         self.close_bus();
         self.hider.stop();
-        self.phys.clear();
+    }
+}
+
+/// Whether a refused report means the bus is gone (ViGEmBus restarted, updated or removed under
+/// its open handle), after the bus refused a controller's reports for `refusing`: at once for an
+/// error that says so, otherwise once a controller it took reports for has been refused for
+/// [`BUS_LOST_AFTER`]. One it never took any for may still be waiting for Windows to install its
+/// driver, which takes longer the first time. Elsewhere a refused report changes nothing.
+fn bus_gone(code: u32, accepted: bool, refusing: Duration) -> bool {
+    cfg!(windows) && (gone(code) || accepted && refusing >= BUS_LOST_AFTER)
+}
+
+#[cfg(not(windows))]
+fn gone(_: u32) -> bool {
+    false
+}
+
+/// Whether the gyro moved enough from the reading the window last had to tell it again: by more
+/// than [`GYRO_DEADBAND`] on some axis, or turned on or off.
+fn gyro_moved(shown: Option<[f32; 3]>, now: Option<[f32; 3]>) -> bool {
+    match (shown, now) {
+        (Some(a), Some(b)) => a.iter().zip(b).any(|(a, b)| (a - b).abs() > GYRO_DEADBAND),
+        (a, b) => a.is_some() != b.is_some(),
     }
 }
 
@@ -1995,5 +2167,55 @@ mod tests {
         assert_eq!(slot_role(false, wait, Some(Some(1))), Role::Waiting { player: Some(1), remaining: Duration::from_secs(3) });
         assert_eq!(slot_role(false, wait, None), Role::Waiting { player: None, remaining: Duration::from_secs(3) });
         assert_eq!(slot_role(false, None, None), Role::Unavailable);
+    }
+
+    #[test]
+    fn gyro_noise_does_not_reach_the_window() {
+        let still = Some([0.01, -0.02, 0.]);
+        assert!(!gyro_moved(still, Some([0.03, -0.05, 0.02])));
+        assert!(gyro_moved(still, Some([0.01, 0.2, 0.])));
+        assert!(gyro_moved(None, still), "turned on");
+        assert!(gyro_moved(still, None), "turned off");
+        assert!(!gyro_moved(None, None));
+    }
+
+    #[test]
+    fn a_bus_is_gone_once_it_refuses_a_controller_it_took_reports_for() {
+        let s = Duration::from_secs(1);
+        assert!(!bus_gone(31, false, s * 10), "a new controller may still be waiting for its driver");
+        assert!(!bus_gone(31, true, s / 2));
+        assert_eq!(bus_gone(31, true, s), cfg!(windows));
+        assert_eq!(bus_gone(6, false, Duration::ZERO), cfg!(windows), "ERROR_INVALID_HANDLE");
+        assert_eq!(bus_gone(1167, false, Duration::ZERO), cfg!(windows), "ERROR_DEVICE_NOT_CONNECTED");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_later_look_for_a_slot_never_cuts_input() {
+        let now = Instant::now();
+        let marker = xinput::marker(5);
+        let mut t = Target {
+            serial: 5,
+            output: Output::Xbox360,
+            player: None,
+            search: Some((marker, now + RESEARCH)),
+            research: false,
+            next_look: now,
+            next_search: now,
+            backoff: Duration::from_secs(1),
+            want: Report::Xusb(XusbReport { buttons: 0x1000, ..XusbReport::default() }),
+            last: None,
+            accepted: true,
+            refused: None,
+            rumble: (0, 0),
+            rumble_sent: now,
+            rumble_to: None,
+            listener: None,
+        };
+        assert_eq!(t.showing(), Report::Xusb(marker), "the first look waits for the slot");
+        t.research = true;
+        assert_eq!(t.showing(), t.want, "a later one gives way to a button held");
+        t.want = Report::Xusb(XusbReport { thumb_lx: 900, ..XusbReport::default() });
+        assert_eq!(t.showing(), Report::Xusb(marker), "and takes the place of a controller at rest");
     }
 }

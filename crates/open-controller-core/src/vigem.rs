@@ -16,8 +16,8 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_DEVICE_HARDWARE_ERROR, ERROR_FILE_NOT_FOUND, ERROR_INVALID_PARAMETER, ERROR_OPERATION_ABORTED, GENERIC_READ,
-    GENERIC_WRITE,
+    ERROR_ACCESS_DENIED, ERROR_DEVICE_HARDWARE_ERROR, ERROR_DEVICE_NOT_CONNECTED, ERROR_DEVICE_REMOVED, ERROR_FILE_NOT_FOUND,
+    ERROR_INVALID_HANDLE, ERROR_INVALID_PARAMETER, ERROR_NO_SUCH_DEVICE, ERROR_OPERATION_ABORTED, GENERIC_READ, GENERIC_WRITE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_NO_BUFFERING, FILE_FLAG_OVERLAPPED, FILE_FLAG_WRITE_THROUGH, FILE_SHARE_READ,
@@ -170,6 +170,12 @@ impl BusError {
             _ => crate::engine::Driver::Failed(self.to_string()),
         }
     }
+}
+
+/// Whether a request's error says the bus device behind the handle is gone: removed, restarted
+/// or updated while the handle was open. The handle is of no use any more; a new one is needed.
+pub fn gone(code: u32) -> bool {
+    matches!(code, ERROR_INVALID_HANDLE | ERROR_DEVICE_NOT_CONNECTED | ERROR_DEVICE_REMOVED | ERROR_NO_SUCH_DEVICE)
 }
 
 /// Rumble the game asked of a virtual controller, as XInput motor speeds.

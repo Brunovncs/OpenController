@@ -61,6 +61,8 @@ impl Bus {
         }
     }
 
+    /// Why VIIPER stopped working: its server ended or dropped a controller's stream. ViGEmBus
+    /// gives no sign of going but refusing reports, which the engine watches for.
     pub fn lost(&self) -> Option<String> {
         match self {
             Bus::ViGEm(_) => None,

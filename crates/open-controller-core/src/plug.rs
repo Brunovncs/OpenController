@@ -7,8 +7,14 @@ use crate::platform::{self, Bus, Io};
 use crate::profile::Output;
 use crate::roster::SlotId;
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+/// How long stopping waits for a plug under way once it is cancelled. VIIPER's server cannot be
+/// interrupted and may take ten seconds to answer; past this the plug finishes on its own thread
+/// and undoes itself, rather than every player's input freezing meanwhile.
+const STOP_WAIT: Duration = Duration::from_millis(250);
 
 /// A slot's virtual controller, plugged in (its serial on the bus) or refused.
 pub type Plugged = (SlotId, Output, Result<u32, String>);
@@ -18,6 +24,9 @@ pub struct Plugger {
     tx: Option<Sender<(SlotId, Output)>>,
     rx: Receiver<Plugged>,
     thread: Option<JoinHandle<()>>,
+    /// Set on stop. Requests still queued are dropped, and a plug that finishes after it is
+    /// undone on the thread; it is held while a result is handed over, so none slips past.
+    stopping: Arc<Mutex<bool>>,
     /// Slots whose virtual controller is being plugged in.
     pending: Vec<SlotId>,
 }
@@ -27,20 +36,32 @@ impl Plugger {
         let (tx, requests) = unbounded::<(SlotId, Output)>();
         let (done, rx) = unbounded();
         let worker = bus.clone();
+        let stopping = Arc::new(Mutex::new(false));
+        let stop = stopping.clone();
         let thread = std::thread::Builder::new()
             .name("open-controller-plug".into())
             .spawn(move || {
                 let mut io = Io::new();
                 for (slot, output) in requests {
+                    if stop.lock().map_or(true, |s| *s) {
+                        return;
+                    }
                     let r = platform::plug(&worker, &mut io, output).map_err(|e| e.to_string());
-                    if let Err(crossbeam_channel::SendError((_, _, Ok(serial)))) = done.send((slot, output, r)) {
-                        // Nobody to hand it to: the engine has stopped.
+                    let unwanted = match stop.lock() {
+                        Ok(s) if !*s => match done.send((slot, output, r)) {
+                            Err(crossbeam_channel::SendError((_, _, Ok(serial)))) => Some(serial),
+                            _ => None,
+                        },
+                        _ => r.ok(),
+                    };
+                    // Nobody to take it: the engine has stopped, or let go of this bus.
+                    if let Some(serial) = unwanted {
                         let _ = worker.unplug(&mut io, serial);
                     }
                 }
             })
             .expect("could not start the plug thread");
-        Plugger { bus, tx: Some(tx), rx, thread: Some(thread), pending: Vec::new() }
+        Plugger { bus, tx: Some(tx), rx, thread: Some(thread), stopping, pending: Vec::new() }
     }
 
     /// Asks for a virtual controller of the kind `output` for `slot`, unless one is already on
@@ -65,11 +86,24 @@ impl Plugger {
         done
     }
 
-    /// Waits for a plug still under way and unplugs whatever nobody took.
+    /// Drops the requests still queued, cancels a plug under way and unplugs whatever nobody
+    /// took. Only called as the bus is let go of: cancelling ends every request on it.
     pub fn stop(&mut self) {
+        if let Ok(mut s) = self.stopping.lock() {
+            *s = true;
+        }
         self.tx = None;
         if let Some(t) = self.thread.take() {
-            let _ = t.join();
+            if !t.is_finished() {
+                self.bus.cancel_all();
+            }
+            let until = Instant::now() + STOP_WAIT;
+            while !t.is_finished() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            if t.is_finished() {
+                let _ = t.join();
+            }
         }
         let mut io = Io::new();
         for (_, _, r) in self.rx.try_iter() {
