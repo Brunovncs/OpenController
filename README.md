@@ -14,7 +14,7 @@ It works with the several hundred controllers SDL knows and keeps out of the way
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-OpenController is open source (MIT) and in beta, at version 0.8.8. With so many controllers out
+OpenController is open source (MIT) and in beta, at version 0.8.9. With so many controllers out
 there, some will not work as they should yet and some features are still missing, so every report
 helps. If your controller is not recognised, a button does nothing or anything else goes wrong,
 feel free to [open an issue](https://github.com/Brunovncs/OpenController/issues); see
@@ -32,8 +32,8 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.8.8-windows-x64-setup.exe` (on an ARM PC,
-`open-controller-0.8.8-windows-arm64-setup.exe`) and run it. It installs for your user only,
+Download `open-controller-0.8.9-windows-x64-setup.exe` (on an ARM PC,
+`open-controller-0.8.9-windows-arm64-setup.exe`) and run it. It installs for your user only,
 without administrator rights, adds OpenController to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
@@ -41,8 +41,8 @@ do it, and it updates in place: the running copy quits first, and your settings,
 too. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.8.8-windows-x64.zip` (or
-`open-controller-0.8.8-windows-arm64.zip`), extract it anywhere and run `open-controller.exe`.
+To run it without installing, download `open-controller-0.8.9-windows-x64.zip` (or
+`open-controller-0.8.9-windows-arm64.zip`), extract it anywhere and run `open-controller.exe`.
 The programs are not code-signed yet, so Windows SmartScreen warns on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs administrator
 rights.
 
@@ -74,7 +74,7 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.8.8-linux-x64.tar.gz` (or `open-controller-0.8.8-linux-arm64.tar.gz`),
+Download `open-controller-0.8.9-linux-x64.tar.gz` (or `open-controller-0.8.9-linux-arm64.tar.gz`),
 extract it and run `./install.sh`. The programs are built on Ubuntu 22.04 and need glibc 2.35 or
 newer, as in Ubuntu 22.04, Debian 12 and Fedora 36 and later; `ldd --version` shows yours.
 
@@ -103,7 +103,7 @@ controller keeps moving the pointer, as it does without OpenController.
 
 ### macOS
 
-Download `open-controller-0.8.8-macos-universal.zip`, which runs on Apple silicon and Intel, and
+Download `open-controller-0.8.9-macos-universal.zip`, which runs on Apple silicon and Intel, and
 move OpenController to Applications. It is not notarised, so macOS refuses to open it the first
 time. Open it once, then go to System Settings, Privacy & Security, and click Open Anyway.
 
@@ -530,8 +530,10 @@ Edge into the `.ico` files.
 - 8BitDo pads' RGB lights, on-board profiles and firmware settings are left to 8BitDo's app.
 - Switch 2 controllers and the official Wii U GameCube adapter need libusb, which this build of SDL
   leaves out.
-- The programs are not code-signed, so SmartScreen warns the first time they run, and the macOS app
-  is signed ad hoc only: its Accessibility permission has to be granted again after an update.
+- The programs are not signed by a vendor, so SmartScreen warns the first time they run, and macOS
+  asks to allow the app once in Privacy & Security. From 0.8.9 the macOS app keeps the same
+  signature across updates, so its Accessibility permission carries over; updating to 0.8.9 asks
+  for it once more.
 
 ## Reporting a problem
 

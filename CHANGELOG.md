@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.9
 
 Updating HidHide now warns that its installer asks to restart Windows and opens again afterwards
 to finish. That second window is expected.
@@ -33,6 +33,8 @@ longer let go of Ctrl when one of them is released. On Linux, keys from extra bu
 soon as device access is set up, without signing out first.
 
 On macOS, profiles now switch with the program in front, and Start at login uses Login Items.
+The Mac app now keeps the same signature across updates, so the Accessibility permission carries
+over from here on. Updating to this version asks for it once more.
 On Linux, Start with the system restarts OpenController if it stops, where the desktop allows it.
 On a Steam Deck, setting up device access says to set a password first.
 

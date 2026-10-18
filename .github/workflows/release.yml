@@ -4,10 +4,12 @@ name: Release
 # installers and the Linux tarballs (x64 and ARM64 each) and the macOS app (universal), and
 # publish them as a release whose notes are that version's section of CHANGELOG.md. Nothing is
 # signed by a vendor: SmartScreen warns on first launch, and macOS blocks the first start until
-# the user allows it in System Settings, Privacy & Security.
+# the user allows it in System Settings, Privacy & Security. Run by hand, it is a rehearsal: every
+# package is built and kept with the run, and nothing is published.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 # Only the job that publishes may write: the builds run hundreds of crates' build scripts.
 permissions:
@@ -26,8 +28,8 @@ jobs:
         id: check
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"; exit 1; }
-          grep -qx "## $version" CHANGELOG.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
+          [ "$GITHUB_REF_TYPE" != tag ] || [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"; exit 1; }
+          [ "$GITHUB_REF_TYPE" != tag ] || grep -qx "## $version" CHANGELOG.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   # Each architecture built natively on its own runner. A tag's cache is never used again, so
@@ -191,6 +193,7 @@ jobs:
 
   publish:
     needs: [version, windows, linux, macos]
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
