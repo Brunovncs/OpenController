@@ -426,7 +426,7 @@ fn held(state: &PadState, b: u32) -> bool {
     match b {
         LEFT_TRIGGER_INPUT => state.axes[axis::LEFT_TRIGGER] > i16::MAX / 2,
         RIGHT_TRIGGER_INPUT => state.axes[axis::RIGHT_TRIGGER] > i16::MAX / 2,
-        _ => state.pressed(b),
+        _ => b < 64 && state.pressed(b),
     }
 }
 

@@ -16,6 +16,10 @@ mod pipe;
 
 pub use pipe::{Pipe, Reader, is_disconnect, remove_socket};
 
+/// The version of these messages. Raised whenever either side would misread the other's, so a
+/// window from one release meeting a resident process from another can tell.
+pub const PROTO: u32 = 1;
+
 /// What the resident process tells the window.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToWindow {
@@ -23,6 +27,31 @@ pub enum ToWindow {
     Prefs(Prefs),
     /// The answer to [`ToTray::Diagnose`]; `None` when the controller is gone.
     Diagnosis(PadKey, Option<Box<Diagnosis>>),
+    /// The first message on a connection. Resident processes before it send none.
+    Hello {
+        proto: u32,
+        version: String,
+    },
+    /// The resident process is quitting on purpose: the window closes with it instead of
+    /// starting it again.
+    Bye,
+}
+
+/// Reads one line as a message. A line that does not parse is skipped, but counted and logged,
+/// so a program on the other end that speaks another version does not go unnoticed.
+#[cfg_attr(windows, allow(dead_code))]
+pub(crate) fn parse<T: serde::de::DeserializeOwned>(line: &[u8], skipped: &mut u64) -> Option<T> {
+    match serde_json::from_slice(line) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            *skipped += 1;
+            // 1, 2, 4, 8...: a stream of them does not flood the log.
+            if skipped.is_power_of_two() {
+                eprintln!("open-controller: skipped a message that did not parse ({skipped} so far): {e}");
+            }
+            None
+        }
+    }
 }
 
 /// What the window asks of the resident process.
@@ -89,6 +118,7 @@ mod tests {
         let server = std::thread::spawn(move || {
             let pipe = Pipe::create_at(&server_name).expect("create");
             pipe.accept().expect("accept");
+            pipe.send(&ToWindow::Hello { proto: PROTO, version: "1.2.3".into() }).unwrap();
             pipe.send(&ToWindow::Prefs(prefs())).unwrap();
             // A large message, split across several reads.
             let big = Snapshot { sdl_error: Some("x".repeat(100_000)), ..Snapshot::default() };
@@ -106,6 +136,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         };
         let mut r = client.reader();
+        assert_eq!(r.recv::<ToWindow>().unwrap(), ToWindow::Hello { proto: PROTO, version: "1.2.3".into() });
         assert_eq!(r.recv::<ToWindow>().unwrap(), ToWindow::Prefs(prefs()));
         match r.recv::<ToWindow>().unwrap() {
             ToWindow::Snapshot(s) => assert_eq!(s.sdl_error.map(|e| e.len()), Some(100_000)),
@@ -115,5 +146,14 @@ mod tests {
         drop(r);
         drop(client);
         server.join().unwrap();
+    }
+
+    #[test]
+    fn unknown_messages_are_counted() {
+        let mut skipped = 0;
+        assert_eq!(parse::<ToWindow>(b"\"Bye\"", &mut skipped), Some(ToWindow::Bye));
+        assert_eq!(parse::<ToWindow>(b"{\"Later\":1}", &mut skipped), None);
+        assert_eq!(parse::<ToWindow>(b"not json", &mut skipped), None);
+        assert_eq!(skipped, 2);
     }
 }

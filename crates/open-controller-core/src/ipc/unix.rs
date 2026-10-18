@@ -90,7 +90,7 @@ impl Pipe {
 
     pub fn reader(&self) -> Reader<'_> {
         let stream = self.stream.lock().ok().and_then(|s| s.as_ref().and_then(|s| s.try_clone().ok()));
-        Reader { stream, buf: Vec::with_capacity(16 * 1024), start: 0, _pipe: PhantomData }
+        Reader { stream, buf: Vec::with_capacity(16 * 1024), start: 0, skipped: 0, _pipe: PhantomData }
     }
 }
 
@@ -108,18 +108,20 @@ pub struct Reader<'a> {
     stream: Option<UnixStream>,
     buf: Vec<u8>,
     start: usize,
+    skipped: u64,
     _pipe: PhantomData<&'a Pipe>,
 }
 
 impl Reader<'_> {
-    /// The next message. Unreadable lines are skipped; an error means the other side is gone.
+    /// The next message. Unreadable lines are skipped and logged; an error means the other side
+    /// is gone.
     pub fn recv<T: DeserializeOwned>(&mut self) -> io::Result<T> {
         let stream = self.stream.as_mut().ok_or(io::ErrorKind::NotConnected)?;
         loop {
             if let Some(end) = self.buf[self.start..].iter().position(|&b| b == b'\n') {
                 let line = &self.buf[self.start..self.start + end];
                 self.start += end + 1;
-                if let Ok(msg) = serde_json::from_slice(line) {
+                if let Some(msg) = super::parse(line, &mut self.skipped) {
                     return Ok(msg);
                 }
                 continue;
