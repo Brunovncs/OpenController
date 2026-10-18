@@ -401,6 +401,8 @@ choice of licenses, OpenController uses it under the first one that applies.
 | [objc2-metal](https://github.com/madsmtm/objc2) | 0.2.2 | MIT |
 | [objc2-quartz-core](https://github.com/madsmtm/objc2) | 0.2.2 | MIT |
 | [objc2-screen-capture-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| [objc2-security](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| [objc2-service-management](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-user-notifications](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc_exception](http://github.com/SSheldon/rust-objc-exception) | 0.1.2 | MIT |
 | [object](https://github.com/gimli-rs/object) | 0.37.3 | Apache-2.0 OR MIT |
