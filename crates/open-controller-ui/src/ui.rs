@@ -291,8 +291,12 @@ impl MainView {
             let result = cx.background_executor().spawn(async move { requirements::install(c, &dir, silent) }).await;
             let _ = this.update(cx, |this, cx| {
                 // VIIPER, chosen but missing something, is tried again with what was installed.
-                let driver = this.model.read(cx).prefs.virtual_driver;
-                if result.is_ok() && driver == VirtualDriver::Viiper {
+                // Not when it already works: choosing it again reconnects it, and games would see
+                // every controller leave and come back.
+                let model = this.model.read(cx);
+                let driver = model.prefs.virtual_driver;
+                let working = matches!(model.snapshot.viiper, open_controller_core::Driver::Ready { .. });
+                if result.is_ok() && driver == VirtualDriver::Viiper && !working {
                     this.send(ToTray::SetVirtualDriver(driver), cx);
                 }
                 this.installs.insert(

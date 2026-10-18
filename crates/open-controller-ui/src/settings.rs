@@ -32,6 +32,10 @@ impl MainView {
     }
 
     fn set_virtual_driver(&mut self, driver: VirtualDriver, cx: &mut Context<Self>) {
+        // The one in use, picked again, would reconnect it and replug every controller.
+        if self.model.read(cx).prefs.virtual_driver == driver {
+            return;
+        }
         self.model.update(cx, |m, cx| {
             m.prefs.virtual_driver = driver;
             cx.notify();

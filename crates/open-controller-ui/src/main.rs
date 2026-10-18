@@ -242,6 +242,7 @@ fn keep_linked(tx: async_channel::Sender<Event>, first_prefs: std::sync::mpsc::S
 }
 
 fn main() {
+    open_controller_core::crash::install(&open_controller_core::crash::data_dir(), || {});
     let mut demo = false;
     let mut smoke = false;
     for a in std::env::args().skip(1) {

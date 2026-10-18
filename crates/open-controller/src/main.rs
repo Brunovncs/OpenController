@@ -428,6 +428,8 @@ fn main() {
     }
 
     sys::run(&control, main_loop, &args);
+    // The window closes with this process rather than start it again.
+    control.notify.bye();
     // Unplugs the virtual controllers and shows the hidden ones again.
     control.engine.stop();
     leave();

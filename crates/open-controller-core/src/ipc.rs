@@ -39,7 +39,6 @@ pub enum ToWindow {
 
 /// Reads one line as a message. A line that does not parse is skipped, but counted and logged,
 /// so a program on the other end that speaks another version does not go unnoticed.
-#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn parse<T: serde::de::DeserializeOwned>(line: &[u8], skipped: &mut u64) -> Option<T> {
     match serde_json::from_slice(line) {
         Ok(msg) => Some(msg),

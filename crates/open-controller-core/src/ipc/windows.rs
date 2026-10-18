@@ -256,7 +256,7 @@ impl Pipe {
     }
 
     pub fn reader(&self) -> Reader<'_> {
-        Reader { pipe: self, io: Io::new(), buf: Vec::with_capacity(16 * 1024), start: 0 }
+        Reader { pipe: self, io: Io::new(), buf: Vec::with_capacity(16 * 1024), start: 0, skipped: 0 }
     }
 }
 
@@ -274,6 +274,7 @@ pub struct Reader<'a> {
     io: Io,
     buf: Vec<u8>,
     start: usize,
+    skipped: u64,
 }
 
 impl Reader<'_> {
@@ -283,7 +284,7 @@ impl Reader<'_> {
             if let Some(end) = self.buf[self.start..].iter().position(|&b| b == b'\n') {
                 let line = &self.buf[self.start..self.start + end];
                 self.start += end + 1;
-                if let Ok(msg) = serde_json::from_slice(line) {
+                if let Some(msg) = super::parse(line, &mut self.skipped) {
                     return Ok(msg);
                 }
                 continue;

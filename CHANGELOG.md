@@ -12,16 +12,37 @@ Twin USB Joystick adapters that report the id 0815:0005 now work as controllers.
 showed up as not mapped.
 
 Windows on ARM gets its own build, and an update moves an ARM PC to it. HidHide has no ARM
-version yet, so there the original controller can't be hidden. Linux also gets an ARM build.
+version yet, so there the original controller can't be hidden. Linux also gets an ARM build, and
+macOS is now one app for both Apple Silicon and Intel Macs.
 
 The Windows build no longer needs the Visual C++ runtime installed to start.
 
-Two buttons holding shortcuts that share a key, like Ctrl+C and Ctrl+V, no longer let go of Ctrl
-when one of them is released. On Linux, keys from extra buttons work as soon as device access is
-set up, without signing out first.
+If ViGEmBus stops or is updated while OpenController runs, the controllers come back on their
+own once it is there again. Before, they stayed gone until OpenController was restarted. Adding a
+controller over VIIPER that fails no longer freezes the other controllers for seconds.
+
+With more than one Windows user signed in, only the one at the screen gets the controllers.
+
+The window no longer closes when OpenController stops unexpectedly: it waits and connects again.
+If the window and OpenController are different versions, it says so and offers to restart.
+Renaming a profile takes accents, paste and the cursor keys like any other text box.
+
+A macro now plays without holding up the keys of other buttons, and pressing it again while it
+plays does nothing. Two buttons holding shortcuts that share a key, like Ctrl+C and Ctrl+V, no
+longer let go of Ctrl when one of them is released. On Linux, keys from extra buttons work as
+soon as device access is set up, without signing out first.
+
+On macOS, profiles now switch with the program in front, and Start at login uses Login Items.
+On Linux, Start with the system restarts OpenController if it stops, where the desktop allows it.
+On a Steam Deck, setting up device access says to set a password first.
 
 When OpenController quits, it leaves HidHide on if another program is still hiding a controller
-with it. If the settings file can't be read at startup, it is no longer replaced by the defaults.
+with it. Uninstalling keeps your settings if a hidden controller could not be shown again. A
+crash is written to crash.log in the settings folder, and the hidden controllers come back.
+
+Settings are safer. If the file can't be read at startup, it is no longer replaced by the
+defaults. A value this version can't read costs only that value, not the controller's profiles,
+and settings from a newer version are kept when an older one saves. Settings carry over.
 
 ## 0.8.8
 

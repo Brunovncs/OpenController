@@ -75,12 +75,17 @@ pub fn start(control: Arc<Control>, notify: Arc<Notify>) {
     std::thread::Builder::new()
         .name("window-server".into())
         .spawn(move || {
-            // A previous instance's pipe can take a moment to close.
+            // A previous instance's pipe can take a moment to close. One that never does (another
+            // user's program holding the name) is logged now and then, not every second.
+            let mut tries = 0u32;
             let pipe = loop {
                 match Pipe::create() {
                     Ok(p) => break p,
                     Err(e) => {
-                        eprintln!("open-controller: no pipe for the window yet: {e}");
+                        if tries.is_power_of_two() || tries == 0 {
+                            eprintln!("open-controller: no pipe for the window yet: {e}");
+                        }
+                        tries += 1;
                         std::thread::sleep(Duration::from_secs(1));
                     }
                 }
