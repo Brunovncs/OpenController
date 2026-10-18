@@ -9,8 +9,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::System::RemoteDesktop::{ProcessIdToSessionId, WTSGetActiveConsoleSessionId};
-use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+use windows_sys::Win32::System::RemoteDesktop::{
+    WTS_CONNECTSTATE_CLASS, WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, WTSActive, WTSConnectState, WTSDisconnected, WTSFreeMemory,
+    WTSQuerySessionInformationW,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, PostMessageW, PostQuitMessage, RegisterClassW, TranslateMessage,
     WM_APP, WM_ENDSESSION, WM_SETTINGCHANGE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_OVERLAPPED,
@@ -43,30 +45,41 @@ pub fn restore(data_dir: &std::path::Path) -> i32 {
 /// A window that fails to start is only written to the log here.
 pub fn window_failed(_: i18n::Lang) {}
 
-/// Whether this session is the one at the console. `None` while the console is between
-/// sessions, as during a switch of user.
-fn at_console() -> Option<bool> {
-    let console = unsafe { WTSGetActiveConsoleSessionId() };
-    let mut mine = 0u32;
-    if console == u32::MAX || unsafe { ProcessIdToSessionId(GetCurrentProcessId(), &mut mine) } == 0 {
+/// Whether this session is in use: at the console or a remote desktop someone is connected to.
+/// False once another user has switched in and left this one disconnected; `None` in between.
+fn in_use() -> Option<bool> {
+    let mut state: *mut u16 = std::ptr::null_mut();
+    let mut size = 0u32;
+    let ok = unsafe { WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, WTSConnectState, &mut state, &mut size) };
+    if ok == 0 || state.is_null() {
         return None;
     }
-    Some(console == mine)
+    let s =
+        if size as usize >= size_of::<WTS_CONNECTSTATE_CLASS>() { Some(unsafe { *state.cast::<WTS_CONNECTSTATE_CLASS>() }) } else { None };
+    unsafe { WTSFreeMemory(state.cast()) };
+    let s = s?;
+    if s == WTSActive {
+        Some(true)
+    } else if s == WTSDisconnected {
+        Some(false)
+    } else {
+        None
+    }
 }
 
-/// Runs the engine while this session is at the console and stops it, which unplugs its
-/// controllers and shows its hidden ones, while another user's session is (fast user switching)
-/// or this one is a remote desktop. Asked every two seconds, on a thread of its own so stopping
-/// never holds up the tray: the console's session is read from memory the kernel shares, so
-/// asking costs nothing, and unlike session notifications it needs no service to be running.
+/// Runs the engine while this session is in use and stops it, which unplugs its controllers and
+/// shows its hidden ones, while another user's session has the console (fast user switching):
+/// the drivers are the machine's, and two engines would both take the same controllers. Asked
+/// every two seconds, on a thread of its own so stopping never holds up the tray; unlike session
+/// notifications it needs no service to be running.
 pub fn follow_console(control: Arc<Control>) {
-    if at_console() != Some(false) {
+    if in_use() != Some(false) {
         control.resume();
     }
     let _ = std::thread::Builder::new().name("console".into()).spawn(move || {
         loop {
             std::thread::sleep(Duration::from_secs(2));
-            match at_console() {
+            match in_use() {
                 Some(true) => control.resume(),
                 Some(false) => control.engine.pause(),
                 None => {}
