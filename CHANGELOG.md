@@ -8,6 +8,9 @@ plays with OpenController, and whether settings carry over.
 Updating HidHide now warns that its installer asks to restart Windows and opens again afterwards
 to finish. That second window is expected.
 
+Twin USB Joystick adapters that report the id 0815:0005 now work as controllers. Before, they
+showed up as not mapped.
+
 ## 0.8.8
 
 Joy-Cons can now be two controllers instead of one. On a pair's page, Split Joy-Cons makes each

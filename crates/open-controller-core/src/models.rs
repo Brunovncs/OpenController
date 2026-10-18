@@ -68,6 +68,7 @@ pub static MODELS: &[Row] = &[
     (0x0738, 0x8838, Family::DualShock3, "Madcatz Fightstick Pro"),
     (0x0810, 0x0001, Family::Ps2Adapter, "Twin USB Joystick (generic PC pads, PS1/PS2 adapters)"),
     (0x0810, 0x0003, Family::Ps2Adapter, "PS2 to USB adapter"),
+    (0x0815, 0x0005, Family::Ps2Adapter, "Twin USB Joystick (PS1/PS2 adapter)"),
     (0x0925, 0x0005, Family::DualShock3, "Sony PS3 Controller"),
     (0x0925, 0x8866, Family::Ps2Adapter, "MP-8866 Super Dual Box"),
     (0x0925, 0x8888, Family::Ps2Adapter, "WiseGroup PS2 adapter"),
@@ -1226,6 +1227,7 @@ mod tests {
         assert_eq!(lookup(0x2DC8, 0x6012).map(|r| r.2), Some(Family::EightBitDoFour));
         assert_eq!(lookup(0x054C, 0x0DF2).map(|r| r.2), Some(Family::DualSenseEdge));
         assert_eq!(lookup(0x054C, 0x0268).map(|r| r.2), Some(Family::DualShock3));
+        assert_eq!(lookup(0x0815, 0x0005).map(|r| r.2), Some(Family::Ps2Adapter));
         assert!(MODELS.iter().all(|r| !r.3.is_empty() && r.3.len() < 80));
     }
 
