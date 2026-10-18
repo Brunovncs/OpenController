@@ -2,8 +2,7 @@
 
 use open_controller_core::i18n::Lang;
 use open_controller_core::platform::VirtualDriver;
-use open_controller_core::profile::Profiles;
-use serde::de::DeserializeOwned;
+use open_controller_core::profile::{Profiles, readable_fields};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -35,6 +34,9 @@ pub struct Settings {
     /// Each Joy-Con a controller of its own, held sideways, rather than a left and a right one
     /// joined into one.
     pub split_joycons: bool,
+    /// Fields a newer version wrote, kept as they were so saving here does not take them away.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl Default for Settings {
@@ -46,6 +48,7 @@ impl Default for Settings {
             controllers: BTreeMap::new(),
             virtual_driver: VirtualDriver::ViGEmBus,
             split_joycons: false,
+            extra: Map::new(),
         }
     }
 }
@@ -58,7 +61,7 @@ impl Settings {
             // A value this version does not know (written by a newer one, or edited by hand)
             // must not take every assignment with it on the next save: the file is kept as it
             // was, and whatever can be read of it is.
-            let _ = std::fs::copy(&path, dir.join(format!("{FILE_NAME}.bad")));
+            keep_bad(dir, &bytes);
             Settings::salvage(&bytes)
         });
         s.controllers = std::mem::take(&mut s.controllers).into_iter().map(|(k, v)| (k, v.sanitised())).collect();
@@ -67,28 +70,11 @@ impl Settings {
 
     /// Each field on its own, and each controller's profiles on their own.
     fn salvage(bytes: &[u8]) -> Settings {
-        let mut s = Settings::default();
-        let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(bytes) else { return s };
-        fn field<T: DeserializeOwned>(map: &Map<String, Value>, key: &str) -> Option<T> {
-            map.get(key).and_then(|v| T::deserialize(v).ok())
-        }
-        if let Some(v) = field(&map, "hide_originals") {
-            s.hide_originals = v;
-        }
-        if let Some(v) = field(&map, "check_updates") {
-            s.check_updates = v;
-        }
-        if let Some(v) = field(&map, "language") {
-            s.language = v;
-        }
-        if let Some(v) = field(&map, "virtual_driver") {
-            s.virtual_driver = v;
-        }
-        if let Some(v) = field(&map, "split_joycons") {
-            s.split_joycons = v;
-        }
-        if let Some(Value::Object(c)) = map.get("controllers") {
-            s.controllers = c.iter().filter_map(|(k, v)| Some((k.clone(), Profiles::deserialize(v).ok()?))).collect();
+        let Ok(Value::Object(mut map)) = serde_json::from_slice::<Value>(bytes) else { return Settings::default() };
+        let controllers = map.remove("controllers");
+        let mut s: Settings = readable_fields(&map);
+        if let Some(Value::Object(c)) = controllers {
+            s.controllers = c.iter().filter_map(|(k, v)| Some((k.clone(), Profiles::salvage(v)?))).collect();
         }
         s
     }
@@ -111,8 +97,39 @@ impl Settings {
             f.sync_all()
         });
         match written.and_then(|()| std::fs::rename(&tmp, &path)) {
+            // The rename itself lives in the folder: on Linux and macOS it reaches the disk only
+            // once the folder is flushed too.
+            #[cfg(unix)]
+            Ok(()) => {
+                if let Err(e) = std::fs::File::open(dir).and_then(|d| d.sync_all()) {
+                    eprintln!("open-controller: could not flush the settings folder: {e}");
+                }
+            }
+            #[cfg(not(unix))]
             Ok(()) => {}
             Err(e) => eprintln!("open-controller: could not save the settings: {e}"),
+        }
+    }
+}
+
+/// How many copies of files that did not read as a whole are kept.
+const MAX_BAD: usize = 3;
+
+/// A copy of a file that did not read as a whole, before a save replaces it with what could be
+/// read of it. Copies are never overwritten: the first is the one closest to what the user had,
+/// and a version that cannot read a newer one's file would otherwise replace it on every start.
+fn keep_bad(dir: &Path, bytes: &[u8]) {
+    for n in 1..=MAX_BAD {
+        let path = dir.join(if n == 1 { format!("{FILE_NAME}.bad") } else { format!("{FILE_NAME}.bad.{n}") });
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut f) => {
+                if let Err(e) = f.write_all(bytes).and_then(|()| f.sync_all()) {
+                    eprintln!("open-controller: could not keep a copy of the settings: {e}");
+                }
+                return;
+            }
+            Err(_) if std::fs::read(&path).is_ok_and(|kept| kept == bytes) => return,
+            Err(_) => {}
         }
     }
 }
@@ -154,7 +171,7 @@ mod tests {
     #[test]
     fn missing_and_unknown_fields_are_tolerated() {
         let s: Settings = serde_json::from_str(r#"{"from_a_later_version": 1}"#).unwrap();
-        assert_eq!(s, Settings::default());
+        assert_eq!(s, Settings { extra: Map::from_iter([("from_a_later_version".into(), 1.into())]), ..Settings::default() });
         let s: Settings = serde_json::from_str(r#"{"hide_originals": false}"#).unwrap();
         assert!(!s.hide_originals);
     }
@@ -162,16 +179,80 @@ mod tests {
     #[test]
     fn a_file_this_version_cannot_read_keeps_what_it_can() {
         let dir = std::env::temp_dir().join(format!("oc-settings-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let text = r#"{"hide_originals": false, "language": "Klingon",
-            "controllers": {"serial:a": {"list": [{"name": "Racing"}], "active": 0}, "serial:b": {"list": "broken"}}}"#;
+        let text = r#"{"hide_originals": false, "language": "Klingon", "later": [1],
+            "controllers": {"serial:a": {"list": [{"name": "Racing"}], "active": 0}, "serial:b": {"list": "broken", "native": true},
+                "serial:c": 7}}"#;
         std::fs::write(dir.join(FILE_NAME), text).unwrap();
         let s = Settings::load(&dir);
         assert!(!s.hide_originals);
         assert_eq!(s.language, Lang::En);
+        assert_eq!(s.extra["later"], serde_json::json!([1]), "what a newer version wrote is kept");
         assert!(s.controllers.contains_key("serial:a"), "{:?}", s.controllers.keys());
-        assert!(!s.controllers.contains_key("serial:b"));
+        assert!(s.controllers["serial:b"].native, "the rest of a controller's settings is kept");
+        assert_eq!(s.controllers["serial:b"].list.len(), 1);
+        assert!(!s.controllers.contains_key("serial:c"));
         assert_eq!(std::fs::read_to_string(dir.join("settings.json.bad")).unwrap(), text, "the original is kept");
+
+        // Saved and broken again, by hand or by another version: the first copy stays, and the
+        // same file is not copied twice.
+        s.save(&dir);
+        let again = r#"{"hide_originals": 3}"#;
+        for _ in 0..2 {
+            std::fs::write(dir.join(FILE_NAME), again).unwrap();
+            Settings::load(&dir);
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("settings.json.bad")).unwrap(), text);
+        assert_eq!(std::fs::read_to_string(dir.join("settings.json.bad.2")).unwrap(), again);
+        assert!(!dir.join("settings.json.bad.3").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_broken_profile_costs_only_itself() {
+        use open_controller_core::binding::{Action, XboxButton};
+        let dir = std::env::temp_dir().join(format!("oc-settings-profile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = r#"{"controllers": {"serial:a": {"list": [
+            "not a profile",
+            {"name": "Racing", "bindings": {"16": {"Xbox": "A"}}, "brightness": 60},
+            {"name": "Shooter", "brightness": 900, "programs": ["game.exe"]}
+          ], "active": 2, "output": "DualShock4"}}}"#;
+        std::fs::write(dir.join(FILE_NAME), text).unwrap();
+        let s = Settings::load(&dir);
+        assert!(dir.join("settings.json.bad").exists());
+        let p = &s.controllers["serial:a"];
+        assert_eq!(p.list.len(), 2);
+        assert_eq!((p.list[0].name.as_str(), p.list[0].brightness), ("Racing", 60));
+        assert_eq!(p.list[0].bindings[&16], Action::Xbox(XboxButton::A));
+        assert_eq!(p.list[1].name, "Shooter", "a profile with one unreadable value keeps the others");
+        assert_eq!((p.list[1].brightness, p.list[1].programs.as_slice()), (100, ["game.exe".to_string()].as_slice()));
+        assert_eq!(p.active().name, "Shooter", "the same profile stays in use");
+        assert_eq!(p.output, open_controller_core::profile::Output::DualShock4);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_newer_versions_fields_survive_a_save() {
+        let dir = std::env::temp_dir().join(format!("oc-settings-newer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = r#"{"hide_originals": false, "theme": {"accent": "teal"},
+            "controllers": {"serial:a": {"list": [{"name": "Racing", "rumble": 40}], "active": 0, "player_led": 3},
+                "serial:b": {"list": [{"name": ""}], "player_led": 1}}}"#;
+        std::fs::write(dir.join(FILE_NAME), text).unwrap();
+        let s = Settings::load(&dir);
+        assert!(!dir.join("settings.json.bad").exists(), "read as it is, nothing salvaged");
+        assert!(!s.controllers["serial:b"].is_default(), "a controller with a newer version's settings is kept");
+        s.save(&dir);
+        let saved: Value = serde_json::from_slice(&std::fs::read(dir.join(FILE_NAME)).unwrap()).unwrap();
+        assert_eq!(saved["theme"], serde_json::json!({"accent": "teal"}));
+        assert_eq!(saved["controllers"]["serial:a"]["player_led"], 3);
+        assert_eq!(saved["controllers"]["serial:a"]["list"][0]["rumble"], 40);
+        assert_eq!(saved["controllers"]["serial:b"]["player_led"], 1);
+        assert_eq!(Settings::load(&dir), s);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

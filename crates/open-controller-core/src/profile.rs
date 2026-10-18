@@ -3,7 +3,9 @@
 //! names the program in front takes over while that program is in front.
 
 use crate::binding::{self, Action, Bindings};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Map, Value};
 
 pub const MAX_PROFILES: usize = 8;
 pub const MAX_NAME: usize = 32;
@@ -197,6 +199,19 @@ fn lenient<'de, D: Deserializer<'de>, T: serde::de::DeserializeOwned + Default>(
     Ok(T::deserialize(serde_json::Value::deserialize(d)?).unwrap_or_default())
 }
 
+/// Each field of a settings object on its own: one this version cannot read is left out, so it
+/// takes its default, and the rest are kept. For structs read with `#[serde(default)]`.
+pub fn readable_fields<T: DeserializeOwned + Default>(map: &Map<String, Value>) -> T {
+    let mut kept = Map::new();
+    for (k, v) in map {
+        kept.insert(k.clone(), v.clone());
+        if T::deserialize(&Value::Object(kept.clone())).is_err() {
+            kept.remove(k);
+        }
+    }
+    T::deserialize(Value::Object(kept)).unwrap_or_default()
+}
+
 /// The same for each button's assignment: one this version cannot read is left out, the rest kept.
 fn lenient_bindings<'de, D: Deserializer<'de>>(d: D) -> Result<Bindings, D::Error> {
     let raw = std::collections::BTreeMap::<u8, serde_json::Value>::deserialize(d)?;
@@ -245,6 +260,9 @@ pub struct Profile {
     /// Executable names (`game.exe`, lowercase) that make this the profile in use while one of
     /// them is the program in front.
     pub programs: Vec<String>,
+    /// Fields a newer version wrote, kept as they were so saving here does not take them away.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl Default for Profile {
@@ -259,6 +277,7 @@ impl Default for Profile {
             sticks: Sticks::default(),
             pressure: Pressure::default(),
             programs: Vec::new(),
+            extra: Map::new(),
         }
     }
 }
@@ -297,6 +316,9 @@ pub struct Profiles {
     /// What games see it as. Kept for the controller rather than per profile: changing it makes
     /// the virtual controller again, which a game would see as one leaving and another arriving.
     pub output: Output,
+    /// Fields a newer version wrote (see [`Profile::extra`]).
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl Default for Profiles {
@@ -348,7 +370,31 @@ impl Profiles {
             native: false,
             model: None,
             output: Output::Xbox360,
+            extra: Map::new(),
         }
+    }
+
+    /// What can be read of a controller's profiles that do not read as a whole: each profile on
+    /// its own, and each field of them on its own, so one value this version cannot read costs
+    /// only itself. `None` when there is nothing to read.
+    pub fn salvage(v: &Value) -> Option<Profiles> {
+        let Value::Object(map) = v else { return None };
+        let mut rest = map.clone();
+        let list = rest.remove("list");
+        let mut p: Profiles = readable_fields(&rest);
+        if let Some(Value::Array(list)) = list {
+            let active = p.active;
+            p.list = Vec::new();
+            for (i, v) in list.iter().enumerate() {
+                match v {
+                    Value::Object(m) => p.list.push(readable_fields(m)),
+                    // The one in use stays the same profile when one before it is dropped.
+                    _ if i < active => p.active -= 1,
+                    _ => {}
+                }
+            }
+        }
+        Some(p)
     }
 
     pub fn active(&self) -> &Profile {
@@ -376,8 +422,14 @@ impl Profiles {
     }
 
     /// Whether this is what a controller has before anything is changed, and need not be kept.
+    /// Fields a newer version wrote count as a change, so they are not thrown away with it.
     pub fn is_default(&self) -> bool {
-        !self.native && self.model.is_none() && self.output == Output::Xbox360 && self.list.len() == 1 && self.list[0] == Profile::default()
+        !self.native
+            && self.model.is_none()
+            && self.output == Output::Xbox360
+            && self.extra.is_empty()
+            && self.list.len() == 1
+            && self.list[0] == Profile::default()
     }
 
     pub fn apply(&mut self, edit: Edit) {

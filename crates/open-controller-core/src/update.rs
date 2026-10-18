@@ -24,15 +24,34 @@ pub fn current() -> String {
     std::env::var("OPEN_CONTROLLER_PRETEND_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string())
 }
 
-fn numbers(v: &str) -> Vec<u64> {
-    v.trim_start_matches('v').split(['.', '-', '+']).map_while(|p| p.parse().ok()).collect()
+/// A part of a pre-release name, compared as semantic versioning does: numbers by value and
+/// before words.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Part {
+    Number(u64),
+    Word(String),
 }
 
-/// `candidate` is a later version than `current` (1.10.0 after 1.9.2; a pre-release suffix is
-/// ignored).
+/// A version in the order releases come in: its numbers without the zeros that end them (1.0 is
+/// 1.0.0), then whether it is final rather than a pre-release, then the pre-release's parts. Build
+/// metadata (`+...`) is left out.
+fn version(v: &str) -> Option<(Vec<u64>, bool, Vec<Part>)> {
+    let v = v.trim();
+    let v = v.strip_prefix(['v', 'V']).unwrap_or(v);
+    let v = v.split('+').next().unwrap_or(v);
+    let (numbers, pre) = v.split_once('-').map_or((v, None), |(n, p)| (n, Some(p)));
+    let mut numbers = numbers.split('.').map(|n| n.parse().ok()).collect::<Option<Vec<u64>>>()?;
+    while numbers.last() == Some(&0) {
+        numbers.pop();
+    }
+    let pre: Vec<Part> =
+        pre.map_or_else(Vec::new, |p| p.split('.').map(|w| w.parse().map_or_else(|_| Part::Word(w.into()), Part::Number)).collect());
+    Some((numbers, pre.is_empty(), pre))
+}
+
+/// `candidate` is a later version than `current`: 1.10.0 after 1.9.2, 0.9.0 after 0.9.0-rc1.
 pub fn is_newer(candidate: &str, current: &str) -> bool {
-    let (a, b) = (numbers(candidate), numbers(current));
-    !a.is_empty() && a > b
+    version(candidate).is_some_and(|a| Some(a) > version(current))
 }
 
 fn curl() -> Command {
@@ -154,6 +173,21 @@ mod tests {
         assert!(!is_newer("0.2.0", "0.2.0"));
         assert!(!is_newer("0.1.9", "0.2.0"));
         assert!(!is_newer("garbage", "0.2.0"));
+    }
+
+    #[test]
+    fn pre_releases_come_before_their_final() {
+        assert!(is_newer("0.9.0", "0.9.0-rc1"));
+        assert!(!is_newer("0.9.0-rc1", "0.9.0"));
+        assert!(is_newer("0.9.0-rc.2", "0.9.0-rc.1"));
+        assert!(is_newer("0.9.0-rc.10", "0.9.0-rc.9"), "numbers by value");
+        assert!(is_newer("0.9.0-rc1", "0.8.8"));
+        assert!(!is_newer("1.0.0", "1.0"));
+        assert!(!is_newer("1.0", "1.0.0"));
+        assert!(!is_newer("V1.0.0", "v1.0.0"));
+        assert!(is_newer("V1.0.1", "1.0.0"));
+        assert!(!is_newer("1.0.0+build.5", "1.0.0"), "build metadata is left out");
+        assert!(!is_newer("1.0.0", "1.0.0+build.5"));
     }
 
     #[test]
