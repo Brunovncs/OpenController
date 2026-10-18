@@ -12,10 +12,10 @@ use crate::widgets::{Kind, body, button, caption, icon, icon_label_button, stron
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, AppContext, ClipboardItem, Context, Entity, Focusable, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    StatefulInteractiveElement, Styled, Task, Window, div, px,
 };
 use open_controller_core::binding::{Action, Bindings};
-use open_controller_core::i18n::{Text, fill};
+use open_controller_core::i18n::{Lang, Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::keyboard;
 use open_controller_core::mapping::{self, axis};
@@ -24,6 +24,7 @@ use open_controller_core::rating::{self, Rating};
 use open_controller_core::report::{self, Diagnosis, Submission};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
 use std::fmt::Write as _;
+use std::time::{Duration, Instant};
 
 const MONO: &str = "Consolas";
 
@@ -106,7 +107,12 @@ pub struct Report {
     pub aim_peak: u16,
     /// The hardest each pressure-sensitive button was pressed while the dialog is open.
     pub pressure_peak: [u8; mapping::PRESSURE.len()],
+    /// The text as last shown: when, from what, and the timer that shows it again.
+    composed: Option<(Instant, (bool, bool, Lang), String)>,
+    recompose: Option<Task<()>>,
 }
+
+const COMPOSE_EVERY: Duration = Duration::from_millis(250);
 
 impl Report {
     /// Takes in what the controller sends while the dialog is open.
@@ -384,6 +390,8 @@ impl MainView {
             gyro_peak: [0.; 3],
             aim_peak: 0,
             pressure_peak: [0; mapping::PRESSURE.len()],
+            composed: None,
+            recompose: None,
         });
         if let Some(r) = self.report.as_mut() {
             // Resting triggers sit at 0 and sticks near it: the range starts where they are.
@@ -479,15 +487,50 @@ impl MainView {
         .detach();
     }
 
+    /// The report's text while it is shown. Snapshots come many times a second as buttons are
+    /// pressed, so it is made again at most a few times a second, or at once when what the
+    /// resident process or the system said arrives.
+    fn shown_text(&mut self, cx: &mut Context<Self>) -> String {
+        let Some(r) = &self.report else { return String::new() };
+        let m = self.model.read(cx);
+        let inputs = (m.diagnosis.as_ref().is_some_and(|(k, _)| *k == r.key), r.system.is_some(), m.prefs.lang);
+        let now = Instant::now();
+        let kept = r.composed.as_ref().filter(|(at, was, _)| *was == inputs && now < *at + COMPOSE_EVERY);
+        if let Some((at, _, text)) = kept {
+            let (due, text) = (*at + COMPOSE_EVERY, text.clone());
+            // What changed meanwhile shows when the time is up, even if nothing else is drawn.
+            if r.recompose.is_none() {
+                let task = cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(due - now).await;
+                    let _ = this.update(cx, |this, cx| {
+                        if let Some(r) = this.report.as_mut() {
+                            r.recompose = None;
+                        }
+                        cx.notify();
+                    });
+                });
+                if let Some(r) = self.report.as_mut() {
+                    r.recompose = Some(task);
+                }
+            }
+            return text;
+        }
+        let text = self.report_text(cx);
+        if let Some(r) = self.report.as_mut() {
+            r.composed = Some((now, inputs, text.clone()));
+        }
+        text
+    }
+
     pub fn render_report(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         // Only while it is shown: the copy and the send each make their own.
-        let report_text = self.report.as_ref().filter(|r| r.show_data).map(|_| self.report_text(cx));
+        let report_text = if self.report.as_ref().is_some_and(|r| r.show_data) { Some(self.shown_text(cx)) } else { None };
         let r = self.report.as_ref()?;
         let t = self.theme;
         let m = self.model.read(cx);
         let text = m.text;
         let waiting = !m.diagnosis.as_ref().is_some_and(|(k, _)| *k == r.key);
-        let gone = m.diagnosis.as_ref().is_some_and(|(k, d)| *k == r.key && d.is_none()) && m.connected;
+        let gone = m.diagnosis.as_ref().is_some_and(|(k, d)| *k == r.key && d.is_none()) && m.connected();
 
         let label = |s: &'static str, optional: bool| {
             div()

@@ -154,6 +154,9 @@ const EDGE_TIMEOUT: Duration = Duration::from_secs(20);
 /// Measuring a controller's sticks: where they rest, then how far each reaches.
 pub struct Measuring {
     pub key: PadKey,
+    /// Where the controller's settings are kept, so another one that takes its key is not
+    /// measured in its place.
+    store: Option<String>,
     /// The sticks measured, `false` for the left one: both when they share their settings.
     sticks: Vec<bool>,
     step: Step,
@@ -484,8 +487,10 @@ impl MainView {
         if self.custom.is_some() {
             self.close_custom(window, cx);
         }
+        let pad = self.pad(key, cx);
         let mut m = Measuring {
             key,
+            store: pad.as_ref().and_then(|p| p.store.clone()),
             sticks,
             step: Step::Rest,
             since: Instant::now(),
@@ -495,7 +500,7 @@ impl MainView {
             filled: None,
             ticker: None,
         };
-        if let Some(pad) = self.pad(key, cx) {
+        if let Some(pad) = pad {
             m.sample(&pad.input);
         }
         self.measuring = Some(m);
@@ -516,9 +521,10 @@ impl MainView {
     }
 
     fn measure_tick(&mut self, key: PadKey, cx: &mut Context<Self>) -> bool {
-        let pad = self.pad(key, cx);
+        let snap = self.model.read(cx).snapshot.clone();
         let Some(m) = self.measuring.as_mut().filter(|m| m.key == key && m.running()) else { return false };
-        if let Some(p) = &pad {
+        let pad = snap.pads.iter().find(|p| p.key == key && p.store == m.store);
+        if let Some(p) = pad {
             m.sample(&p.input);
         }
         let going = m.tick(Instant::now());
@@ -756,6 +762,7 @@ mod tests {
         let now = Instant::now();
         let m = Measuring {
             key: PadKey::Slot(1),
+            store: None,
             sticks,
             step: Step::Rest,
             since: now,

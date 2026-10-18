@@ -7,6 +7,7 @@ use crate::art;
 use crate::home::{links, power, status};
 use crate::keys;
 use crate::report;
+use crate::text_field::{TextField, TextFieldEvent};
 use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::{MainView, Section, Tab};
 use crate::widgets::{
@@ -14,8 +15,8 @@ use crate::widgets::{
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, Window,
-    div, px, rgb,
+    AnyElement, AppContext, Context, Div, Entity, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, px, rgb,
 };
 use open_controller_core::binding::{self, Action, Chord, Step, XboxButton};
 use open_controller_core::device::Power;
@@ -160,6 +161,13 @@ pub fn profile_label(text: &Text, pad: &PadView, i: usize) -> String {
     profile_name(text, pad.profiles.list.get(i).map_or("", |p| p.name.as_str()), i)
 }
 
+/// A profile being renamed: the box its name is typed into, in its place in the list.
+pub struct Rename {
+    pub profile: usize,
+    field: Entity<TextField>,
+    _events: Subscription,
+}
+
 fn profile_name(text: &Text, name: &str, i: usize) -> String {
     match (name.is_empty(), i) {
         (false, _) => name.to_string(),
@@ -204,6 +212,48 @@ impl MainView {
     pub(crate) fn edit_now(&mut self, key: PadKey, edit: Edit, cx: &mut Context<Self>) {
         if let Some(pad) = self.pad(key, cx) {
             self.edit_profiles(&pad, edit, cx);
+        }
+        cx.notify();
+    }
+
+    /// Opens a box in place of profile `i`'s name. Enter keeps what was typed, Escape does not.
+    fn start_renaming(&mut self, key: PadKey, i: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pad) = self.pad(key, cx) else { return };
+        let text = self.model.read(cx).text;
+        let current = pad.profiles.list.get(i).map(|p| p.name.clone()).unwrap_or_default();
+        let field = cx.new(|cx| TextField::new(cx, false, profile::MAX_NAME).placeholder(profile_name(text, "", i)));
+        field.update(cx, |f, cx| f.set_text_selected(&current, cx));
+        let events = cx.subscribe_in(&field, window, move |this, field, ev, window, cx| {
+            if let TextFieldEvent::Submit = ev {
+                let name = field.read(cx).text();
+                this.edit_now(key, Edit::Rename(i, name), cx);
+                this.stop_renaming(window, cx);
+            }
+        });
+        field.focus_handle(cx).focus(window, cx);
+        self.renaming = Some(Rename { profile: i, field, _events: events });
+        cx.notify();
+    }
+
+    /// Offers the programs open now, listed away from the interface thread: that walks every
+    /// window and asks each one's process for its name.
+    fn list_programs(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let open = cx.background_executor().spawn(async { crate::programs::open() }).await;
+            let _ = this.update(cx, |this, cx| {
+                // Not when the menu it is in closed meanwhile.
+                if this.profile_menu {
+                    this.picker = Some(open);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub fn stop_renaming(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.renaming.take().is_some() {
+            self.focus.focus(window, cx);
         }
         cx.notify();
     }
@@ -408,10 +458,9 @@ impl MainView {
             .border_color(if self.profile_menu { t.accent } else { t.stroke })
             .cursor_pointer()
             .hover(move |s| s.bg(t.control_hover))
-            .on_click(cx.listener(|this, _, _, cx| {
+            .on_click(cx.listener(|this, _, window, cx| {
                 this.profile_menu = !this.profile_menu;
-                this.renaming = None;
-                cx.notify();
+                this.stop_renaming(window, cx);
             }))
             .child(caption(text.profile, t.text3))
             .child(strong(name, t.text))
@@ -426,20 +475,8 @@ impl MainView {
         let mut list = div().flex().flex_col().gap(px(2.));
         for (i, p) in pad.profiles.list.iter().enumerate() {
             let on = i == pad.profiles.active;
-            let renaming = self.renaming.as_ref().filter(|(r, _)| *r == i).map(|(_, n)| n.clone());
-            let name: AnyElement = match renaming {
-                Some(n) => div()
-                    .flex()
-                    .items_center()
-                    .h(px(30.))
-                    .px(px(8.))
-                    .flex_1()
-                    .rounded(px(radius::CHIP))
-                    .bg(t.control)
-                    .border_1()
-                    .border_color(t.accent)
-                    .child(body(format!("{n}|"), t.text))
-                    .into_any_element(),
+            let name: AnyElement = match self.renaming.as_ref().filter(|r| r.profile == i) {
+                Some(r) => div().flex_1().min_w(px(0.)).child(r.field.clone()).into_any_element(),
                 None => body(profile_name(text, &p.name, i), t.text).flex_1().into_any_element(),
             };
             list = list.child(
@@ -464,18 +501,17 @@ impl MainView {
                     .child(name)
                     .child(icon_button(("rename", i), glyph::EDIT, &t).size(px(28.)).on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
-                        let current = this.pad(key, cx).and_then(|p| p.profiles.list.get(i).map(|p| p.name.clone())).unwrap_or_default();
-                        this.renaming = Some((i, current));
-                        this.focus.focus(window, cx);
-                        cx.notify();
+                        this.start_renaming(key, i, window, cx);
                     })))
                     .when(count > 1, |d| {
-                        d.child(icon_button(("delete", i), glyph::DELETE, &t).size(px(28.)).on_click(cx.listener(move |this, _, _, cx| {
-                            cx.stop_propagation();
-                            this.renaming = None;
-                            this.editor = None;
-                            this.edit_now(key, Edit::Delete(i), cx);
-                        })))
+                        d.child(icon_button(("delete", i), glyph::DELETE, &t).size(px(28.)).on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.stop_renaming(window, cx);
+                                this.editor = None;
+                                this.edit_now(key, Edit::Delete(i), cx);
+                            },
+                        )))
                     }),
             );
         }
@@ -580,7 +616,9 @@ impl MainView {
                     .child(strong(format!("{} · {}", text.programs_title, profile_label(text, pad, i)), t.text))
                     .child(button("add-program", text.add_program, Kind::Subtle, &t).text_color(t.accent).on_click(cx.listener(
                         |this, _, _, cx| {
-                            this.picker = if this.picker.is_some() { None } else { Some(crate::programs::open()) };
+                            if this.picker.take().is_none() {
+                                this.list_programs(cx);
+                            }
                             cx.notify();
                         },
                     ))),
@@ -635,7 +673,7 @@ impl MainView {
     fn button_row(&self, pad: &PadView, b: u8, printed: Option<&'static str>, place: String, t: &Theme, cx: &mut Context<Self>) -> Div {
         let text = self.model.read(cx).text;
         let selected = self.editor.as_ref().is_some_and(|e| e.button == b);
-        let pressed = pad.input.pressed(b as u32);
+        let pressed = b < 64 && pad.input.pressed(u32::from(b));
         // Looked up on the click, not copied for every row on every frame.
         let key = pad.key;
         let t = *t;

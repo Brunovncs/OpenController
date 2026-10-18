@@ -81,7 +81,7 @@ impl MainView {
         let model = self.model.read(cx);
         let text: &'static Text = model.text;
         let prefs = model.prefs;
-        let connected = model.connected;
+        let connected = model.connected();
         let snap = model.snapshot.clone();
 
         let toggle =

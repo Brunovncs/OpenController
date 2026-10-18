@@ -1,6 +1,7 @@
 //! The first screen: every controller as a tile with its drawing, live, and a tile to connect
 //! another one. Whatever keeps controllers from working shows above them.
 
+use crate::Connection;
 use crate::art;
 use crate::theme::{Theme, icon as glyph, layout, radius};
 use crate::ui::MainView;
@@ -306,23 +307,33 @@ impl MainView {
         let model = self.model.read(cx);
         let text = model.text;
         let snap = model.snapshot.clone();
-        let connected = model.connected;
+        let connection = model.connection;
+        let other_version = model.other_version.clone();
 
-        let problem = if !connected {
-            Some(text.tray_off.to_string())
-        } else if let Some(e) = &snap.sdl_error {
-            Some(format!("SDL: {e}"))
-        } else {
-            crate::requirements::attention(&snap, text).map(str::to_string)
+        let requirements = |cx: &mut Context<Self>| {
+            button("requirements", text.see_requirements, Kind::Standard, &t)
+                .on_click(cx.listener(|this, _, _, cx| this.settings(cx)))
+                .into_any_element()
         };
-        let banner = problem.map(|message| {
-            let action = connected.then(|| {
-                button("requirements", text.see_requirements, Kind::Standard, &t)
-                    .on_click(cx.listener(|this, _, _, cx| this.settings(cx)))
-                    .into_any_element()
-            });
-            banner(message, action, &t)
-        });
+        let problem = match connection {
+            Connection::Connecting => None,
+            Connection::Starting => Some((text.link_starting.to_string(), None)),
+            Connection::Lost => Some((text.link_lost.to_string(), None)),
+            Connection::Down => Some((text.tray_off.to_string(), None)),
+            Connection::Up => {
+                if let Some(v) = other_version {
+                    let restart = button("restart", text.restart, Kind::Standard, &t)
+                        .on_click(cx.listener(|this, _, _, cx| this.model.update(cx, |m, cx| m.restart_resident(cx))))
+                        .into_any_element();
+                    Some((fill(text.other_version, v), Some(restart)))
+                } else if let Some(e) = &snap.sdl_error {
+                    Some((format!("SDL: {e}"), Some(requirements(cx))))
+                } else {
+                    crate::requirements::attention(&snap, text).map(|m| (m.to_string(), Some(requirements(cx))))
+                }
+            }
+        };
+        let banner = problem.map(|(message, action)| banner(message, action, &t));
 
         let count = match snap.pads.len() {
             0 => String::new(),
@@ -330,7 +341,7 @@ impl MainView {
             n => format!("{n} {}", text.controllers_many),
         };
         // As many columns as fit, the tiles stretched to fill the row.
-        let width = (f32::from(window.viewport_size().width) - 2. * layout::GUTTER).min(layout::MAX_W - 2. * layout::GUTTER);
+        let width = (crate::frame::inner_width(window) - 2. * layout::GUTTER).min(layout::MAX_W - 2. * layout::GUTTER);
         let cols = ((width + GAP) / (TILE_MIN_W + GAP)).floor().max(1.);
         let tile_w = ((width - GAP * (cols - 1.)) / cols).floor();
         let mut grid = div().flex().flex_wrap().gap(px(GAP));

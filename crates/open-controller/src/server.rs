@@ -5,7 +5,7 @@
 use crate::Control;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use open_controller_core::Command;
-use open_controller_core::ipc::{Pipe, ToTray, ToWindow};
+use open_controller_core::ipc::{PROTO, Pipe, ToTray, ToWindow};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,6 +13,7 @@ use std::time::Duration;
 const SNAPSHOT: u8 = 1;
 const PREFS: u8 = 2;
 const OUTBOX: u8 = 4;
+const BYE: u8 = 8;
 
 /// What changed since the window was last told, and a wake-up for the sender.
 pub struct Notify {
@@ -22,12 +23,25 @@ pub struct Notify {
     outbox: Mutex<Vec<ToWindow>>,
     tx: Sender<()>,
     rx: Receiver<()>,
+    /// Whether a window is connected, and whether this process is on its way out.
+    window: AtomicBool,
+    quitting: AtomicBool,
+    /// Signalled once the goodbye went out.
+    said_bye: (Sender<()>, Receiver<()>),
 }
 
 impl Default for Notify {
     fn default() -> Self {
         let (tx, rx) = bounded(1);
-        Notify { pending: AtomicU8::new(0), outbox: Mutex::new(Vec::new()), tx, rx }
+        Notify {
+            pending: AtomicU8::new(0),
+            outbox: Mutex::new(Vec::new()),
+            tx,
+            rx,
+            window: AtomicBool::new(false),
+            quitting: AtomicBool::new(false),
+            said_bye: bounded(1),
+        }
     }
 }
 
@@ -43,6 +57,17 @@ impl Notify {
 
     pub fn prefs(&self) {
         self.mark(PREFS);
+    }
+
+    /// Tells the window this process is quitting on purpose, so it closes rather than start it
+    /// again, and waits a moment for that to go out.
+    pub fn bye(&self) {
+        self.quitting.store(true, Ordering::Release);
+        if self.window.load(Ordering::Acquire) {
+            while self.said_bye.1.try_recv().is_ok() {}
+            self.mark(BYE);
+            let _ = self.said_bye.1.recv_timeout(Duration::from_millis(500));
+        }
     }
 }
 
@@ -78,8 +103,15 @@ pub fn start(control: Arc<Control>, notify: Arc<Notify>) {
 }
 
 fn serve(pipe: &Pipe, control: &Control, notify: &Notify) {
+    // First, before anything else goes out on the pipe, so the window knows what it talks to.
+    let hello = ToWindow::Hello { proto: PROTO, version: env!("CARGO_PKG_VERSION").into() };
+    if pipe.send(&hello).is_err() {
+        return;
+    }
     let gone = AtomicBool::new(false);
-    notify.mark(SNAPSHOT | PREFS);
+    notify.window.store(true, Ordering::Release);
+    let bye = if notify.quitting.load(Ordering::Acquire) { BYE } else { 0 };
+    notify.mark(SNAPSHOT | PREFS | bye);
     std::thread::scope(|s| {
         s.spawn(|| {
             let mut reader = pipe.reader();
@@ -91,6 +123,9 @@ fn serve(pipe: &Pipe, control: &Control, notify: &Notify) {
                     }
                     notify.mark(OUTBOX);
                     continue;
+                }
+                if req == ToTray::Quit {
+                    notify.bye();
                 }
                 control.apply(req);
             }
@@ -113,6 +148,10 @@ fn serve(pipe: &Pipe, control: &Control, notify: &Notify) {
                     sent = sent.and_then(|_| pipe.send(&m));
                 }
             }
+            if sent.is_ok() && what & BYE != 0 {
+                sent = pipe.send(&ToWindow::Bye);
+                let _ = notify.said_bye.0.try_send(());
+            }
             if sent.is_err() {
                 // Ends the reader's pending read too.
                 pipe.disconnect();
@@ -120,4 +159,5 @@ fn serve(pipe: &Pipe, control: &Control, notify: &Notify) {
             }
         }
     });
+    notify.window.store(false, Ordering::Release);
 }

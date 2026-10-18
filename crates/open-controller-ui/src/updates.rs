@@ -32,6 +32,8 @@ pub enum Update {
     Available(Release),
     Working(Release),
     Failed(Release, String),
+    /// OpenController did not quit in time, so the installer was not started.
+    Stuck(Release),
     Dismissed,
 }
 
@@ -81,25 +83,25 @@ impl MainView {
             let started = cx
                 .background_executor()
                 .spawn(async move {
-                    open_controller_core::instance::wait_gone(crate::RESIDENT, std::time::Duration::from_secs(15));
-                    update::run_setup(&file)
+                    // The installer replaces the programs in place: with the resident process
+                    // still running it would fail halfway, so it is not started.
+                    if !open_controller_core::instance::wait_gone(crate::RESIDENT, std::time::Duration::from_secs(15)) {
+                        return Err(None);
+                    }
+                    update::run_setup(&file).map_err(Some)
                 })
                 .await;
-            let _ = this.update(cx, |this, cx| match started {
-                Ok(()) => cx.quit(),
-                Err(e) => {
-                    INSTALLING.store(false, Ordering::SeqCst);
-                    this.update = Update::Failed(r, e);
-                    // The resident process already quit for the installer: the window says so
-                    // rather than send changes nobody reads.
-                    this.model.update(cx, |m, cx| {
-                        m.connected = false;
-                        m.pipe = None;
-                        m.snapshot = Default::default();
-                        cx.notify();
-                    });
-                    cx.notify();
+            let _ = this.update(cx, |this, cx| {
+                if started.is_ok() {
+                    return cx.quit();
                 }
+                // The window connects to OpenController again, starting it if it already quit.
+                INSTALLING.store(false, Ordering::SeqCst);
+                this.update = match started {
+                    Err(Some(e)) => Update::Failed(r, e),
+                    _ => Update::Stuck(r),
+                };
+                cx.notify();
             });
         })
         .detach();
@@ -120,14 +122,15 @@ impl MainView {
     }
 
     pub fn update_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let text = self.model.read(cx).text;
         let (r, working, failed) = match &self.update {
             Update::Available(r) => (r.clone(), false, None),
             Update::Working(r) => (r.clone(), true, None),
-            Update::Failed(r, e) => (r.clone(), false, Some(e.clone())),
+            Update::Failed(r, e) => (r.clone(), false, Some(fill(text.update_failed, e))),
+            Update::Stuck(r) => (r.clone(), false, Some(text.update_not_closed.to_string())),
             _ => return None,
         };
         let t = self.theme;
-        let text = self.model.read(cx).text;
         let page = r.page.clone();
         let notes = div()
             .id("update-notes")
@@ -168,7 +171,7 @@ impl MainView {
                         .flex_1()
                         .gap(px(2.))
                         .child(body(fill(text.app_update, &r.version), t.text))
-                        .when_some(failed, |d, e| d.child(caption(fill(text.update_failed, e), t.critical))),
+                        .when_some(failed, |d, e| d.child(caption(e, t.critical))),
                 )
                 .child(notes)
                 .child(action)

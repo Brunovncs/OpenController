@@ -114,7 +114,8 @@ pub struct TextField {
     placeholder: SharedString,
     /// How many lines a multi-line field shows: it starts at the first and grows to the second.
     lines: (usize, usize),
-    theme: Option<(WindowAppearance, Theme)>,
+    /// Made again when light and dark or the accent colour change.
+    theme: Option<((WindowAppearance, u32), Theme)>,
     layout: Option<Layout>,
     scroll: Point<Pixels>,
     /// Set when the caret moves, so the next frame scrolls it into view; the wheel leaves it.
@@ -206,12 +207,12 @@ impl TextField {
     }
 
     fn theme(&mut self, window: &Window) -> Theme {
-        let appearance = window.appearance();
+        let now = (window.appearance(), crate::theme::accents_seen());
         match self.theme {
-            Some((a, t)) if a == appearance => t,
+            Some((a, t)) if a == now => t,
             _ => {
                 let t = window_theme(window);
-                self.theme = Some((appearance, t));
+                self.theme = Some((now, t));
                 t
             }
         }

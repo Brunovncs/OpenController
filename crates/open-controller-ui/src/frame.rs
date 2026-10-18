@@ -28,6 +28,15 @@ pub fn tiling(window: &Window) -> Option<Tiling> {
     }
 }
 
+/// How wide the page is: the window, less the frame's shadow and edge where the program draws
+/// them.
+pub fn inner_width(window: &Window) -> f32 {
+    let width = f32::from(window.viewport_size().width);
+    let Some(tiling) = tiling(window) else { return width };
+    let free = |tiled: bool| if tiled { 0. } else { INSET + 1. };
+    width - free(tiling.left) - free(tiling.right)
+}
+
 /// The page inside the frame: a hairline edge and a shadow on the free sides, and handles there
 /// to resize the window by.
 pub fn frame(page: AnyElement, t: &Theme, window: &mut Window) -> AnyElement {
@@ -115,13 +124,14 @@ impl MainView {
     /// moves the window, a double click maximizes, a right click opens the window menu, and the
     /// window's buttons sit at its ends. `row` is the bar's content, kept clear of them.
     pub fn title_bar(&self, bar: Div, row: Div, window: &Window, cx: &mut Context<Self>) -> Div {
-        let Some(tiling) = tiling(window) else { return bar.child(row) };
+        if tiling(window).is_none() {
+            return bar.child(row);
+        }
         let t = self.theme;
         let (left, right) = buttons(window, cx);
         let can = window.window_controls();
         let maximized = window.is_maximized();
-        let free = |tiled: bool| if tiled { 0. } else { INSET + 1. };
-        let width = f32::from(window.viewport_size().width) - free(tiling.left) - free(tiling.right);
+        let width = inner_width(window);
         let margin = (width - width.min(layout::MAX_W)) / 2.;
         let room = |n: usize| {
             let own = layout::GUTTER - 6.;

@@ -410,6 +410,14 @@ pub struct Text {
     pub report_failed: &'static str,
     pub report_rate: &'static str,
     pub report_bad_email: &'static str,
+    /// The window's link to the resident process: being started, lost and being made again.
+    pub link_starting: &'static str,
+    pub link_lost: &'static str,
+    /// The resident process running is another version than the window; `{}` is its version.
+    pub other_version: &'static str,
+    pub restart: &'static str,
+    /// The resident process did not quit in time for the update's installer.
+    pub update_not_closed: &'static str,
 }
 
 pub const EN: Text = Text {
@@ -808,6 +816,11 @@ pub const EN: Text = Text {
     report_failed: "It could not be sent: {}",
     report_rate: "Too many reports from this network. Try again in an hour, or copy the details and send them by email.",
     report_bad_email: "This email does not look right.",
+    link_starting: "Starting OpenController…",
+    link_lost: "Lost contact with OpenController. Reconnecting…",
+    other_version: "OpenController {} is running, a different version from this window. Restart it so they match.",
+    restart: "Restart",
+    update_not_closed: "OpenController took too long to close, so the update did not start. Try again.",
 };
 
 pub const PT: Text = Text {
@@ -1206,6 +1219,11 @@ pub const PT: Text = Text {
     report_failed: "Não foi possível enviar: {}",
     report_rate: "Muitos envios desta rede. Tente de novo em uma hora, ou copie os dados e mande por e-mail.",
     report_bad_email: "Este e-mail não parece certo.",
+    link_starting: "Iniciando o OpenController…",
+    link_lost: "A conexão com o OpenController caiu. Reconectando…",
+    other_version: "O OpenController {} está rodando, uma versão diferente desta janela. Reinicie-o para que fiquem iguais.",
+    restart: "Reiniciar",
+    update_not_closed: "O OpenController demorou para fechar, então a atualização não começou. Tente de novo.",
 };
 
 /// `template` with its `{}` replaced by `value`.

@@ -4,6 +4,18 @@
 //! of heavy shadows.
 
 use gpui::{Hsla, Rgba, WindowAppearance, rgb, rgba};
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Counts the accent colour's changes, so what keeps a theme of its own makes it again.
+static ACCENTS: AtomicU32 = AtomicU32::new(0);
+
+pub fn accent_changed() {
+    ACCENTS.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn accents_seen() -> u32 {
+    ACCENTS.load(Ordering::Relaxed)
+}
 
 pub const FONT: &str = "Segoe UI Variable Text";
 pub const DISPLAY_FONT: &str = "Segoe UI Variable Display";

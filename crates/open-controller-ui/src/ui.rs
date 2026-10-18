@@ -1,11 +1,11 @@
 //! The window: a bar on top, and under it one of three screens: every controller as a tile, one
 //! controller with its buttons, light and details, or the settings with what Windows needs.
 
-use crate::Model;
 use crate::keys;
 use crate::requirements::{self, Component, Outcome};
 use crate::theme::{FONT, Theme, icon as glyph, layout, radius};
 use crate::widgets::{caption, icon_button, strong};
+use crate::{Connection, Model};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent, ModifiersChangedEvent,
@@ -15,7 +15,7 @@ use open_controller_core::binding::{self, Action, Step};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::profile::Edit;
-use open_controller_core::{PadKey, PadView};
+use open_controller_core::{PadKey, PadView, Snapshot};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -30,10 +30,12 @@ fn theme(window: &Window) -> Theme {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Screen {
     Home,
-    Device(PadKey),
+    /// A controller's page: its key, and where its settings are kept, so another controller that
+    /// takes the key (Joy-Cons split or joined) does not inherit the page.
+    Device(PadKey, Option<String>),
     Settings,
 }
 
@@ -84,8 +86,7 @@ pub struct MainView {
     pub editor: Option<Editor>,
     pub confirm_reset: bool,
     pub profile_menu: bool,
-    /// A profile being renamed, and its name so far.
-    pub renaming: Option<(usize, String)>,
+    pub renaming: Option<crate::detail::Rename>,
     pub installs: HashMap<Component, Install>,
     /// What Programs and Features says is installed, read when the settings open.
     pub installed: HashMap<Component, Option<String>>,
@@ -108,8 +109,9 @@ pub struct MainView {
     pub custom: Option<crate::sticks::Custom>,
     /// The open controller's sticks being measured, or the outcome of the last time.
     pub measuring: Option<crate::sticks::Measuring>,
-    /// The app's icon, in its version drawn for small sizes, for the bar on top.
-    brand: Arc<Image>,
+    /// The app's icon, in its version drawn for small sizes, for the bar on top, made for the
+    /// window's scale.
+    brand: (f32, Arc<Image>),
     /// Extra buttons held on the open controller in the last snapshot, to notice a new press.
     held: u64,
     /// The bar on top was pressed where the window draws its own frame: moving the mouse now
@@ -129,9 +131,17 @@ impl MainView {
             this.theme = theme(window);
             cx.notify();
         });
-        // Behind a game, the drawings need not follow every frame of input.
         let activation = cx.observe_window_activation(window, |this, window, cx| {
+            // Behind a game, the drawings need not follow every frame of input.
             this.send(ToTray::Focused(window.is_window_active()), cx);
+            // GPUI tells of light and dark changing but not of the accent colour, which is
+            // picked in Windows' settings: coming back from them makes the window active.
+            let now = theme(window);
+            if now.accent != this.theme.accent {
+                crate::theme::accent_changed();
+                this.theme = now;
+                cx.notify();
+            }
         });
         let focus = cx.focus_handle();
         focus.focus(window, cx);
@@ -156,7 +166,7 @@ impl MainView {
             stick_right: false,
             custom: None,
             measuring: None,
-            brand: Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!("../../../assets/icon-small.svg").to_vec())),
+            brand: brand(window.scale_factor()),
             held: 0,
             moving: false,
             _subscriptions: vec![observe, theme_change, activation],
@@ -178,8 +188,32 @@ impl MainView {
         self.model.read(cx).snapshot.pads.iter().find(|p| p.key == key).cloned()
     }
 
+    /// The snapshot, shared: what is drawn borrows from it instead of copying a controller with
+    /// all its profiles on every frame.
+    fn snapshot(&self, cx: &Context<Self>) -> Arc<Snapshot> {
+        self.model.read(cx).snapshot.clone()
+    }
+
+    /// The controller whose page is open, unless it left or another one took its key.
+    fn page_pad<'a>(&self, snap: &'a Snapshot) -> Option<&'a PadView> {
+        let Screen::Device(key, store) = &self.screen else { return None };
+        snap.pads.iter().find(|p| p.key == *key && p.store == *store)
+    }
+
     pub fn send(&self, req: ToTray, cx: &mut Context<Self>) {
         self.model.update(cx, |m, cx| m.send(req, cx));
+    }
+
+    /// A new connection to the resident process knows nothing of the window: what it was told
+    /// before is told again. The snapshot and the preferences come on their own.
+    pub fn linked(&self, window: &Window, cx: &mut Context<Self>) {
+        self.send(ToTray::Focused(window.is_window_active()), cx);
+        let m = self.model.read(cx);
+        if let Some(r) = &self.report
+            && !m.diagnosis.as_ref().is_some_and(|(k, _)| *k == r.key)
+        {
+            self.send(ToTray::Diagnose(r.key), cx);
+        }
     }
 
     fn reset_page(&mut self) {
@@ -195,11 +229,13 @@ impl MainView {
     }
 
     pub fn open(&mut self, key: PadKey, cx: &mut Context<Self>) {
-        self.screen = Screen::Device(key);
+        let snap = self.snapshot(cx);
+        let pad = snap.pads.iter().find(|p| p.key == key);
+        self.screen = Screen::Device(key, pad.and_then(|p| p.store.clone()));
         self.section = Section::Buttons;
         self.reset_page();
         self.stick_right = false;
-        self.held = self.pad(key, cx).map(|p| extras_held(&p)).unwrap_or(0);
+        self.held = pad.map(extras_held).unwrap_or(0);
         cx.notify();
     }
 
@@ -239,7 +275,8 @@ impl MainView {
     pub fn needs_attention(&self, cx: &Context<Self>) -> bool {
         let m = self.model.read(cx);
         let s = &m.snapshot;
-        !m.connected || requirements::attention(s, m.text).is_some()
+        let off = matches!(m.connection, Connection::Lost | Connection::Down);
+        off || m.other_version.is_some() || requirements::attention(s, m.text).is_some()
     }
 
     /// Downloads and runs a driver's installer, away from the interface thread.
@@ -310,22 +347,27 @@ impl MainView {
     /// Keeps the screen in step with the controllers: a controller that left closes its page,
     /// and pressing one of its extra buttons picks that button.
     fn follow_snapshot(&mut self, cx: &mut Context<Self>) {
+        let snap = self.snapshot(cx);
         if let Some(r) = self.report.as_mut() {
-            if let Some(p) = self.model.read(cx).snapshot.pads.iter().find(|p| p.key == r.key) {
+            // The controller the report is on, not another one that took its key: that one
+            // counts as gone.
+            if let Some(p) = snap.pads.iter().find(|p| p.key == r.key && p.store == r.pad.store) {
                 r.observe(p);
             }
             // The dialog stays over the page, which is kept as it is meanwhile.
             return;
         }
-        let Screen::Device(key) = self.screen else { return };
-        let Some(pad) = self.pad(key, cx) else {
+        if !matches!(self.screen, Screen::Device(..)) {
+            return;
+        }
+        let Some(pad) = self.page_pad(&snap) else {
             self.home(cx);
             return;
         };
-        if let Some(m) = self.measuring.as_mut().filter(|m| m.key == key) {
+        if let Some(m) = self.measuring.as_mut().filter(|m| m.key == pad.key) {
             m.sample(&pad.input);
         }
-        let held = extras_held(&pad);
+        let held = extras_held(pad);
         let pressed = held & !self.held;
         self.held = held;
         let listening = self.editor.as_ref().is_some_and(|e| e.recording);
@@ -333,7 +375,7 @@ impl MainView {
             let button = pressed.trailing_zeros() as u8;
             self.section = Section::Buttons;
             if self.editor.as_ref().is_none_or(|e| e.button != button) {
-                self.edit(&pad, button, cx);
+                self.edit(pad, button, cx);
             }
         }
     }
@@ -356,33 +398,15 @@ impl MainView {
             self.close_custom(window, cx);
             return;
         }
-        if let Some((i, name)) = self.renaming.as_mut() {
-            cx.stop_propagation();
-            match key {
-                "escape" => self.renaming = None,
-                "enter" => {
-                    let (i, name) = (*i, name.clone());
-                    self.renaming = None;
-                    if let Screen::Device(k) = self.screen
-                        && let Some(pad) = self.pad(k, cx)
-                    {
-                        self.edit_profiles(&pad, Edit::Rename(i, name), cx);
-                    }
-                }
-                "backspace" => {
-                    name.pop();
-                }
-                _ if !ev.keystroke.modifiers.control && !ev.keystroke.modifiers.alt => {
-                    if let Some(c) = ev.keystroke.key_char.as_deref() {
-                        name.push_str(c);
-                    }
-                }
-                _ => {}
+        if self.renaming.is_some() {
+            // The box takes the typing, and Enter; Escape leaves the name as it was.
+            if escape {
+                cx.stop_propagation();
+                self.stop_renaming(window, cx);
             }
-            cx.notify();
             return;
         }
-        let Screen::Device(pad_key) = self.screen else {
+        let Screen::Device(pad_key, _) = self.screen else {
             if escape && self.screen == Screen::Settings {
                 self.home(cx);
             }
@@ -451,7 +475,7 @@ impl MainView {
         let framed = crate::frame::tiling(window).is_some();
         let attention = self.needs_attention(cx);
         let on_settings = self.screen == Screen::Settings;
-        let mark = img(self.brand.clone()).size(px(28.)).flex_none();
+        let mark = img(self.brand.1.clone()).size(px(BRAND)).flex_none();
         let home = div()
             .id("brand")
             .flex()
@@ -490,21 +514,38 @@ impl MainView {
     }
 }
 
-/// The extra buttons held on a controller, as bits.
+/// The extra buttons held on a controller, as bits. A button past the 64 bits, which a resident
+/// process of another version could send, is left out.
 fn extras_held(pad: &PadView) -> u64 {
-    let mask = pad.extras.iter().fold(0u64, |m, &b| m | 1 << b);
+    let mask = pad.extras.iter().fold(0u64, |m, &b| m | 1u64.checked_shl(u32::from(b)).unwrap_or(0));
     pad.input.buttons & mask
 }
+
+/// The small icon for the window's `scale`. GPUI rasterizes an SVG image at twice its own size
+/// whatever the scale, and this one is 16 by 16, blurry above 100%: given a size, it comes out
+/// with one pixel for each of the screen's.
+fn brand(scale: f32) -> (f32, Arc<Image>) {
+    let side = BRAND * scale / 2.;
+    let svg = include_str!("../../../assets/icon-small.svg").replacen("<svg ", &format!("<svg width=\"{side}\" height=\"{side}\" "), 1);
+    (scale, Arc::new(Image::from_bytes(ImageFormat::Svg, svg.into_bytes())))
+}
+
+/// How big the icon is in the bar on top.
+const BRAND: f32 = 28.;
 
 impl Render for MainView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        if self.brand.0 != window.scale_factor() {
+            self.brand = brand(window.scale_factor());
+        }
         let max_w = if self.screen == Screen::Settings { layout::SETTINGS_W } else { layout::MAX_W };
+        let snap = self.snapshot(cx);
         let content: AnyElement = match self.screen {
             Screen::Home => self.render_home(window, cx),
             Screen::Settings => self.render_settings(window, cx),
-            Screen::Device(key) => match self.pad(key, cx) {
-                Some(pad) => self.render_device(&pad, window, cx),
+            Screen::Device(..) => match self.page_pad(&snap) {
+                Some(pad) => self.render_device(pad, window, cx),
                 None => self.render_home(window, cx),
             },
         };
