@@ -43,8 +43,9 @@ impl Keyboard {
                 // The only owner of the sink and of the counts of held keys: macros send their
                 // keys here too, so a key a button holds and one a macro taps are counted together.
                 // Without a way to type (Linux before the device rule is in place), keys are
-                // dropped, and it is tried again with the next one.
-                let mut sink = None;
+                // dropped, and it is tried again with the next one. Opened at once all the same, so
+                // the keyboard device is there before the first key.
+                let mut sink = sys::Sink::open();
                 let mut held = Held::default();
                 while let Ok(out) = rx.recv() {
                     if sink.is_none() {

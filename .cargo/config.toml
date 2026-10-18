@@ -1,4 +1,9 @@
 # The C runtime linked in on Windows, so the programs start on a machine without the Visual C++
-# Redistributable (VCRUNTIME140.dll). The cmake and cc crates follow it: SDL is built with /MT.
+# Redistributable (VCRUNTIME140.dll). The cc crate follows the target feature; SDL, built with
+# CMake, is told by the toolchain file.
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc = { value = "packaging/windows/static-crt.cmake", relative = true }
+CMAKE_TOOLCHAIN_FILE_aarch64_pc_windows_msvc = { value = "packaging/windows/static-crt.cmake", relative = true }
