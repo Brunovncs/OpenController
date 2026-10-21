@@ -3,14 +3,14 @@
 //! sleep about a millisecond. The UI only sends commands and reads snapshots.
 
 use crate::binding::{self, Action, Bindings, Chord};
-use crate::device::{self, Brand, Identity, Link, Power};
+use crate::device::{self, Brand, Form, Identity, Link, Power};
 use crate::ds3::Sixaxis;
 use crate::ds4::{self, Motion};
 use crate::extras::{self, Art, Family, Features, Hint};
 use crate::handheld;
 use crate::hiding::Hider;
 use crate::keyboard::Keyboard;
-use crate::mapping::{self, PadState, XusbReport};
+use crate::mapping::{self, PadState, RawInput, XusbReport};
 use crate::models;
 use crate::motion::{self, GyroAim, TiltRate};
 use crate::platform::{
@@ -21,7 +21,7 @@ use crate::profile::{self, GyroMode, Output, Profile, Profiles};
 use crate::report::{Diagnosis, GyroFacts};
 use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
-use crate::sdl::{Event, Gamepad, Sdl};
+use crate::sdl::{Event, Gamepad, Joystick, Sdl};
 #[cfg(windows)]
 use crate::vigem::gone;
 #[cfg(windows)]
@@ -201,6 +201,12 @@ pub struct PadView {
     pub product: u16,
     pub family: Family,
     pub art: Art,
+    /// What it is made for: a flight stick or a wheel is drawn and left to games as such.
+    #[serde(default)]
+    pub form: Form,
+    /// What a joystick without a gamepad layout sends, by its own numbering; `None` for the rest.
+    #[serde(default)]
+    pub raw: Option<RawInput>,
     /// The buttons it has beyond the Xbox set, as SDL button indices.
     pub extras: Vec<u8>,
     pub features: Features,
@@ -363,6 +369,7 @@ struct Model {
     product: u16,
     family: Family,
     art: Art,
+    form: Form,
     extras: Vec<u8>,
     features: Features,
     hint: Option<Hint>,
@@ -450,11 +457,16 @@ enum Kind {
     Pending,
 }
 
-/// A joystick SDL has no button layout for.
+/// A joystick SDL has no button layout for, open to show what it sends.
 struct Unmapped {
     name: String,
     vendor: u16,
     product: u16,
+    form: Form,
+    /// SDL's device path, for the device tree in a report.
+    path: String,
+    js: Option<Joystick>,
+    raw: RawInput,
 }
 
 /// Who holds a key down: a slot (its virtual controller's controller), or an XInput controller
@@ -667,6 +679,9 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
             }
         }
         core.pump(now);
+        if watching {
+            core.read_unmapped();
+        }
         core.handheld_buttons();
         core.poll_sixaxis(now);
         core.forward(now);
@@ -807,7 +822,8 @@ impl Core {
                     self.release_keys(self.owner_of(d));
                 }
                 let profiles = profiles.sanitised();
-                let (was_native, now_native) = (native(&self.profiles, &store), profiles.native);
+                let form = self.form_of(&store);
+                let (was_native, now_native) = (native(&self.profiles, &store, form), profiles.keeps_native(form));
                 let was_output = self.output_of(&store);
                 if profiles.is_default() {
                     self.profiles.remove(&store);
@@ -857,7 +873,7 @@ impl Core {
                         });
                         Some((p.pad.facts(), gyro, p.path.clone()))
                     }
-                    None => self.unmapped.contains_key(&d).then(|| (self.sdl.joystick_facts(d), None, String::new())),
+                    None => self.unmapped.get(&d).map(|u| (self.sdl.joystick_facts(d), None, u.path.clone())),
                 });
                 let _ =
                     reply.send(found.map(|(facts, gyro, path)| (Diagnosis { facts, log: self.log.iter().cloned().collect(), gyro }, path)));
@@ -911,7 +927,21 @@ impl Core {
     /// Whether the slot's controller is kept native: no virtual controller, not hidden, and
     /// nothing written to it.
     fn is_native(&self, s: SlotId) -> bool {
-        self.memo.get(&s).is_some_and(|m| native(&self.profiles, &m.store))
+        self.memo.get(&s).is_some_and(|m| native(&self.profiles, &m.store, m.form))
+    }
+
+    /// What the controllers kept under `store` are made for, from one connected or remembered.
+    fn form_of(&self, store: &str) -> Form {
+        self.phys.values().map(|p| &p.model).chain(self.memo.values()).find(|m| m.store == store).map_or(Form::Gamepad, |m| m.form)
+    }
+
+    /// What the joysticks without a gamepad layout send, while the window looks.
+    fn read_unmapped(&mut self) {
+        for u in self.unmapped.values_mut() {
+            if let Some(js) = &u.js {
+                self.input_changed |= js.read(&mut u.raw);
+            }
+        }
     }
 
     /// The controllers kept under `store` were made native or Xbox controllers again; the
@@ -1115,8 +1145,14 @@ impl Core {
                 Event::JoystickAdded(id) => {
                     if !self.sdl.is_gamepad(id) {
                         let (name, vendor, product) = self.sdl.joystick_info(id);
-                        self.note(format!("joystick without a gamepad mapping {vendor:04x}:{product:04x} \"{name}\""));
-                        self.unmapped.insert(id, Unmapped { name, vendor, product });
+                        let form = self.sdl.joystick_form(id);
+                        self.note(format!("joystick without a gamepad mapping {vendor:04x}:{product:04x} \"{name}\" ({form:?})"));
+                        let (js, path) = (self.sdl.open_joystick(id), self.sdl.joystick_path(id));
+                        let mut raw = RawInput::default();
+                        if let Some(j) = &js {
+                            j.read(&mut raw);
+                        }
+                        self.unmapped.insert(id, Unmapped { name, vendor, product, form, path, js, raw });
                         self.changed = true;
                     }
                 }
@@ -1212,6 +1248,7 @@ impl Core {
                 device::PadType::JoyConRight => extras::Art::JoyConRight,
                 _ => extras::art(family, vendor, product),
             },
+            form: pad.form(),
             extras: extras::available(&features, |b| pad.has_button(b)),
             features,
             hint: extras::hint(vendor, product, family),
@@ -1331,7 +1368,8 @@ impl Core {
     fn hand_over(&mut self, identity: &Identity, model: &Model) {
         let fits = |c: &Core, s: SlotId| {
             c.memo.get(&s).is_some_and(|m| {
-                native(&c.profiles, &m.store) == native(&c.profiles, &model.store) && c.output_of(&m.store) == c.output_of(&model.store)
+                native(&c.profiles, &m.store, m.form) == native(&c.profiles, &model.store, model.form)
+                    && c.output_of(&m.store) == c.output_of(&model.store)
             })
         };
         let away = |c: &Core, test: &dyn Fn(&Core, SlotId) -> bool| -> Vec<SlotId> {
@@ -1540,7 +1578,7 @@ impl Core {
         for p in self.phys.values_mut() {
             // Where controllers stay as they are, their lights are still OpenController's to set.
             let player = match p.kind {
-                Kind::Slot(_) if native(&self.profiles, &p.model.store) => continue,
+                Kind::Slot(_) if native(&self.profiles, &p.model.store, p.model.form) => continue,
                 Kind::Slot(s) => self.targets.get(&s).and_then(|t| t.player),
                 Kind::Native if !VIRTUAL_PADS => None,
                 _ => continue,
@@ -2025,6 +2063,8 @@ impl Core {
             view.name = u.name.clone();
             view.vendor = u.vendor;
             view.product = u.product;
+            view.form = u.form;
+            view.raw = u.js.is_some().then(|| u.raw.clone());
             pads.push(view);
         }
         let vigem = match (&self.bus, &self.bus_error) {
@@ -2076,6 +2116,8 @@ impl Core {
             product: model.map(|m| m.product).unwrap_or(0),
             family: model.map(|m| m.family).unwrap_or(Family::Other),
             art: model.map(|m| m.art).unwrap_or(Art::Offset),
+            form: model.map(|m| m.form).unwrap_or_default(),
+            raw: None,
             extras: model.filter(|_| assignable).map(|m| m.extras.clone()).unwrap_or_default(),
             features: model.map(|m| m.features).unwrap_or_default(),
             hint: model.and_then(|m| m.hint),
@@ -2091,7 +2133,7 @@ impl Core {
     }
 
     fn shutdown(&mut self) {
-        for p in self.phys.values().filter(|p| !(matches!(p.kind, Kind::Slot(_)) && native(&self.profiles, &p.model.store))) {
+        for p in self.phys.values().filter(|p| !(matches!(p.kind, Kind::Slot(_)) && native(&self.profiles, &p.model.store, p.model.form))) {
             p.pad.rumble(0, 0, 0);
         }
         for (_, _, c) in std::mem::take(&mut self.held) {
@@ -2125,9 +2167,10 @@ fn gyro_moved(shown: Option<[f32; 3]>, now: Option<[f32; 3]>) -> bool {
     }
 }
 
-/// Whether the controllers kept under `store` are kept native.
-fn native(profiles: &HashMap<String, Profiles>, store: &str) -> bool {
-    profiles.get(store).is_some_and(|p| p.native)
+/// Whether the controllers kept under `store`, made for `form`, are kept native: by choice, or
+/// for not being gamepads until made Xbox controllers.
+fn native(profiles: &HashMap<String, Profiles>, store: &str, form: Form) -> bool {
+    profiles.get(store).map_or(form.left_as_is(), |p| p.keeps_native(form))
 }
 
 /// What games see of a slot: the controller itself while it is kept native, otherwise its
@@ -2150,12 +2193,22 @@ mod tests {
     #[test]
     fn only_a_store_kept_native_is_native() {
         let mut profiles = HashMap::new();
-        assert!(!native(&profiles, "model:054c:0ce6"), "nothing saved is an Xbox controller");
+        assert!(!native(&profiles, "model:054c:0ce6", Form::Gamepad), "nothing saved is an Xbox controller");
         let mut p = Profiles::default();
         p.apply(Edit::Native(true));
         profiles.insert("model:054c:0ce6".to_string(), p);
-        assert!(native(&profiles, "model:054c:0ce6"));
-        assert!(!native(&profiles, "serial:aa:bb"));
+        assert!(native(&profiles, "model:054c:0ce6", Form::Gamepad));
+        assert!(!native(&profiles, "serial:aa:bb", Form::Gamepad));
+    }
+
+    #[test]
+    fn a_flight_stick_is_native_until_made_an_xbox_controller() {
+        let mut profiles = HashMap::new();
+        assert!(native(&profiles, "model:046d:c215", Form::FlightStick), "nothing saved leaves it to the games made for it");
+        let mut p = Profiles::default();
+        p.apply(Edit::Xbox(true));
+        profiles.insert("model:046d:c215".to_string(), p);
+        assert!(!native(&profiles, "model:046d:c215", Form::FlightStick));
     }
 
     #[test]

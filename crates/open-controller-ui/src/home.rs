@@ -60,6 +60,8 @@ pub fn status(pad: &PadView, text: &Text) -> String {
         Role::Virtual { player: None } => text.fifth.to_string(),
         Role::Native { player: None } => text.native.to_string(),
         Role::Waiting { remaining, .. } => fill(text.reconnecting, remaining.as_secs() + 1),
+        // A flight stick or a wheel SDL has no layout for goes to games as it is.
+        Role::Unmapped if pad.form.left_as_is() => text.kept_native.to_string(),
         Role::Unmapped => text.unmapped.to_string(),
         Role::Unavailable => text.unavailable.to_string(),
         Role::KeptNative => text.kept_native.to_string(),

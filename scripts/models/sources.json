@@ -957,6 +957,28 @@
    ]
   },
   {
+   "id": "046d:c215",
+   "name": "Logitech Extreme 3D Pro",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Logitech Extreme 3D Pro (flight stick, read through OpenController's own SDL mapping)"
+   ],
+   "reported": [
+    "Logitech Extreme 3D"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://www.logitechg.com/en-us/products/space/extreme-3d-pro-joystick.963290-0403.html",
+    "A user's report from OpenController 0.8.9 on Linux (October 2026): 046d:c215, 4 axes, 12 buttons, 1 hat"
+   ]
+  },
+  {
    "id": "046d:c21a",
    "name": "Logitech Precision Gamepad",
    "family": "Other",
@@ -6813,10 +6835,6 @@
   {
    "id": "045e:02a2",
    "why": "racing wheel"
-  },
-  {
-   "id": "046d:c215",
-   "why": "flight stick"
   },
   {
    "id": "04b4:010a",

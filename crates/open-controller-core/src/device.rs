@@ -44,6 +44,26 @@ pub enum SdlConnection {
     Wireless,
 }
 
+/// What a device is made for, as SDL tells it from its ids (`SDL_JoystickType`). Arcade sticks,
+/// dance pads, guitars and the rest are played like gamepads and go as one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Form {
+    #[default]
+    Gamepad,
+    FlightStick,
+    Throttle,
+    Wheel,
+}
+
+impl Form {
+    /// Whether the games made for it read it as it is, so OpenController leaves it to them until
+    /// its owner makes it an Xbox controller: an Xbox controller has no twist, no throttle lever
+    /// and no force feedback to give those games, and hiding the device would take it from them.
+    pub fn left_as_is(self) -> bool {
+        self != Form::Gamepad
+    }
+}
+
 /// Receivers that present the controller behind them as a USB device of their own.
 const DONGLES: &[(u16, u16)] = &[
     (0x054C, 0x0BA0), // Sony DualShock 4 USB wireless adaptor

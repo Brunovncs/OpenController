@@ -2,9 +2,9 @@
 //! the interface without hardware. Only the view is faked; the engine runs as usual.
 
 use open_controller_core::binding::{Action, Chord, Step, XboxButton, modifier};
-use open_controller_core::device::{Brand, Link, Power};
+use open_controller_core::device::{Brand, Form, Link, Power};
 use open_controller_core::extras::{self, Family, Features};
-use open_controller_core::mapping::{PadState, axis, button};
+use open_controller_core::mapping::{PadState, RawInput, axis, button};
 use open_controller_core::models;
 use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Output, Pressure, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
@@ -32,6 +32,8 @@ pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor
         product,
         family,
         art: extras::art(family, vendor, product),
+        form: Form::Gamepad,
+        raw: None,
         extras: Vec::new(),
         features: Features::default(),
         hint: None,
@@ -155,13 +157,17 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     ds3.profiles.apply(Edit::Pressure(Pressure { right_trigger: Some(button::SOUTH as u8), ..Pressure::default() }));
 
     let mut pads = vec![eightbitdo, edge, switch, native, joycons, xbox, ds4, ds3];
+    // Flight sticks only when asked for, so the screenshots stay as they are.
+    if std::env::var_os("OPEN_CONTROLLER_DEMO_STICKS").is_some() {
+        pads.extend(flight_sticks());
+    }
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
             p.profiles = edited.clone();
         }
         p.in_use = p.profiles.active;
         // As the engine does: no virtual controller while it is kept native, one again after.
-        match (p.profiles.native, &p.role) {
+        match (p.profiles.keeps_native(p.form), &p.role) {
             (true, _) if matches!(p.key, PadKey::Slot(_)) => (p.role, p.hidden) = (Role::KeptNative, false),
             (false, Role::KeptNative) => (p.role, p.hidden) = (Role::Virtual { player: None }, true),
             _ => {}
@@ -197,10 +203,49 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     }
 }
 
+/// A Logitech Extreme 3D Pro, left to flight games as it starts, leant forward and to the left,
+/// twisted and with the throttle halfway; and a flight stick SDL has no layout for, its trigger
+/// held.
+fn flight_sticks() -> [PadView; 2] {
+    let mut e3d = pad(PadKey::Slot(9), "Logitech Extreme 3D Pro", Brand::Other, Family::Other, (0x046D, 0xC215));
+    e3d.form = Form::FlightStick;
+    e3d.role = Role::KeptNative;
+    e3d.hidden = false;
+    e3d.store = Some("model:046d:c215".into());
+    e3d.extras = vec![extras::MISC1];
+    e3d.input = input(&[button::SOUTH, button::DPAD_UP], [-14000, -20000, 18000, 0, 0, 16000]);
+
+    let mut t16000 = pad(PadKey::Device(10), "T.16000M", Brand::Other, Family::Other, (0x044F, 0xB10A));
+    t16000.form = Form::FlightStick;
+    t16000.hidden = false;
+    t16000.store = None;
+    t16000.raw = Some(RawInput { buttons: 1, axes: vec![1200, -8000, 300, 32767], hats: vec![0] });
+    [e3d, t16000]
+}
+
 /// What SDL might say about an example controller, for the report dialog in `--demo`.
 pub fn diagnosis(p: &PadView) -> open_controller_core::report::Diagnosis {
     use open_controller_core::report::{Diagnosis, Facts, GyroFacts};
     let mode = p.profile().gyro.mode;
+    if p.role == Role::Unmapped {
+        return Diagnosis {
+            facts: Facts {
+                vendor: p.vendor,
+                product: p.product,
+                joystick_name: p.name.clone(),
+                guid: "030000004f0400000ab1000000000000".into(),
+                path: format!(r"\\?\HID#VID_{:04X}&PID_{:04X}", p.vendor, p.product),
+                joystick_type: "flight stick".into(),
+                connection: "wired".into(),
+                axes: 4,
+                buttons: 16,
+                hats: 1,
+                ..Facts::default()
+            },
+            log: vec![format!("     0.4s  joystick without a gamepad mapping {:04x}:{:04x} \"{}\" (example)", p.vendor, p.product, p.name)],
+            gyro: None,
+        };
+    }
     Diagnosis {
         facts: Facts {
             vendor: p.vendor,

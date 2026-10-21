@@ -3,6 +3,23 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+The Logitech Extreme 3D Pro now has its own drawing, with the grip leaning and turning as you
+move it and the throttle filling as you push it. It is left to flight games as it is. To play a
+gamepad game with it, turn off Keep native on its page and it becomes an Xbox controller: the
+stick and its twist as the sticks, the throttle as the right trigger, the trigger and the thumb
+button as A and B.
+
+Flight sticks, throttles and racing wheels are no longer turned into Xbox controllers on their
+own, so flight and racing games keep reading them with their twist, throttle and force feedback.
+One that OpenController does not know says so on its page, with a way to send its details.
+
+A report on a controller OpenController does not know now records the buttons, axes and hats it
+sends, and names the Linux drivers as they are.
+
+Settings carry over.
+
 ## 0.8.9
 
 Updating HidHide now warns that its installer asks to restart Windows and opens again afterwards

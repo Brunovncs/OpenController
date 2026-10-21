@@ -173,12 +173,22 @@ impl MainView {
         };
         view.read_installed(cx);
         // `--demo` with `OPEN_CONTROLLER_PAGE` set: the first example controller's page, an extra
-        // button picked, for the screenshot of a controller's page.
-        if view.model.read(cx).demo && std::env::var_os("OPEN_CONTROLLER_PAGE").is_some() {
-            let key = PadKey::Slot(1);
-            view.open(key, cx);
-            if let Some(pad) = view.pad(key, cx) {
-                view.edit(&pad, open_controller_core::extras::LEFT_PADDLE1, cx);
+        // button picked, for the screenshot of a controller's page. A slot's number or `d` and a
+        // device's opens that controller's page instead.
+        let page = std::env::var("OPEN_CONTROLLER_PAGE").ok().filter(|_| view.model.read(cx).demo);
+        let chosen = page.as_deref().map(|p| match p.strip_prefix('d') {
+            Some(d) => d.parse().ok().map(PadKey::Device),
+            None => p.parse().ok().filter(|&n| n != 1).map(PadKey::Slot),
+        });
+        match chosen {
+            None => {}
+            Some(Some(key)) => view.open(key, cx),
+            Some(None) => {
+                let key = PadKey::Slot(1);
+                view.open(key, cx);
+                if let Some(pad) = view.pad(key, cx) {
+                    view.edit(&pad, open_controller_core::extras::LEFT_PADDLE1, cx);
+                }
             }
         }
         view

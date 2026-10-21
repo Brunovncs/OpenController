@@ -1,5 +1,6 @@
 """Draws every look in pads.json as the app does, side by side: preview.py PADS.json OUT.png [look ...]"""
 import json
+import re
 import sys
 
 import pymupdf
@@ -7,6 +8,23 @@ import pymupdf
 pads = json.load(open(sys.argv[1]))
 names = sys.argv[3:] or list(pads)
 LETTERS = {"south": "A", "east": "B", "west": "X", "north": "Y"}
+
+
+def points(d):
+    """The x and y of every point of an absolute path of M, L, H, V, C and Z."""
+    xs, ys, x, y = [], [], 0.0, 0.0
+    for cmd, args in re.findall(r"([MLHVCZ])([^MLHVCZ]*)", d):
+        n = [float(v) for v in re.findall(r"-?\d*\.?\d+", args)]
+        if cmd == "H":
+            x = n[-1]
+        elif cmd == "V":
+            y = n[-1]
+        elif n:
+            x, y = n[-2], n[-1]
+        if cmd != "Z":
+            xs.append(x)
+            ys.append(y)
+    return xs, ys
 
 
 def svg(p):
@@ -35,6 +53,8 @@ def svg(p):
         o.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{soft}"/>')
     if "touchpad" in p:
         o.append(f'<path d="{p["touchpad"]}" fill="{part}" stroke="{edge}"/>')
+    for lv in p.get("levers", []):
+        o.append(f'<path d="{lv["d"]}" fill="{part}" stroke="{edge}"/>')
     for s in p.get("sticks", []):
         x, y, r = s["circle"]
         if "ring" in s:
@@ -42,11 +62,21 @@ def svg(p):
         o.append(f'<circle cx="{x}" cy="{y}" r="{s.get("well", r * 1.18)}" fill="black" fill-opacity="0.28" stroke="{soft}"/>')
         o.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="#3d4048" stroke="{edge}"/>')
         o.append(f'<circle cx="{x}" cy="{y}" r="{r * 0.62}" fill="none" stroke="{soft}"/>')
+        if "grip" in s:
+            o.append(f'<path d="{s["grip"]}" fill="url(#b)" stroke="{edge}"/>')
     for b in p.get("buttons", []):
+        if b.get("label") and "d" in b:
+            o.append(f'<path d="{b["d"]}" fill="{part}" stroke="{edge}"/>')
+            xs, ys = points(b["d"])
+            x, y, r = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, min(max(xs) - min(xs), max(ys) - min(ys)) / 2
+            o.append(f'<text x="{x}" y="{y + r * 0.36}" text-anchor="middle" font-size="{r}" font-family="Arial" font-weight="bold" fill="#aeb6c1">{b["label"]}</text>')
+            continue
         if "circle" in b:
             x, y, r = b["circle"]
             o.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{part}" stroke="{edge}"/>')
-            if b["input"] in LETTERS:
+            if b.get("label"):
+                o.append(f'<text x="{x}" y="{y + r * 0.36}" text-anchor="middle" font-size="{r}" font-family="Arial" font-weight="bold" fill="#aeb6c1">{b["label"]}</text>')
+            elif b["input"] in LETTERS:
                 o.append(f'<text x="{x}" y="{y + r * 0.36}" text-anchor="middle" font-size="{r}" font-family="Arial" font-weight="bold" fill="#aeb6c1">{LETTERS[b["input"]]}</text>')
             elif b.get("icon"):
                 o.append(f'<text x="{x}" y="{y + r * 0.3}" text-anchor="middle" font-size="{r * 0.8}" font-family="Arial" fill="#aeb6c1">{b["icon"][0]}</text>')

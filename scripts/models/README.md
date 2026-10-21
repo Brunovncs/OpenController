@@ -12,7 +12,9 @@ device reports, and the sources that tie the id to the model: SDL_GameController
 the ids), Linux's `xpad.c` and `hid-ids.h`, RetroArch's joypad autoconfig files, MiSTer's latency
 catalogue, usb.ids, and users' own logs in GitHub issues and forums. Only ids marked confirmed or
 likely there made it into the table. `left_out` says which ids were found and left out, and why:
-flight sticks, wheels, and chip makers' ids that unrelated devices share.
+flight sticks, wheels, and chip makers' ids that unrelated devices share. The Logitech Extreme 3D
+Pro is the one flight stick in the table, read through a mapping of OpenController's own in
+`gamecontrollerdb.txt`.
 
 `LAYOUTS` in the same file draws a pad whose family does not say its shape: a generic pad with
 its sticks side by side like a PlayStation one, or a pad with no sticks at all.

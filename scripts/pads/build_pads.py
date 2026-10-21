@@ -7,7 +7,7 @@ new drawing does not need every other look traced again.
 import json
 import sys
 
-KEYS = ["body", "bumpers", "triggers", "panels", "touchpad", "dots", "sticks", "buttons", "glyphs", "tint", "stick_rings"]
+KEYS = ["body", "bumpers", "triggers", "panels", "touchpad", "dots", "levers", "sticks", "buttons", "glyphs", "tint", "stick_rings"]
 args = sys.argv[1:]
 add = args[0] == "--add"
 if add:

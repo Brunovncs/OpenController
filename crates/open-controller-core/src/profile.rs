@@ -3,6 +3,7 @@
 //! names the program in front takes over while that program is in front.
 
 use crate::binding::{self, Action, Bindings};
+use crate::device::Form;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
@@ -310,6 +311,9 @@ pub struct Profiles {
     /// Left as it is for games: no Xbox controller is made for it and it is not hidden, so
     /// none of the profiles apply. A version that does not know this field reads it as off.
     pub native: bool,
+    /// Made an Xbox controller although it is not a gamepad (a flight stick, a throttle, a
+    /// wheel), which is otherwise left as it is (see [`Form::left_as_is`]).
+    pub xbox: bool,
     /// Which model it is, for a controller whose ids another one copies: a key of
     /// `models::ALIASES`. `None` is the model its ids name.
     pub model: Option<String>,
@@ -358,6 +362,8 @@ pub enum Edit {
     Select(usize),
     /// Keeps the controller native, or makes it an Xbox controller again.
     Native(bool),
+    /// Makes a controller that is not a gamepad an Xbox controller, or leaves it as it is again.
+    Xbox(bool),
     /// Says which model the controller is (see [`Profiles::model`]).
     Model(Option<String>),
 }
@@ -368,6 +374,7 @@ impl Profiles {
             list: vec![Profile { name: first, ..Profile::default() }],
             active: 0,
             native: false,
+            xbox: false,
             model: None,
             output: Output::Xbox360,
             extra: Map::new(),
@@ -395,6 +402,11 @@ impl Profiles {
             }
         }
         Some(p)
+    }
+
+    /// Whether a controller made for `form` with these profiles is left to games as it is.
+    pub fn keeps_native(&self, form: Form) -> bool {
+        self.native || form.left_as_is() && !self.xbox
     }
 
     pub fn active(&self) -> &Profile {
@@ -425,6 +437,7 @@ impl Profiles {
     /// Fields a newer version wrote count as a change, so they are not thrown away with it.
     pub fn is_default(&self) -> bool {
         !self.native
+            && !self.xbox
             && self.model.is_none()
             && self.output == Output::Xbox360
             && self.extra.is_empty()
@@ -501,6 +514,7 @@ impl Profiles {
             Edit::Select(i) if i < self.list.len() => self.active = i,
             Edit::Select(_) => {}
             Edit::Native(on) => self.native = on,
+            Edit::Xbox(on) => (self.xbox, self.native) = (on, false),
             Edit::Model(key) => self.model = key.filter(|k| !k.is_empty() && k.len() <= 40),
         }
     }
@@ -844,6 +858,19 @@ mod tests {
         let mut p = p;
         p.apply(Edit::Native(false));
         assert!(p.is_default());
+    }
+
+    #[test]
+    fn a_flight_stick_is_left_as_it_is_until_made_an_xbox_controller() {
+        let mut p = Profiles::default();
+        assert!(p.keeps_native(Form::FlightStick) && !p.keeps_native(Form::Gamepad));
+        p.apply(Edit::Xbox(true));
+        assert!(!p.keeps_native(Form::FlightStick) && !p.is_default(), "the choice must be saved");
+        p.apply(Edit::Xbox(false));
+        assert!(p.keeps_native(Form::FlightStick) && p.is_default());
+        p.apply(Edit::Native(true));
+        p.apply(Edit::Xbox(true));
+        assert!(!p.native, "one switch, one meaning");
     }
 
     #[test]

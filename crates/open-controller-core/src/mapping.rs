@@ -77,6 +77,21 @@ impl PadState {
     }
 }
 
+/// What a joystick SDL has no gamepad layout for sends, by its own numbering: nothing of it has a
+/// gamepad's name yet. Shown while the window looks, so a report can say what each part is.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RawInput {
+    /// A bit per button, the first 64.
+    pub buttons: u64,
+    pub axes: Vec<i16>,
+    /// Each hat's directions, as SDL gives them: up 1, right 2, down 4, left 8.
+    pub hats: Vec<u8>,
+}
+
+/// The most axes and hats a [`RawInput`] keeps.
+pub const RAW_AXES: usize = 16;
+pub const RAW_HATS: usize = 4;
+
 /// The buttons a DualShock 3 senses the pressure of, in the order SDL reports them as joystick
 /// axes 6 to 15.
 pub const PRESSURE: [u32; 10] = [

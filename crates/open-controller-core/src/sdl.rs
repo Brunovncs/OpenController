@@ -7,9 +7,9 @@
 //! that thread, and keeping all calls there avoids contention on its joystick lock. Rumble is
 //! the exception: each controller gets it from a thread of its own (see [`Rumbler`]).
 
-use crate::device::{PadType, Power, SdlConnection};
+use crate::device::{Form, PadType, Power, SdlConnection};
 use crate::extras::{Features, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO};
-use crate::mapping::{self, PadState, axis, button};
+use crate::mapping::{self, PadState, RAW_AXES, RAW_HATS, RawInput, axis, button};
 use crate::motion::{Finger, touch_buttons};
 use crate::report::{Facts, model_path};
 use sdl3_sys::everything::*;
@@ -215,6 +215,22 @@ impl Sdl {
         }
     }
 
+    /// What a joystick is made for, as SDL tells it from its ids.
+    pub fn joystick_form(&self, id: u32) -> Form {
+        form(unsafe { SDL_GetJoystickTypeForID(SDL_JoystickID(id)) })
+    }
+
+    /// A joystick SDL has no gamepad mapping for, opened to read what it sends.
+    pub fn open_joystick(&self, id: u32) -> Option<Joystick> {
+        let js = unsafe { SDL_OpenJoystick(SDL_JoystickID(id)) };
+        (!js.is_null()).then_some(Joystick { js })
+    }
+
+    /// Its device path as SDL gives it, for the device tree.
+    pub fn joystick_path(&self, id: u32) -> String {
+        text(unsafe { SDL_GetJoystickPathForID(SDL_JoystickID(id)) }).unwrap_or_default()
+    }
+
     /// What SDL says about a joystick it has no gamepad mapping for, opened for a moment if it
     /// is not open already.
     pub fn joystick_facts(&self, id: u32) -> Facts {
@@ -234,6 +250,18 @@ impl Sdl {
             };
             if !js.is_null() {
                 joystick_counts(js, &mut f);
+                f.firmware = SDL_GetJoystickFirmwareVersion(js);
+                f.connection = connection_name(SDL_GetJoystickConnectionState(js));
+                let props = SDL_GetJoystickProperties(js);
+                let caps = [
+                    (SDL_PROP_JOYSTICK_CAP_RUMBLE_BOOLEAN, "rumble"),
+                    (SDL_PROP_JOYSTICK_CAP_TRIGGER_RUMBLE_BOOLEAN, "trigger rumble"),
+                    (SDL_PROP_JOYSTICK_CAP_RGB_LED_BOOLEAN, "light bar"),
+                    (SDL_PROP_JOYSTICK_CAP_MONO_LED_BOOLEAN, "light"),
+                    (SDL_PROP_JOYSTICK_CAP_PLAYER_LED_BOOLEAN, "player lights"),
+                ];
+                f.capabilities =
+                    caps.into_iter().filter(|&(c, _)| SDL_GetBooleanProperty(props, c, false)).map(|(_, n)| n.to_string()).collect();
                 if open.is_null() {
                     SDL_CloseJoystick(js);
                 }
@@ -389,6 +417,24 @@ fn joystick_type(t: SDL_JoystickType) -> &'static str {
     }
 }
 
+fn form(t: SDL_JoystickType) -> Form {
+    match t {
+        SDL_JOYSTICK_TYPE_FLIGHT_STICK => Form::FlightStick,
+        SDL_JOYSTICK_TYPE_THROTTLE => Form::Throttle,
+        SDL_JOYSTICK_TYPE_WHEEL => Form::Wheel,
+        _ => Form::Gamepad,
+    }
+}
+
+fn connection_name(c: SDL_JoystickConnectionState) -> String {
+    match c {
+        SDL_JOYSTICK_CONNECTION_WIRED => "wired",
+        SDL_JOYSTICK_CONNECTION_WIRELESS => "wireless",
+        _ => "unknown",
+    }
+    .into()
+}
+
 fn gamepad_type(t: SDL_GamepadType) -> String {
     text(unsafe { SDL_GetGamepadStringForType(t) }).unwrap_or_else(|| "unknown".into())
 }
@@ -424,6 +470,49 @@ impl Drop for Sdl {
         if !stuck {
             unsafe { SDL_Quit() };
         }
+    }
+}
+
+/// A joystick SDL has no gamepad mapping for, open while it is connected.
+pub struct Joystick {
+    js: *mut SDL_Joystick,
+}
+
+impl Joystick {
+    /// Reads its buttons, axes and hats into `out`, from SDL's cache. Returns whether any changed.
+    pub fn read(&self, out: &mut RawInput) -> bool {
+        unsafe {
+            let buttons = SDL_GetNumJoystickButtons(self.js).clamp(0, 64);
+            let held = (0..buttons).filter(|&i| SDL_GetJoystickButton(self.js, i)).fold(0, |b, i| b | 1 << i);
+            let mut changed = held != out.buttons;
+            out.buttons = held;
+            let axes = SDL_GetNumJoystickAxes(self.js).clamp(0, RAW_AXES as i32);
+            changed |= set_all(&mut out.axes, (0..axes).map(|i| SDL_GetJoystickAxis(self.js, i)));
+            let hats = SDL_GetNumJoystickHats(self.js).clamp(0, RAW_HATS as i32);
+            changed |= set_all(&mut out.hats, (0..hats).map(|i| SDL_GetJoystickHat(self.js, i)));
+            changed
+        }
+    }
+}
+
+/// Puts `values` in `v`, without allocating once it is the right length. Returns whether it changed.
+fn set_all<T: PartialEq>(v: &mut Vec<T>, values: impl ExactSizeIterator<Item = T>) -> bool {
+    let n = values.len();
+    let mut changed = v.len() != n;
+    v.truncate(n);
+    for (i, x) in values.enumerate() {
+        match v.get_mut(i) {
+            Some(y) if *y == x => {}
+            Some(y) => (*y, changed) = (x, true),
+            None => v.push(x),
+        }
+    }
+    changed
+}
+
+impl Drop for Joystick {
+    fn drop(&mut self) {
+        unsafe { SDL_CloseJoystick(self.js) };
     }
 }
 
@@ -494,6 +583,13 @@ impl Gamepad {
             SDL_GAMEPAD_TYPE_STEAM => PadType::Standard,
             _ => PadType::Unknown,
         }
+    }
+
+    /// What it is made for, as SDL tells it from its ids: a flight stick SDL is given a mapping
+    /// for is still one.
+    pub fn form(&self) -> Form {
+        let js = unsafe { SDL_GetGamepadJoystick(self.gp) };
+        if js.is_null() { Form::Gamepad } else { form(unsafe { SDL_GetJoystickType(js) }) }
     }
 
     pub fn connection(&self) -> SdlConnection {
@@ -737,6 +833,21 @@ mod tests {
         "030000004c050000f20d000011810000",
         "050000004c050000f20d000000810000",
     ];
+    /// The Logitech Extreme 3D Pro, a flight stick SDL has no line for anywhere.
+    const EXTREME_3D: [&str; 2] = ["030000006d04000015c2000000000000", "030000006d04000015c2000010010000"];
+
+    #[test]
+    fn the_extreme_3d_is_mapped_alike_on_both_systems() {
+        let lines: Vec<&str> = MAPPINGS.lines().filter(|l| EXTREME_3D.iter().any(|g| l.starts_with(g))).collect();
+        assert_eq!(lines.len(), 2);
+        let body = |l: &str| l.split_once(',').and_then(|(_, b)| b.rsplit_once("platform:").map(|(b, _)| b.to_string()));
+        assert_eq!(body(lines[0]), body(lines[1]));
+        let b = body(lines[0]).unwrap();
+        // The stick and its twist, the throttle full when pushed forward, the hat as the d-pad.
+        for part in ["leftx:a0,", "lefty:a1,", "rightx:a2,", "righttrigger:a3~,", "dpup:h0.1,", "misc1:b11,"] {
+            assert!(b.contains(part), "{part} in {b}");
+        }
+    }
 
     #[test]
     fn mappings_are_windows_only_but_for_known_linux_lines_and_well_formed() {
@@ -746,6 +857,7 @@ mod tests {
         assert!(lines.iter().all(|l| guid(l)), "{:?}", lines.iter().find(|l| !guid(l)));
         let linux: Vec<&str> = lines.iter().filter(|l| !l.ends_with("platform:Windows,")).copied().collect();
         assert!(linux.iter().all(|l| l.ends_with("platform:Linux,")), "{linux:?}");
+        let linux: Vec<&str> = linux.into_iter().filter(|l| !EXTREME_3D.iter().any(|g| l.starts_with(g))).collect();
         let ids: Vec<&str> = linux.iter().filter_map(|l| l.split(',').next()).collect();
         assert_eq!(ids, LINUX_LINES);
         // The Xbox layout hid-playstation's buttons and axes come in.

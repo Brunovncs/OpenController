@@ -877,3 +877,9 @@ xinput,XInput Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,
 050000004c050000f20d000000810000,DualSense Edge Wireless Controller,a:b0,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b11,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b12,righttrigger:a5,rightx:a3,righty:a4,start:b9,x:b3,y:b2,platform:Linux,
 # A Twin USB Joystick clone that reports 0815:0005, read like the 0810:0001 "PS1 Controller".
 03000000150800000500000000000000,Twin USB Joystick,a:b2,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b6,leftstick:b10,lefttrigger:b4,leftx:a0,lefty:a1,rightshoulder:b7,rightstick:b11,righttrigger:b5,rightx:a3,righty:a2,start:b9,x:b3,y:b0,platform:Windows,
+# Logitech Extreme 3D Pro, a flight stick SDL has no mapping for, the same through DirectInput and
+# evdev: the stick and its twist as the sticks, the throttle as the right trigger, full when pushed
+# forward, the trigger and the thumb button as A and B, the four on the head as X, Y and the
+# bumpers, the six on the base as View, Menu, the stick clicks, the left trigger and one of its own.
+030000006d04000015c2000000000000,Logitech Extreme 3D Pro,a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,back:b6,start:b7,leftstick:b8,rightstick:b9,lefttrigger:b10,misc1:b11,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,lefty:a1,rightx:a2,righttrigger:a3~,platform:Windows,
+030000006d04000015c2000010010000,Logitech Extreme 3D Pro,a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,back:b6,start:b7,leftstick:b8,rightstick:b9,lefttrigger:b10,misc1:b11,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,lefty:a1,rightx:a2,righttrigger:a3~,platform:Linux,

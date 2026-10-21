@@ -19,7 +19,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Window, div, px, rgb,
 };
 use open_controller_core::binding::{self, Action, Chord, Step, XboxButton};
-use open_controller_core::device::Power;
+use open_controller_core::device::{Form, Power};
 use open_controller_core::extras::{self, Art, Family, HANDHELD, Hint};
 use open_controller_core::handheld;
 use open_controller_core::i18n::{Text, fill};
@@ -47,8 +47,11 @@ const SWATCHES: [[u8; 3]; 12] = [
 ];
 
 /// Where the button is or what it is: "Back left", "Touchpad click".
-pub fn place_name(text: &Text, family: Family, art: Art, b: u8) -> String {
+pub fn place_name(text: &Text, pad: &PadView, b: u8) -> String {
+    let (family, art) = (pad.family, pad.art);
     match extras::kind(family, art, b) {
+        // A flight stick's buttons past the gamepad's are on its base.
+        extras::Kind::Share if pad.form == Form::FlightStick => text.on_base.into(),
         extras::Kind::BackLeft => text.back_left.into(),
         extras::Kind::BackRight => text.back_right.into(),
         extras::Kind::BackLeft2 => text.back_left2.into(),
@@ -74,14 +77,16 @@ pub fn place_name(text: &Text, family: Family, art: Art, b: u8) -> String {
     }
 }
 
-/// The name printed on the button: SDL's families from the table, a handheld's from its machine.
-pub fn printed_name(family: Family, art: Art, b: u8) -> Option<&'static str> {
-    if family == Family::Handheld
+/// The name printed on the button: SDL's families from the table, a handheld's from its machine,
+/// a model with a drawing of its own from what the drawing prints on it (the Extreme 3D Pro's
+/// numbers).
+pub fn printed_name(pad: &PadView, b: u8) -> Option<&'static str> {
+    if pad.family == Family::Handheld
         && let Some(i) = HANDHELD.iter().position(|&h| h == b)
     {
         return handheld::this_machine().and_then(|m| m.buttons.get(i)).map(|x| x.label);
     }
-    extras::printed_name(family, art, b)
+    extras::printed_name(pad.family, pad.art, b).or_else(|| art::printed_label(pad, b))
 }
 
 /// Whether games read this controller directly, so its buttons can only become keys and macros.
@@ -355,6 +360,15 @@ impl MainView {
             Section::Info => self.info_section(pad, text, cx),
         };
         let unknown = report::rating_of(pad) == Rating::Unknown;
+        // A flight stick or a wheel SDL has no layout for: left to the games made for it, and
+        // given an Xbox layout once its details come.
+        let (notice_title, notice_body) = match pad.form {
+            _ if pad.role != Role::Unmapped => (text.unknown_title, text.unknown_body),
+            Form::FlightStick => (text.flight_stick_title, text.not_gamepad_body),
+            Form::Throttle => (text.throttle_title, text.not_gamepad_body),
+            Form::Wheel => (text.wheel_title, text.not_gamepad_body),
+            Form::Gamepad => (text.unknown_title, text.unknown_body),
+        };
 
         div()
             .flex()
@@ -380,8 +394,8 @@ impl MainView {
                                 .flex_col()
                                 .flex_1()
                                 .min_w(px(240.))
-                                .child(strong(text.unknown_title, t.text))
-                                .child(caption(text.unknown_body, t.text2)),
+                                .child(strong(notice_title, t.text))
+                                .child(caption(notice_body, t.text2)),
                         )
                         .child(
                             button("unknown-send", text.unknown_send, Kind::Primary, &t)
@@ -415,7 +429,11 @@ impl MainView {
         let key = pad.key;
         let on = kept_native(pad);
         let hiding = self.model.read(cx).snapshot.hiding;
+        // A flight stick or a wheel is kept native until made an Xbox controller, its own switch.
+        let left_as_is = pad.form.left_as_is();
+        let edit = if left_as_is { Edit::Xbox(on) } else { Edit::Native(!on) };
         let notes = [
+            left_as_is.then_some(text.native_left_as_is),
             on.then_some(text.native_profiles_off),
             Some(text.native_close_game),
             pad.store.as_deref().is_some_and(|s| s.starts_with("model:")).then_some(text.native_all_alike),
@@ -427,12 +445,13 @@ impl MainView {
             .cursor_pointer()
             .when(on, |d| d.border_color(t.accent))
             .hover(move |s| s.bg(t.layer_hover))
-            .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, Edit::Native(!on), cx)))
+            .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, edit.clone(), cx)))
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .flex_1()
+                    .min_w(px(0.))
                     .gap(px(2.))
                     .child(body(text.keep_native, t.text))
                     .child(caption(notes.into_iter().flatten().collect::<Vec<_>>().join(" "), t.text2)),
@@ -723,12 +742,13 @@ impl MainView {
     fn extras_column(&self, pad: &PadView, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> Div {
         let col = div().flex().flex_col().child(title(text.extra_buttons, t.text).pb(px(4.)));
         if pad.extras.is_empty() || kept_native(pad) {
-            let message = if matches!(pad.role, Role::Native { .. } | Role::KeptNative) { text.no_extras_native } else { text.no_extras };
+            let direct = matches!(pad.role, Role::Native { .. } | Role::KeptNative | Role::Unmapped);
+            let message = if direct { text.no_extras_native } else { text.no_extras };
             return col.child(caption(message, t.text2));
         }
         let mut g = group();
         for &b in &pad.extras {
-            g = g.child(self.button_row(pad, b, printed_name(pad.family, pad.art, b), place_name(text, pad.family, pad.art, b), t, cx));
+            g = g.child(self.button_row(pad, b, printed_name(pad, b), place_name(text, pad, b), t, cx));
         }
         col.child(caption(text.extras_hint, t.text2).pb(px(12.))).child(g)
     }
@@ -991,6 +1011,7 @@ impl MainView {
             Role::Waiting { remaining, .. } => fill(text.waiting_slot, remaining.as_secs() + 1),
             Role::Native { player: Some(n) } => fill(text.as_xbox, n + 1),
             Role::Native { player: None } => text.native.into(),
+            Role::Unmapped if pad.form.left_as_is() => text.as_native.into(),
             Role::Unmapped => text.unmapped.into(),
             Role::Unavailable => text.unavailable.into(),
             Role::KeptNative => text.as_native.into(),

@@ -18,7 +18,7 @@ use open_controller_core::binding::{Action, Bindings};
 use open_controller_core::i18n::{Lang, Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::keyboard;
-use open_controller_core::mapping::{self, axis};
+use open_controller_core::mapping::{self, RawInput, axis};
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::rating::{self, Rating};
 use open_controller_core::report::{self, Diagnosis, Submission};
@@ -107,6 +107,11 @@ pub struct Report {
     pub aim_peak: u16,
     /// The hardest each pressure-sensitive button was pressed while the dialog is open.
     pub pressure_peak: [u8; mapping::PRESSURE.len()],
+    /// For a joystick without a gamepad layout, by its own numbering: the buttons seen pressed,
+    /// how far each axis went and each hat's directions.
+    pub raw_buttons: u64,
+    pub raw_axes: Vec<(i16, i16)>,
+    pub raw_hats: Vec<u8>,
     /// The text as last shown: when, from what, and the timer that shows it again.
     composed: Option<(Instant, (bool, bool, Lang), String)>,
     recompose: Option<Task<()>>,
@@ -131,16 +136,52 @@ impl Report {
             }
         }
         self.aim_peak = self.aim_peak.max(pad.aim.0.unsigned_abs()).max(pad.aim.1.unsigned_abs());
+        if let Some(raw) = &pad.raw {
+            self.observe_raw(raw);
+        }
     }
 
-    fn arrived(&self) -> Vec<&'static str> {
-        let mut out: Vec<&'static str> = (0..BUTTON_NAMES.len()).filter(|&b| self.seen & 1 << b != 0).map(|b| BUTTON_NAMES[b]).collect();
-        out.extend(self.axes.iter().zip(AXIS_NAMES).filter(|((lo, hi), _)| moved(*lo, *hi)).map(|(_, n)| n));
-        if turned(self.gyro_peak) {
-            out.push("gyro");
+    fn observe_raw(&mut self, raw: &RawInput) {
+        self.raw_buttons |= raw.buttons;
+        for (i, &v) in raw.axes.iter().enumerate() {
+            match self.raw_axes.get_mut(i) {
+                Some(r) => *r = (r.0.min(v), r.1.max(v)),
+                None => self.raw_axes.push((v, v)),
+            }
         }
+        for (i, &h) in raw.hats.iter().enumerate() {
+            match self.raw_hats.get_mut(i) {
+                Some(seen) => *seen |= h,
+                None => self.raw_hats.push(h),
+            }
+        }
+    }
+
+    fn arrived(&self) -> Vec<String> {
+        let mut out: Vec<String> =
+            (0..BUTTON_NAMES.len()).filter(|&b| self.seen & 1 << b != 0).map(|b| BUTTON_NAMES[b].to_string()).collect();
+        out.extend(self.axes.iter().zip(AXIS_NAMES).filter(|((lo, hi), _)| moved(*lo, *hi)).map(|(_, n)| n.to_string()));
+        if turned(self.gyro_peak) {
+            out.push("gyro".into());
+        }
+        out.extend(raw_arrived(self.raw_buttons, &self.raw_axes, &self.raw_hats));
         out
     }
+}
+
+/// A joystick's own parts that moved, in a gamepad mapping's terms: `b0` for its first button,
+/// `a1` for its second axis, `h0 up` for its first hat pushed up.
+fn raw_arrived(buttons: u64, axes: &[(i16, i16)], hats: &[u8]) -> Vec<String> {
+    let mut out: Vec<String> = (0..64).filter(|b| buttons & 1 << b != 0).map(|b| format!("b{b}")).collect();
+    out.extend(axes.iter().enumerate().filter(|(_, (lo, hi))| moved(*lo, *hi)).map(|(i, _)| format!("a{i}")));
+    for (i, &seen) in hats.iter().enumerate() {
+        for (bit, name) in [(1, "up"), (2, "right"), (4, "down"), (8, "left")] {
+            if seen & bit != 0 {
+                out.push(format!("h{i} {name}"));
+            }
+        }
+    }
+    out
 }
 
 /// An axis counts as moved once it went past a fifth of its range: stick drift stays below that.
@@ -204,6 +245,22 @@ pub fn rating_chip(text: &Text, pad: &PadView, t: &Theme) -> gpui::Div {
         .child(caption(rating_label(text, r), fg).font_weight(FontWeight::SEMIBOLD))
 }
 
+/// What makes the virtual controllers and what hides the originals here, by their names.
+fn driver_names(bus: VirtualDriver) -> (&'static str, &'static str) {
+    if cfg!(windows) {
+        (if bus == VirtualDriver::Viiper { "VIIPER" } else { "ViGEmBus" }, "HidHide")
+    } else if cfg!(target_os = "linux") {
+        ("uinput", "evdev grab")
+    } else {
+        ("virtual controllers", "hiding")
+    }
+}
+
+/// What SDL left empty, as the report says it.
+fn or_none(s: &str) -> &str {
+    if s.is_empty() { "none" } else { s }
+}
+
 fn driver(d: &Driver) -> String {
     match d {
         Driver::Ready { version } => format!("ready {}", version.as_deref().unwrap_or("")).trim().to_string(),
@@ -250,21 +307,31 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
         let _ = writeln!(s, "Model chosen in the window: {m}");
     }
     let _ = writeln!(s, "USB id: {:04x}:{:04x}", p.vendor, p.product);
-    let _ = writeln!(s, "Family: {:?} · drawn as: {} · rating: {:?}", p.family, art::look(p).key(), rating_of(p));
+    let _ = writeln!(s, "Family: {:?} · form: {:?} · drawn as: {} · rating: {:?}", p.family, p.form, art::look(p).key(), rating_of(p));
     let _ = writeln!(s, "Role: {:?} · links: {:?} · power: {:?} · hidden: {}", p.role, p.links, p.power, p.hidden);
     let _ = writeln!(s, "Extra buttons: {:?} · hint: {:?}", p.extras, p.hint);
     let _ = writeln!(s, "Features: {:?}", p.features);
     let pr = p.profile();
+    match p.role {
+        // Nothing of a profile reaches games: they read the device itself.
+        Role::Unmapped | Role::KeptNative | Role::Native { .. } => {
+            let _ = writeln!(s, "Games see it as: the device itself, no virtual controller");
+        }
+        _ => {
+            let _ = writeln!(
+                s,
+                "Games see it as: {:?} · sticks: {:?} · pressure: {:?} · gyro tilt from the accelerometer: {}",
+                p.profiles.output, pr.sticks, pr.pressure, pr.gyro.tilt
+            );
+        }
+    }
+    if p.store.is_some() {
+        let _ = writeln!(s, "Assignments of the profile in use: {}", assignments(&pr.bindings));
+    }
+    let (bus, hider) = driver_names(snapshot.bus);
     let _ = writeln!(
         s,
-        "Games see it as: {:?} · sticks: {:?} · pressure: {:?} · gyro tilt from the accelerometer: {}",
-        p.profiles.output, pr.sticks, pr.pressure, pr.gyro.tilt
-    );
-    let _ = writeln!(s, "Assignments of the profile in use: {}", assignments(&pr.bindings));
-    let _ = writeln!(
-        s,
-        "Drivers: {} {} · HidHide {} · hiding {}",
-        if snapshot.bus == VirtualDriver::Viiper { "VIIPER" } else { "ViGEmBus" },
+        "Drivers: {bus} {} · {hider} {} · hiding {}",
         driver(&snapshot.vigem),
         driver(&snapshot.hidhide),
         if snapshot.hiding { "on" } else { "off" }
@@ -280,14 +347,20 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
             let _ = writeln!(s, "Ids: {:04x}:{:04x} · version {:04x} · firmware {:04x}", f.vendor, f.product, f.version, f.firmware);
             let _ = writeln!(s, "GUID: {}", f.guid);
             let _ = writeln!(s, "Path: {}", f.path);
+            let gamepad = if f.gamepad_type.is_empty() {
+                "no gamepad mapping".to_string()
+            } else {
+                format!("{} (real {})", f.gamepad_type, or_none(&f.real_type))
+            };
             let _ = writeln!(
                 s,
-                "Type: {} (real {}) · joystick type: {} · connection: {}",
-                f.gamepad_type, f.real_type, f.joystick_type, f.connection
+                "Type: {gamepad} · joystick type: {} · connection: {}",
+                or_none(&f.joystick_type),
+                if f.connection.is_empty() { "unknown" } else { &f.connection }
             );
             let _ =
                 writeln!(s, "Axes {} · buttons {} · hats {} · balls {} · touchpads {}", f.axes, f.buttons, f.hats, f.balls, f.touchpads);
-            let _ = writeln!(s, "Sensors: {} · capabilities: {}", f.sensors.join(", "), f.capabilities.join(", "));
+            let _ = writeln!(s, "Sensors: {} · capabilities: {}", or_none(&f.sensors.join(", ")), or_none(&f.capabilities.join(", ")));
             let _ = writeln!(s, "Mapping: {}", f.mapping.as_deref().unwrap_or("none"));
             if !f.devices.is_empty() {
                 let _ = writeln!(s, "\n== Device tree, from the controller up");
@@ -302,10 +375,21 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
     }
     let _ = writeln!(s, "\n== Input while this report was open");
     let arrived = r.arrived();
-    let _ = writeln!(s, "{}", if arrived.is_empty() { "nothing".to_string() } else { arrived.join(", ") });
+    let unread = p.role == Role::Unmapped && p.raw.is_none();
+    let nothing = if unread { "not read: SDL has no gamepad mapping for it and could not open it" } else { "nothing" };
+    let _ = writeln!(s, "{}", if arrived.is_empty() { nothing.to_string() } else { arrived.join(", ") });
     for ((lo, hi), name) in r.axes.iter().zip(AXIS_NAMES) {
         if lo != hi {
             let _ = writeln!(s, "{name}: {lo} to {hi}");
+        }
+    }
+    if p.raw.is_some() {
+        let _ = writeln!(s, "By the joystick's own numbering, as a mapping names it:");
+        for (i, (lo, hi)) in r.raw_axes.iter().enumerate() {
+            let _ = writeln!(s, "a{i}: {lo} to {hi}");
+        }
+        for (i, seen) in r.raw_hats.iter().enumerate() {
+            let _ = writeln!(s, "h{i}: directions seen {seen:#06b} (up 1, right 2, down 4, left 8)");
         }
     }
     if p.features.pressure {
@@ -390,6 +474,9 @@ impl MainView {
             gyro_peak: [0.; 3],
             aim_peak: 0,
             pressure_peak: [0; mapping::PRESSURE.len()],
+            raw_buttons: 0,
+            raw_axes: Vec::new(),
+            raw_hats: Vec::new(),
             composed: None,
             recompose: None,
         });
@@ -397,6 +484,9 @@ impl MainView {
             // Resting triggers sit at 0 and sticks near it: the range starts where they are.
             for (a, &v) in r.axes.iter_mut().zip(r.pad.input.axes.iter()) {
                 *a = (v, v);
+            }
+            if let Some(raw) = r.pad.raw.clone() {
+                r.observe_raw(&raw);
             }
         }
         self.model.update(cx, |m, _| m.diagnosis = None);
@@ -760,6 +850,13 @@ mod tests {
         b.insert(0, Action::Xbox(XboxButton::B));
         b.insert(17, Action::Keys(Chord { mods: modifier::CTRL, key: 0x43 }));
         assert_eq!(assignments(&b), "south (A/✕) → Xbox B, left paddle 1 → Ctrl+C");
+    }
+
+    #[test]
+    fn a_joysticks_own_parts_go_by_their_mapping_names() {
+        let got = raw_arrived(0b101, &[(0, 0), (-32768, 32767), (-500, 400)], &[0b0011]);
+        assert_eq!(got, ["b0", "b2", "a1", "h0 up", "h0 right"], "drift is not a moved axis");
+        assert_eq!(or_none(""), "none");
     }
 
     #[test]

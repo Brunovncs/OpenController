@@ -118,7 +118,7 @@ impl MainView {
             (button::RIGHT_STICK as u8, "RS".into()),
         ];
         for &b in &pad.extras {
-            let name = printed_name(pad.family, pad.art, b).map(String::from).unwrap_or_else(|| place_name(text, pad.family, pad.art, b));
+            let name = printed_name(pad, b).map(String::from).unwrap_or_else(|| place_name(text, pad, b));
             holds.push((b, name.into()));
         }
         // The button that pauses the gyro is any of the same, but not the one that turns it on.

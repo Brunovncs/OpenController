@@ -9,7 +9,7 @@ use gpui::{
     hsla, linear_color_stop, linear_gradient, point, px, rgb, size,
 };
 use open_controller_core::PadView;
-use open_controller_core::device::Brand;
+use open_controller_core::device::{Brand, Form};
 use open_controller_core::extras::{self, Art, Family};
 use open_controller_core::mapping::{PadState, axis, button};
 use open_controller_core::models;
@@ -23,6 +23,9 @@ const H: f32 = 280.;
 const UNIT: f32 = 320. / W;
 
 static PADS: &str = include_str!("../../../assets/pads.json");
+
+/// The drawing every flight stick gets that has none of its own.
+const FLIGHT_STICK: &str = "logitechExtreme3d";
 
 /// Which drawing a controller gets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,6 +124,9 @@ pub fn look(pad: &PadView) -> Look {
     if let Some(key) = models::drawing(pad.vendor, pad.product) {
         return Look::Traced(key);
     }
+    if pad.form == Form::FlightStick {
+        return Look::Traced(FLIGHT_STICK);
+    }
     match pad.family {
         DualSenseEdge => Look::DualSenseEdge,
         DualSense => Look::DualSense,
@@ -158,6 +164,14 @@ pub fn look(pad: &PadView) -> Look {
     }
 }
 
+/// What a model's own drawing prints on a button that its family does not name: the Extreme 3D
+/// Pro's numbers.
+pub fn printed_label(pad: &PadView, b: u8) -> Option<&'static str> {
+    models::drawing(pad.vendor, pad.product)?;
+    let input = Some(u32::from(b));
+    pad_for(look(pad)).buttons.iter().find(|x| x.input == input).and_then(|x| x.label.as_deref())
+}
+
 pub fn glyphs(pad: &PadView, look: Look) -> Glyphs {
     if look == Look::DarkflameG820 {
         return Glyphs::PlayStation;
@@ -190,6 +204,10 @@ struct RawStick {
     well: Option<f32>,
     /// A light ring round it: its radius and width.
     ring: Option<[f32; 2]>,
+    /// A flight stick's grip, seen from above, drawn in place of the cap: it leans with the stick
+    /// and turns about it with the right stick's x, the twist, by up to `twist` degrees.
+    grip: Option<String>,
+    twist: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -200,6 +218,17 @@ struct RawButton {
     icon: Option<String>,
     /// What is printed on it, when that is not the glyph set's letter.
     label: Option<String>,
+    /// Set on the grip of a flight stick, so it moves with it.
+    #[serde(default)]
+    grip: bool,
+}
+
+/// A lever that stays where it is put, a throttle: its slot, filled from the back as far as the
+/// trigger it stands for (`lt` or `rt`) is pulled.
+#[derive(Deserialize)]
+struct RawLever {
+    input: String,
+    d: String,
 }
 
 #[derive(Deserialize)]
@@ -218,6 +247,8 @@ struct RawPad {
     touchpad: Option<String>,
     #[serde(default)]
     dots: Vec<[f32; 3]>,
+    #[serde(default)]
+    levers: Vec<RawLever>,
     #[serde(default)]
     sticks: Vec<RawStick>,
     #[serde(default)]
@@ -407,6 +438,62 @@ fn plus(x: f32, y: f32, a: f32, t: f32) -> Ops {
     ])
 }
 
+/// The box round a shape: left, top, right, bottom.
+fn extent(ops: &Ops) -> (f32, f32, f32, f32) {
+    let pts = ops.iter().flat_map(|op| match *op {
+        Op::M(x, y) | Op::L(x, y) => vec![(x, y)],
+        Op::C(a, b, c, d, x, y) => vec![(a, b), (c, d), (x, y)],
+        Op::Z => vec![],
+    });
+    pts.fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(l, t, r, b), (x, y)| (l.min(x), t.min(y), r.max(x), b.max(y)))
+}
+
+/// Where a flight stick's grip is: leant with the stick by `(dx, dy)` and turned by `angle`
+/// radians about its pivot.
+#[derive(Clone, Copy)]
+struct Turn {
+    px: f32,
+    py: f32,
+    dx: f32,
+    dy: f32,
+    cos: f32,
+    sin: f32,
+}
+
+impl Turn {
+    const NONE: Turn = Turn { px: 0., py: 0., dx: 0., dy: 0., cos: 1., sin: 0. };
+
+    fn new(px: f32, py: f32, (dx, dy): (f32, f32), angle: f32) -> Turn {
+        Turn { px, py, dx, dy, cos: angle.cos(), sin: angle.sin() }
+    }
+
+    fn at(&self, x: f32, y: f32) -> (f32, f32) {
+        let (rx, ry) = (x - self.px, y - self.py);
+        (self.px + rx * self.cos - ry * self.sin + self.dx, self.py + rx * self.sin + ry * self.cos + self.dy)
+    }
+
+    fn ops(&self, ops: &Ops) -> Ops {
+        let at = |x, y| self.at(x, y);
+        ops.iter()
+            .map(|op| match *op {
+                Op::M(x, y) => {
+                    let (x, y) = at(x, y);
+                    Op::M(x, y)
+                }
+                Op::L(x, y) => {
+                    let (x, y) = at(x, y);
+                    Op::L(x, y)
+                }
+                Op::C(a, b, c, d, x, y) => {
+                    let ((a, b), (c, d), (x, y)) = (at(a, b), at(c, d), at(x, y));
+                    Op::C(a, b, c, d, x, y)
+                }
+                Op::Z => Op::Z,
+            })
+            .collect()
+    }
+}
+
 /// The highest point of a shape, for filling a trigger from the bottom up.
 fn top(ops: &Ops) -> (f32, f32) {
     let ys = ops.iter().flat_map(|op| match *op {
@@ -472,6 +559,8 @@ enum Shape {
 }
 
 struct Btn {
+    /// Carried by a flight stick's grip.
+    grip: bool,
     input: Option<u32>,
     /// Which face button it is, south, east, west, north, for its label.
     face: Option<usize>,
@@ -486,6 +575,17 @@ struct Stick {
     cap: f32,
     well: f32,
     ring: Option<[f32; 2]>,
+    grip: Option<Ops>,
+    /// How far the grip turns with the twist, in radians.
+    twist: f32,
+}
+
+impl Stick {
+    /// How far the cap leans at full tilt: as far as the opening lets it. A grip, much longer
+    /// than the opening, leans less, so its tip stays in the picture.
+    fn reach(&self) -> f32 {
+        if self.grip.is_some() { self.cap * 0.4 } else { (self.well - self.cap).max(self.cap * 0.25) * 0.8 }
+    }
 }
 
 struct Pad {
@@ -495,6 +595,8 @@ struct Pad {
     panels: Vec<(String, Ops)>,
     touchpad: Option<Ops>,
     dots: Vec<[f32; 3]>,
+    /// The axis each lever follows, and its slot.
+    levers: Vec<(usize, Ops)>,
     sticks: Vec<Stick>,
     buttons: Vec<Btn>,
     tint: bool,
@@ -512,6 +614,7 @@ fn pads() -> &'static HashMap<String, Pad> {
                     .buttons
                     .into_iter()
                     .map(|b| Btn {
+                        grip: b.grip,
                         face: ["south", "east", "west", "north"].iter().position(|f| *f == b.input),
                         input: input(&b.input),
                         shape: match (b.circle, &b.d) {
@@ -531,12 +634,25 @@ fn pads() -> &'static HashMap<String, Pad> {
                     panels: r.panels.into_iter().map(|p| (p.style, parse(&p.d))).collect(),
                     touchpad: r.touchpad.as_deref().map(parse),
                     dots: r.dots,
+                    levers: r
+                        .levers
+                        .into_iter()
+                        .map(|l| (if l.input == "lt" { axis::LEFT_TRIGGER } else { axis::RIGHT_TRIGGER }, parse(&l.d)))
+                        .collect(),
                     sticks: r
                         .sticks
                         .into_iter()
                         .map(|s| {
                             let [x, y, cap] = s.circle;
-                            Stick { x, y, cap, well: s.well.unwrap_or(cap * 1.18), ring: s.ring }
+                            Stick {
+                                x,
+                                y,
+                                cap,
+                                well: s.well.unwrap_or(cap * 1.18),
+                                ring: s.ring,
+                                grip: s.grip.as_deref().map(parse),
+                                twist: s.twist.unwrap_or(0.).to_radians(),
+                            }
                         })
                         .collect(),
                     buttons,
@@ -698,6 +814,7 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
     let k = scale * UNIT;
     let ink = ink(t);
     let g = pad_for(look);
+    let (turn, gripped) = grip_turn(g, &state);
 
     let painted = canvas(
         |_, _, _| {},
@@ -744,7 +861,21 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
                 pen.shape(tp, lit_or(b, ink.part), lit_or(b, ink.edge));
             }
 
-            // Sticks: the light ring round them, the well, and the cap following the stick.
+            // Levers set into the body, filled from the back, with their handle where it is.
+            for (a, ops) in &g.levers {
+                let v = value(*a);
+                let edge = if v > 0.05 { ink.lit } else { ink.edge };
+                pen.shape(ops, ink.part, edge);
+                let (l, t0, r, b) = extent(ops);
+                if v > 0.02 {
+                    pen.band(b - (b - t0) * v, H, |pen| pen.fill(ops, ink.lit.opacity(0.9)));
+                }
+                let y = b - 3.5 - (b - t0 - 7.) * v;
+                pen.shape(&rect(l - 3., y - 3.5, r - l + 6., 7., 3.), ink.body_top, edge);
+            }
+
+            // Sticks: the light ring round them, the well, and the cap following the stick. A
+            // flight stick's grip comes later, above the base's buttons.
             for (i, st) in g.sticks.iter().enumerate().take(2) {
                 let (ax, ay, click) = if i == 0 {
                     (axis::LEFT_X, axis::LEFT_Y, button::LEFT_STICK)
@@ -752,58 +883,72 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
                     (axis::RIGHT_X, axis::RIGHT_Y, button::RIGHT_STICK)
                 };
                 let (mx, my) = (state.axes[ax] as f32 / 32768., state.axes[ay] as f32 / 32768.);
-                let moved = mx.hypot(my) > 0.2;
-                let active = moved || on(click);
+                let clicked = st.grip.is_none() && on(click);
+                let active = if st.grip.is_some() { gripped } else { mx.hypot(my) > 0.2 || clicked };
                 if let Some([rr, w]) = st.ring {
                     pen.stroke(&circle(st.x, st.y, rr), (w * k).max(1.), if active { ink.lit.opacity(0.75) } else { ink.soft });
                 }
                 pen.shape(&circle(st.x, st.y, st.well), ink.shade, if active { ink.lit.opacity(0.6) } else { ink.soft });
-                // The cap leans as far as the opening lets it.
-                let reach = (st.well - st.cap).max(st.cap * 0.25) * 0.8;
-                let (cx, cy) = (st.x + mx * reach, st.y + my * reach);
-                pen.shape(&circle(cx, cy, st.cap), if on(click) { ink.lit } else { ink.body_top }, if active { ink.lit } else { ink.edge });
-                pen.stroke(&circle(cx, cy, st.cap * 0.62), 1., if on(click) { ink.on_lit.opacity(0.3) } else { ink.soft });
+                if st.grip.is_some() {
+                    continue;
+                }
+                let (cx, cy) = (st.x + mx * st.reach(), st.y + my * st.reach());
+                pen.shape(&circle(cx, cy, st.cap), if clicked { ink.lit } else { ink.body_top }, if active { ink.lit } else { ink.edge });
+                pen.stroke(&circle(cx, cy, st.cap * 0.62), 1., if clicked { ink.on_lit.opacity(0.3) } else { ink.soft });
             }
 
-            // Buttons: their shape, and the symbol on the small ones.
-            for b in &g.buttons {
-                let fill = lit_or(b.input, ink.part);
-                let edge = lit_or(b.input, ink.edge);
-                let (ops, centre) = match &b.shape {
-                    &Shape::Circle(x, y, r) => (circle(x, y, r), Some((x, y, r))),
-                    Shape::Path(ops) => (ops.clone(), None),
-                };
-                pen.shape(&ops, fill, edge);
-                let symbol = if b.input.is_some_and(on) { ink.on_lit } else { ink.label };
-                if let (Some(name), Some((x, y, r))) = (&b.icon, centre)
-                    && let Some((ops, stroke)) = icon(name, x, y, r)
-                {
-                    match stroke {
-                        Some(w) => pen.stroke(&ops, (w * k).max(0.8), symbol),
-                        None => pen.fill(&ops, symbol),
-                    }
+            // Buttons: their shape, and the symbol on the small ones. The grip and the buttons on
+            // it go last, leant and turned with the stick.
+            for on_grip in [false, true] {
+                let turned = if on_grip { turn } else { Turn::NONE };
+                if on_grip && let Some(grip) = g.sticks.first().and_then(|s| s.grip.as_ref()) {
+                    let ops = turned.ops(grip);
+                    pen.fill(&Turn { dx: turned.dx + 3., dy: turned.dy + 4., ..turned }.ops(grip), ink.shade);
+                    pen.fill(&ops, linear_gradient(180., linear_color_stop(ink.body_top, 0.), linear_color_stop(ink.body_bottom, 1.)));
+                    pen.stroke(&ops, 1., if gripped { ink.lit } else { ink.edge });
                 }
-                // PlayStation's symbols, drawn.
-                if let (Some(i), Some((x, y, r)), Glyphs::PlayStation) = (b.face, centre, glyphs) {
-                    let c = if b.input.is_some_and(on) {
-                        ink.on_lit
-                    } else if g.tint {
-                        rgb(PS_TINT[i]).into()
-                    } else {
-                        ink.label
-                    };
-                    let q = r / 10.5;
-                    let sym = match i {
-                        0 => {
-                            let mut v = line(x - 3.6 * q, y - 3.6 * q, x + 3.6 * q, y + 3.6 * q);
-                            v.extend(line(x + 3.6 * q, y - 3.6 * q, x - 3.6 * q, y + 3.6 * q));
-                            v
+                for b in g.buttons.iter().filter(|b| b.grip == on_grip) {
+                    let fill = lit_or(b.input, ink.part);
+                    let edge = lit_or(b.input, ink.edge);
+                    let (ops, centre) = match &b.shape {
+                        &Shape::Circle(x, y, r) => {
+                            let (x, y) = turned.at(x, y);
+                            (circle(x, y, r), Some((x, y, r)))
                         }
-                        1 => circle(x, y, 4. * q),
-                        2 => rect(x - 3.6 * q, y - 3.6 * q, 7.2 * q, 7.2 * q, 0.6),
-                        _ => poly(&[(x, y - 4.4 * q), (x + 4.4 * q, y + 3. * q), (x - 4.4 * q, y + 3. * q)]),
+                        Shape::Path(ops) => (turned.ops(ops), None),
                     };
-                    pen.stroke(&sym, (1.4 * k).max(1.), c);
+                    pen.shape(&ops, fill, edge);
+                    let symbol = if b.input.is_some_and(on) { ink.on_lit } else { ink.label };
+                    if let (Some(name), Some((x, y, r))) = (&b.icon, centre)
+                        && let Some((ops, stroke)) = icon(name, x, y, r)
+                    {
+                        match stroke {
+                            Some(w) => pen.stroke(&ops, (w * k).max(0.8), symbol),
+                            None => pen.fill(&ops, symbol),
+                        }
+                    }
+                    // PlayStation's symbols, drawn.
+                    if let (Some(i), Some((x, y, r)), Glyphs::PlayStation) = (b.face, centre, glyphs) {
+                        let c = if b.input.is_some_and(on) {
+                            ink.on_lit
+                        } else if g.tint {
+                            rgb(PS_TINT[i]).into()
+                        } else {
+                            ink.label
+                        };
+                        let q = r / 10.5;
+                        let sym = match i {
+                            0 => {
+                                let mut v = line(x - 3.6 * q, y - 3.6 * q, x + 3.6 * q, y + 3.6 * q);
+                                v.extend(line(x + 3.6 * q, y - 3.6 * q, x - 3.6 * q, y + 3.6 * q));
+                                v
+                            }
+                            1 => circle(x, y, 4. * q),
+                            2 => rect(x - 3.6 * q, y - 3.6 * q, 7.2 * q, 7.2 * q, 0.6),
+                            _ => poly(&[(x, y - 4.4 * q), (x + 4.4 * q, y + 3. * q), (x - 4.4 * q, y + 3. * q)]),
+                        };
+                        pen.stroke(&sym, (1.4 * k).max(1.), c);
+                    }
                 }
             }
         },
@@ -819,7 +964,21 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
             _ => ["A", "B", "X", "Y"],
         };
         for b in &g.buttons {
-            let Shape::Circle(x, y, r) = &b.shape else { continue };
+            let turned = if b.grip { turn } else { Turn::NONE };
+            // A round button's letter fills it; a key of another shape gets its label in the
+            // middle, smaller.
+            let (x, y, r) = match &b.shape {
+                &Shape::Circle(x, y, r) => {
+                    let (x, y) = turned.at(x, y);
+                    (x, y, r)
+                }
+                Shape::Path(ops) if b.label.is_some() => {
+                    let (l, t0, r, bt) = extent(ops);
+                    let (x, y) = turned.at((l + r) / 2., (t0 + bt) / 2.);
+                    (x, y, (r - l).min(bt - t0) * 0.4)
+                }
+                Shape::Path(_) => continue,
+            };
             let text = match (&b.label, b.face) {
                 (Some(l), _) => l.as_str(),
                 (None, Some(i)) => letters[i],
@@ -848,6 +1007,15 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
         }
     }
     root.into_any_element()
+}
+
+/// Where a flight stick's grip is in this state, and whether it is moved or turned at all.
+fn grip_turn(g: &Pad, state: &PadState) -> (Turn, bool) {
+    let Some(st) = g.sticks.first().filter(|s| s.grip.is_some()) else { return (Turn::NONE, false) };
+    let (mx, my) = (state.axes[axis::LEFT_X] as f32 / 32768., state.axes[axis::LEFT_Y] as f32 / 32768.);
+    let twist = state.axes[axis::RIGHT_X] as f32 / 32768.;
+    let turn = Turn::new(st.x, st.y, (mx * st.reach(), my * st.reach()), twist * st.twist);
+    (turn, mx.hypot(my) > 0.2 || twist.abs() > 0.2)
 }
 
 #[cfg(test)]
@@ -884,6 +1052,29 @@ mod tests {
         p.profiles.apply(Edit::Model(Some("onikuma-c1".into())));
         assert_eq!(look(&p), Look::Traced("onikumaC1"));
         assert_eq!(glyphs(&p, look(&p)), Glyphs::Nintendo, "X on top, as printed on it");
+    }
+
+    #[test]
+    fn a_flight_stick_is_drawn_as_one_and_its_grip_follows_the_stick() {
+        use open_controller_core::PadKey;
+        let mut p = crate::demo::pad(PadKey::Device(1), "T.16000M", Brand::Other, Family::Other, (0x044F, 0xB10A));
+        assert_eq!(look(&p), Look::Generic);
+        p.form = Form::FlightStick;
+        assert_eq!(look(&p), Look::Traced(FLIGHT_STICK), "any flight stick, its own drawing or not");
+        let g = pad_for(look(&p));
+        let st = &g.sticks[0];
+        let (rest, moved) = grip_turn(g, &PadState::default());
+        assert!(!moved && rest.at(10., 20.) == (10., 20.));
+        let mut state = PadState::default();
+        state.axes[axis::RIGHT_X] = 32767;
+        let (twisted, moved) = grip_turn(g, &state);
+        let (x, y) = twisted.at(st.x, st.y);
+        assert!(moved && (x - st.x).abs() < 1e-3 && (y - st.y).abs() < 1e-3, "it turns about its pivot");
+        assert!(twisted.at(st.x, st.y - 100.).0 > st.x, "twisted right, its tip goes right");
+        state.axes[axis::RIGHT_X] = 0;
+        state.axes[axis::LEFT_Y] = -32768;
+        assert!(grip_turn(g, &state).0.at(st.x, st.y).1 < st.y, "pushed forward, it leans up the picture");
+        assert_eq!(g.levers.len(), 1, "the throttle");
     }
 
     #[test]

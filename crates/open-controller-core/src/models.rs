@@ -707,6 +707,8 @@ pub static MODELS: &[Row] = &[
     (0x046d, 0xc20b, Family::Other, "Logitech WingMan Action Pad"),
     (0x046d, 0xc211, Family::Other, "Logitech WingMan Cordless Gamepad"),
     (0x046d, 0xc21a, Family::Other, "Logitech Precision Gamepad"),
+    // A flight stick, read through OpenController's own mapping in `gamecontrollerdb.txt`.
+    (0x046d, 0xc215, Family::Other, "Logitech Extreme 3D Pro"),
     (0x046d, 0xca84, Family::Xbox, "Logitech Cordless Controller for Xbox"),
     (0x046d, 0xca88, Family::Xbox, "Logitech Compact Controller for Xbox"),
     (0x047d, 0x4005, Family::Other, "Gravis Eliminator GamePad Pro"),
@@ -1033,6 +1035,7 @@ pub static DRAWINGS: &[(u16, u16, &str)] = &[
     (0x0f0d, 0x0150, "horiOcta"),
     (0x0f0d, 0x0165, "horiOcta"),
     (0x0f0d, 0x01be, "horiOcta"),
+    (0x046d, 0xc215, "logitechExtreme3d"),
     (0x046d, 0xc216, "logitechF310"),
     (0x046d, 0xc218, "logitechF310"),
     (0x046d, 0xc219, "logitechF310"),
@@ -1228,6 +1231,7 @@ mod tests {
         assert_eq!(lookup(0x054C, 0x0DF2).map(|r| r.2), Some(Family::DualSenseEdge));
         assert_eq!(lookup(0x054C, 0x0268).map(|r| r.2), Some(Family::DualShock3));
         assert_eq!(lookup(0x0815, 0x0005).map(|r| r.2), Some(Family::Ps2Adapter));
+        assert_eq!(drawing(0x046d, 0xc215), Some("logitechExtreme3d"));
         assert!(MODELS.iter().all(|r| !r.3.is_empty() && r.3.len() < 80));
     }
 
