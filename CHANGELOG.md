@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.10
 
 The Logitech Extreme 3D Pro now has its own drawing, with the grip leaning and turning as you
 move it and the throttle filling as you push it. It is left to flight games as it is. To play a
