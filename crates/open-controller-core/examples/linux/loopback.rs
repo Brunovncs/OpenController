@@ -103,7 +103,7 @@ fn main() {
     profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord { mods: 0, key: VK_F24 })) });
     let dir = std::env::temp_dir().join("open-controller-loopback");
     let config =
-        Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into(), driver: Default::default(), split_joycons: false };
+        Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into(), driver: Default::default(), split_joycons: false, mappings: Default::default() };
     let engine = Engine::start(config, || {});
     wait_for("the engine", Duration::from_secs(10), || engine.snapshot().running.then_some(()));
     if !matches!(engine.snapshot().vigem, open_controller_core::Driver::Ready { .. }) {

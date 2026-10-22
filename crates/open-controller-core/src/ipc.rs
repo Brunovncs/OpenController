@@ -77,6 +77,15 @@ pub enum ToTray {
     SplitJoyCons(bool),
     /// Whether the window is the one in front: behind a game it is sent live input less often.
     Focused(bool),
+    /// A joystick SDL has no layout for gets one its owner made: its GUID, a name, and the
+    /// parts as a mapping line has them (`a:b2,b:b1,`).
+    Map {
+        guid: String,
+        name: String,
+        fields: String,
+    },
+    /// Takes away the mapping its owner made for a GUID: the joystick is unmapped again.
+    Unmap(String),
     Quit,
 }
 

@@ -8,6 +8,11 @@ plays with OpenController, and whether settings carry over.
 PC pads that show up as Microntek USB Joystick (0079:0006), like the KTS ones shaped as a
 DualShock, now work as controllers. Before, they showed up as not mapped.
 
+A controller whose buttons OpenController cannot read can now be mapped on its page. Map the
+buttons asks for each part in turn, lights it on the drawing, and the controller then works as an
+Xbox controller. Map again, under Information, starts over. A controller like this also shows its
+model's name and drawing when its ids are known.
+
 ## 0.8.10
 
 The Logitech Extreme 3D Pro now has its own drawing, with the grip leaning and turning as you

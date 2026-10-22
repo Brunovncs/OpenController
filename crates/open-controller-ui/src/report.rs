@@ -309,6 +309,9 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
     let _ = writeln!(s, "USB id: {:04x}:{:04x}", p.vendor, p.product);
     let _ = writeln!(s, "Family: {:?} · form: {:?} · drawn as: {} · rating: {:?}", p.family, p.form, art::look(p).key(), rating_of(p));
     let _ = writeln!(s, "Role: {:?} · links: {:?} · power: {:?} · hidden: {}", p.role, p.links, p.power, p.hidden);
+    if p.own_mapping {
+        let _ = writeln!(s, "Buttons: through a mapping its owner made in the window");
+    }
     let _ = writeln!(s, "Extra buttons: {:?} · hint: {:?}", p.extras, p.hint);
     let _ = writeln!(s, "Features: {:?}", p.features);
     let pr = p.profile();

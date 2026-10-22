@@ -360,6 +360,8 @@ impl MainView {
             Section::Info => self.info_section(pad, text, cx),
         };
         let unknown = report::rating_of(pad) == Rating::Unknown;
+        // A gamepad SDL has no layout for: its owner can map it here.
+        let mappable = pad.role == Role::Unmapped && !pad.form.left_as_is() && pad.raw.is_some() && !pad.guid.is_empty();
         // A flight stick or a wheel SDL has no layout for: left to the games made for it, and
         // given an Xbox layout once its details come.
         let (notice_title, notice_body) = match pad.form {
@@ -375,7 +377,8 @@ impl MainView {
             .flex_col()
             .child(header)
             .when(matches!(key, PadKey::Slot(_)) && pad.store.is_some(), |d| d.child(self.native_row(pad, text, cx)))
-            .when(unknown, |d| {
+            .when(unknown && mappable, |d| d.child(self.learn_block(pad, text, cx)))
+            .when(unknown && !mappable, |d| {
                 d.child(
                     div()
                         .flex()
@@ -650,12 +653,12 @@ impl MainView {
 
     fn buttons_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
-        let drawing = card(&t)
-            .flex()
-            .flex_col()
-            .flex_none()
-            .overflow_hidden()
-            .child(stage(&t).flex().justify_center().px(px(20.)).pt(px(28.)).pb(px(20.)).child(art::controller(pad, 1.1, &t)));
+        let drawing = card(&t).flex().flex_col().flex_none().overflow_hidden().child(
+            stage(&t).flex().justify_center().px(px(20.)).pt(px(28.)).pb(px(20.)).child(match self.learning_pose(pad) {
+                Some(input) => art::controller(&PadView { input, ..pad.clone() }, 1.1, &t),
+                None => art::controller(pad, 1.1, &t),
+            }),
+        );
         let hint = pad.hint.map(|h| hint_text(text, h)).or_else(|| read_directly(pad).then_some(text.linux_direct_read)).map(|h| {
             div()
                 .flex()
@@ -1093,6 +1096,23 @@ impl MainView {
                     .into_any_element(),
             ))
             .when_some(output, |d, o| d.child(line(text.games_see, o)))
+            .when(pad.own_mapping && !pad.guid.is_empty(), |d| {
+                d.child(line(
+                    text.learn_info,
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(12.))
+                        .child(body(text.learn_own, t.text))
+                        .child(button("map-again", text.learn_redo, Kind::Standard, &t).on_click(cx.listener(move |this, _, _, cx| {
+                            if let Some(pad) = this.pad(key, cx) {
+                                this.map_again(&pad, cx);
+                            }
+                        })))
+                        .into_any_element(),
+                ))
+            })
             .when(!features.is_empty(), |d| {
                 d.child(line(
                     text.features,

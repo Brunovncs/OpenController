@@ -109,6 +109,10 @@ pub struct MainView {
     pub custom: Option<crate::sticks::Custom>,
     /// The open controller's sticks being measured, or the outcome of the last time.
     pub measuring: Option<crate::sticks::Measuring>,
+    /// The open joystick being mapped, and a controller whose page opens once it comes back
+    /// under another key.
+    pub learn: Option<crate::learn::Learn>,
+    pub follow: Option<crate::learn::Follow>,
     /// The app's icon, in its version drawn for small sizes, for the bar on top, made for the
     /// window's scale.
     brand: (f32, Arc<Image>),
@@ -166,6 +170,8 @@ impl MainView {
             stick_right: false,
             custom: None,
             measuring: None,
+            learn: None,
+            follow: None,
             brand: brand(window.scale_factor()),
             held: 0,
             moving: false,
@@ -244,6 +250,7 @@ impl MainView {
         self.screen = Screen::Device(key, pad.and_then(|p| p.store.clone()));
         self.section = Section::Buttons;
         self.reset_page();
+        self.learn = None;
         self.stick_right = false;
         self.held = pad.map(extras_held).unwrap_or(0);
         cx.notify();
@@ -252,12 +259,16 @@ impl MainView {
     pub fn home(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Home;
         self.reset_page();
+        self.learn = None;
+        self.follow = None;
         cx.notify();
     }
 
     pub fn settings(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Settings;
         self.reset_page();
+        self.learn = None;
+        self.follow = None;
         self.read_installed(cx);
         cx.notify();
     }
@@ -371,6 +382,10 @@ impl MainView {
             // The dialog stays over the page, which is kept as it is meanwhile.
             return;
         }
+        // Mapped, or unmapped again, a controller comes back under another key.
+        if self.follow(cx) {
+            return;
+        }
         if !matches!(self.screen, Screen::Device(..)) {
             return;
         }
@@ -381,6 +396,7 @@ impl MainView {
         if let Some(m) = self.measuring.as_mut().filter(|m| m.key == pad.key) {
             m.sample(&pad.input);
         }
+        self.feed_learning(pad);
         let held = extras_held(pad);
         let pressed = held & !self.held;
         self.held = held;

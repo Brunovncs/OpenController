@@ -27,6 +27,7 @@ mod hiding;
 pub mod instance;
 pub mod ipc;
 pub mod keyboard;
+pub mod learn;
 pub mod platform;
 mod plug;
 pub mod rt;

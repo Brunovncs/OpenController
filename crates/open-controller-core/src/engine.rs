@@ -28,7 +28,7 @@ use crate::vigem::gone;
 use crate::xinput;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -122,6 +122,8 @@ pub struct Config {
     /// Each Joy-Con a controller of its own, held sideways, rather than a left and a right one
     /// joined into one.
     pub split_joycons: bool,
+    /// Gamepad mappings their owners made for joysticks SDL has no layout for, by GUID.
+    pub mappings: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -157,6 +159,9 @@ pub enum Command {
     /// Splits every pair of Joy-Cons into two controllers held sideways, or joins them again.
     /// The left Joy-Con keeps the pair's player, and a pair its left Joy-Con's.
     SplitJoyCons(bool),
+    /// Replaces the gamepad mappings owners made, by GUID. A joystick whose mapping is new
+    /// becomes a gamepad; one whose mapping was taken away is a joystick without a layout again.
+    SetMappings(BTreeMap<String, String>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -214,6 +219,12 @@ pub struct PadView {
     /// Where its settings are kept; `None` for a controller whose buttons cannot be assigned
     /// (an XInput controller, which games read directly).
     pub store: Option<String>,
+    /// The GUID SDL keys its mappings by; empty when unknown.
+    #[serde(default)]
+    pub guid: String,
+    /// Its buttons are read through a mapping its owner made.
+    #[serde(default)]
+    pub own_mapping: bool,
     pub profiles: Profiles,
     /// The profile in use right now: the chosen one, or one that names the program in front.
     pub in_use: usize,
@@ -376,6 +387,8 @@ struct Model {
     store: String,
     /// A Joy-Con on its own: its device path, as a pair of Joy-Cons names its halves.
     half: Option<String>,
+    /// The GUID SDL keys its mappings by.
+    guid: String,
 }
 
 /// A connected device, as SDL sees it.
@@ -460,6 +473,7 @@ enum Kind {
 /// A joystick SDL has no button layout for, open to show what it sends.
 struct Unmapped {
     name: String,
+    guid: String,
     vendor: u16,
     product: u16,
     form: Form,
@@ -548,6 +562,10 @@ struct Core {
     roster: Roster,
     phys: HashMap<DeviceId, Phys>,
     unmapped: HashMap<DeviceId, Unmapped>,
+    /// Gamepad mappings owners made, by GUID, and the GUIDs whose mapping was taken away while
+    /// running: SDL cannot forget a mapping, so joysticks with one are kept as unmapped here.
+    mappings: BTreeMap<String, String>,
+    forgotten: HashSet<String>,
     /// Controllers SDL could not open: when to try again, and the interval after that.
     unopened: Vec<(DeviceId, Instant, Duration)>,
     targets: HashMap<SlotId, Target>,
@@ -633,6 +651,8 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         roster: Roster::new(GRACE),
         phys: HashMap::new(),
         unmapped: HashMap::new(),
+        mappings: config.mappings,
+        forgotten: HashSet::new(),
         unopened: Vec::new(),
         targets: HashMap::new(),
         failed: HashMap::new(),
@@ -658,6 +678,10 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         input_changed: false,
         sdl,
     };
+    // Before the first events are read: a joystick one of these maps comes as a gamepad.
+    for line in core.mappings.values() {
+        core.sdl.add_mapping(line);
+    }
     core.connect_bus();
 
     let mut watching = false;
@@ -893,8 +917,45 @@ impl Core {
                 self.note(format!("Joy-Cons {}", if on { "split" } else { "joined" }));
                 self.sdl.split_joycons(on);
             }
+            Command::SetMappings(mappings) => self.set_mappings(mappings, now),
         }
         self.changed = true;
+    }
+
+    fn set_mappings(&mut self, mappings: BTreeMap<String, String>, now: Instant) {
+        let before = std::mem::replace(&mut self.mappings, mappings);
+        let new: Vec<(String, String)> =
+            self.mappings.iter().filter(|(g, line)| before.get(*g) != Some(*line)).map(|(g, l)| (g.clone(), l.clone())).collect();
+        for (guid, line) in new {
+            self.forgotten.remove(&guid);
+            let took = self.sdl.add_mapping(&line);
+            self.note(format!("mapping {} for {guid}", if took { "made" } else { "refused" }));
+        }
+        // SDL tells of a joystick it had no layout for becoming a gamepad, but not of one it
+        // still had a layout for, taken away here before.
+        let mapped: Vec<DeviceId> = self
+            .unmapped
+            .iter()
+            .filter(|(id, u)| self.mappings.contains_key(&u.guid) && self.sdl.is_gamepad(**id))
+            .map(|(&id, _)| id)
+            .collect();
+        for id in mapped {
+            self.added(id);
+        }
+        let taken: Vec<String> = before.into_keys().filter(|g| !self.mappings.contains_key(g)).collect();
+        for guid in taken {
+            self.note(format!("mapping taken away for {guid}"));
+            self.forgotten.insert(guid);
+        }
+        let gone: Vec<DeviceId> = self.phys.iter().filter(|(_, p)| self.forgotten.contains(&p.model.guid)).map(|(&id, _)| id).collect();
+        for id in gone {
+            let instances = self.phys[&id].instances.clone();
+            self.removed(id, now);
+            // Games read it as it is again.
+            let hidden: Vec<String> = instances.into_iter().filter(|i| self.hider.is_hidden(i)).collect();
+            self.hider.reveal(hidden);
+            self.add_unmapped(id);
+        }
     }
 
     fn note(&mut self, line: String) {
@@ -1143,17 +1204,8 @@ impl Core {
                     }
                 }
                 Event::JoystickAdded(id) => {
-                    if !self.sdl.is_gamepad(id) {
-                        let (name, vendor, product) = self.sdl.joystick_info(id);
-                        let form = self.sdl.joystick_form(id);
-                        self.note(format!("joystick without a gamepad mapping {vendor:04x}:{product:04x} \"{name}\" ({form:?})"));
-                        let (js, path) = (self.sdl.open_joystick(id), self.sdl.joystick_path(id));
-                        let mut raw = RawInput::default();
-                        if let Some(j) = &js {
-                            j.read(&mut raw);
-                        }
-                        self.unmapped.insert(id, Unmapped { name, vendor, product, form, path, js, raw });
-                        self.changed = true;
+                    if !self.sdl.is_gamepad(id) || self.forgotten.contains(&self.sdl.joystick_guid(id)) {
+                        self.add_unmapped(id);
                     }
                 }
                 Event::JoystickRemoved(id) => {
@@ -1165,7 +1217,34 @@ impl Core {
         }
     }
 
+    /// A joystick SDL has no layout for, or one whose owner's mapping was taken away: opened to
+    /// show what it sends.
+    fn add_unmapped(&mut self, id: DeviceId) {
+        if self.unmapped.contains_key(&id) {
+            return;
+        }
+        let (name, vendor, product) = self.sdl.joystick_info(id);
+        let form = self.sdl.joystick_form(id);
+        let guid = self.sdl.joystick_guid(id);
+        let why = if self.sdl.is_gamepad(id) { "whose mapping was taken away" } else { "without a gamepad mapping" };
+        self.note(format!("joystick {why} {vendor:04x}:{product:04x} \"{name}\" ({form:?})"));
+        let (js, path) = (self.sdl.open_joystick(id), self.sdl.joystick_path(id));
+        let mut raw = RawInput::default();
+        if let Some(j) = &js {
+            j.read(&mut raw);
+        }
+        self.unmapped.insert(id, Unmapped { name, guid, vendor, product, form, path, js, raw });
+        self.changed = true;
+    }
+
     fn added(&mut self, id: DeviceId) {
+        // A mapping made here is applied at once, before SDL's news of the new gamepad comes.
+        if self.phys.contains_key(&id) {
+            return;
+        }
+        if self.forgotten.contains(&self.sdl.joystick_guid(id)) {
+            return self.add_unmapped(id);
+        }
         self.unmapped.remove(&id);
         let Some(pad) = self.sdl.open(id) else {
             // Still starting, or held by another program for a moment: it is tried again, less
@@ -1254,6 +1333,7 @@ impl Core {
             hint: extras::hint(vendor, product, family),
             store: binding::store_key(&identity, vendor, product),
             half,
+            guid: self.sdl.joystick_guid(id),
         };
         if let Some(m) = built_in {
             model.extras = extras::HANDHELD[..m.buttons.len()].to_vec();
@@ -2060,11 +2140,17 @@ impl Core {
         unmapped.sort_by_key(|&(&id, _)| id);
         for (&id, u) in unmapped {
             let mut view = self.view(PadKey::Device(id), None, false);
-            view.name = u.name.clone();
+            // What the table knows of its ids, as a gamepad of the same ids would show.
+            let generic = models::is_generic_name(&u.name);
+            view.name = models::lookup(u.vendor, u.product).filter(|_| generic).map_or_else(|| u.name.clone(), |row| row.3.to_string());
+            view.brand = device::brand(u.vendor, device::PadType::Unknown);
+            view.family = extras::family(u.vendor, u.product, device::PadType::Unknown);
+            view.art = extras::art(view.family, u.vendor, u.product);
             view.vendor = u.vendor;
             view.product = u.product;
             view.form = u.form;
             view.raw = u.js.is_some().then(|| u.raw.clone());
+            view.guid = u.guid.clone();
             pads.push(view);
         }
         let vigem = match (&self.bus, &self.bus_error) {
@@ -2124,6 +2210,8 @@ impl Core {
             profiles: store.as_ref().and_then(|p| self.profiles.get(p)).cloned().unwrap_or_default(),
             in_use: store.as_ref().and_then(|p| self.profiles.get(p)).map_or(0, |p| p.in_use(&self.foreground)),
             store,
+            guid: model.map(|m| m.guid.clone()).unwrap_or_default(),
+            own_mapping: model.is_some_and(|m| self.mappings.contains_key(&m.guid)),
         }
     }
 

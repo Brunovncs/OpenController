@@ -231,6 +231,19 @@ impl Sdl {
         text(unsafe { SDL_GetJoystickPathForID(SDL_JoystickID(id)) }).unwrap_or_default()
     }
 
+    /// The GUID SDL keys its gamepad mappings by: the bus, the ids, the version and a sum of the
+    /// name.
+    pub fn joystick_guid(&self, id: u32) -> String {
+        guid_string(unsafe { SDL_GetJoystickGUIDForID(SDL_JoystickID(id)) })
+    }
+
+    /// Adds a gamepad mapping, or replaces the one for its GUID. A joystick it gives a layout to
+    /// for the first time comes as a new gamepad. Returns whether SDL took it.
+    pub fn add_mapping(&self, line: &str) -> bool {
+        let Ok(line) = std::ffi::CString::new(line) else { return false };
+        unsafe { SDL_AddGamepadMapping(line.as_ptr()) >= 0 }
+    }
+
     /// What SDL says about a joystick it has no gamepad mapping for, opened for a moment if it
     /// is not open already.
     pub fn joystick_facts(&self, id: u32) -> Facts {

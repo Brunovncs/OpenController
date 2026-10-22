@@ -34,6 +34,8 @@ pub struct Settings {
     /// Each Joy-Con a controller of its own, held sideways, rather than a left and a right one
     /// joined into one.
     pub split_joycons: bool,
+    /// Gamepad mappings made in the window for joysticks SDL has no layout for, by GUID.
+    pub mappings: BTreeMap<String, String>,
     /// Fields a newer version wrote, kept as they were so saving here does not take them away.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -48,6 +50,7 @@ impl Default for Settings {
             controllers: BTreeMap::new(),
             virtual_driver: VirtualDriver::ViGEmBus,
             split_joycons: false,
+            mappings: BTreeMap::new(),
             extra: Map::new(),
         }
     }
@@ -174,6 +177,13 @@ mod tests {
         assert_eq!(s, Settings { extra: Map::from_iter([("from_a_later_version".into(), 1.into())]), ..Settings::default() });
         let s: Settings = serde_json::from_str(r#"{"hide_originals": false}"#).unwrap();
         assert!(!s.hide_originals);
+        assert!(s.mappings.is_empty(), "a file from before mappings has none");
+        let s: Settings = serde_json::from_str(
+            r#"{"mappings": {"0300be79790000000600000000000000": "0300be79790000000600000000000000,Pad,a:b2,platform:Windows,"}}"#,
+        )
+        .unwrap();
+        assert_eq!(serde_json::from_str::<Settings>(&serde_json::to_string(&s).unwrap()).unwrap().mappings, s.mappings);
+        assert_eq!(s.mappings.len(), 1);
     }
 
     #[test]

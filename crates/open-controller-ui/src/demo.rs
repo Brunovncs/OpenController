@@ -9,7 +9,8 @@ use open_controller_core::models;
 use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Output, Pressure, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 fn input(buttons: &[u32], axes: [i16; axis::COUNT]) -> PadState {
     PadState { buttons: buttons.iter().fold(0, |b, &i| b | 1 << i), axes, ..PadState::default() }
@@ -40,6 +41,8 @@ pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor
         store: Some(format!("demo:{vendor:04x}:{product:04x}")),
         profiles: Profiles::default(),
         in_use: 0,
+        guid: format!("03000000{:02x}{:02x}0000{:02x}{:02x}000000000000", vendor & 0xff, vendor >> 8, product & 0xff, product >> 8),
+        own_mapping: false,
     }
 }
 
@@ -64,7 +67,7 @@ fn eightbitdo_profiles() -> Profiles {
     p
 }
 
-pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(PadKey, PadKey)]) -> Snapshot {
+pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(PadKey, PadKey)], mapped: &[String]) -> Snapshot {
     let mut eightbitdo = pad(PadKey::Slot(1), "8BitDo Ultimate 2 Wireless", Brand::EightBitDo, Family::EightBitDoFour, (0x2DC8, 0x6012));
     eightbitdo.links = vec![Link::Dongle];
     eightbitdo.power = Power::Battery(Some(80));
@@ -160,6 +163,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     // Flight sticks only when asked for, so the screenshots stay as they are.
     if std::env::var_os("OPEN_CONTROLLER_DEMO_STICKS").is_some() {
         pads.extend(flight_sticks());
+        pads.push(twin_shock(mapped));
     }
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
@@ -221,6 +225,45 @@ fn flight_sticks() -> [PadView; 2] {
     t16000.store = None;
     t16000.raw = Some(RawInput { buttons: 1, axes: vec![1200, -8000, 300, 32767], hats: vec![0] });
     [e3d, t16000]
+}
+
+/// A PC twin shock pad SDL has no layout for, pressing every part in turn on its own so mapping
+/// it can be tried; a gamepad once mapped in the window.
+fn twin_shock(mapped: &[String]) -> PadView {
+    let mut p = pad(PadKey::Device(11), "Microntek USB Joystick", Brand::Other, Family::Other, (0x0079, 0x0006));
+    p.guid = "0300be79790000000600000000000000".into();
+    if mapped.contains(&p.guid) {
+        p.key = PadKey::Slot(11);
+        p.role = Role::Virtual { player: None };
+        p.store = Some("model:0079:0006".into());
+        p.own_mapping = true;
+    } else {
+        p.hidden = false;
+        p.store = None;
+        p.raw = Some(pressing());
+    }
+    p
+}
+
+/// Its parts as a 0079:0006 pad numbers them, in the order a mapping asks for them, each held
+/// for half a second with half a second between them, then a pause, over and over.
+fn pressing() -> RawInput {
+    static START: OnceLock<Instant> = OnceLock::new();
+    let half_seconds = START.get_or_init(Instant::now).elapsed().as_millis() as usize / 500;
+    let mut raw = RawInput { buttons: 0, axes: vec![0; 4], hats: vec![0] };
+    let part = half_seconds / 2 % 24;
+    if half_seconds % 2 == 1 {
+        return raw;
+    }
+    match part {
+        0..=3 => raw.buttons = 1 << [2, 1, 3, 0][part],
+        4..=7 => raw.hats[0] = 1 << (part - 4),
+        8..=11 => raw.buttons = 1 << (part - 4),
+        12..=15 => raw.axes[part - 12] = i16::MAX,
+        16..=19 => raw.buttons = 1 << [10, 11, 8, 9][part - 16],
+        _ => {}
+    }
+    raw
 }
 
 /// What SDL might say about an example controller, for the report dialog in `--demo`.

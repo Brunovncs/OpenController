@@ -22,12 +22,14 @@ mod windows;
 use open_controller_core::i18n::Lang;
 use open_controller_core::instance::{self, Instance};
 use open_controller_core::ipc::{Prefs, ToTray};
+use open_controller_core::learn;
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::profile::{Edit, Profiles};
 use open_controller_core::report::Diagnosis;
 use open_controller_core::{Command, Config, Engine, PadKey, Snapshot};
 use server::Notify;
 use settings::Settings;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
@@ -200,6 +202,14 @@ impl Control {
         out
     }
 
+    /// Changes the mappings made in the window, saves them and hands them to the engine.
+    fn edit_mappings(&self, change: impl FnOnce(&mut BTreeMap<String, String>)) {
+        let Ok(mut s) = self.settings.lock() else { return };
+        change(&mut s.mappings);
+        s.save(&self.data_dir);
+        self.engine.send(Command::SetMappings(s.mappings.clone()));
+    }
+
     pub fn apply(&self, req: ToTray) {
         match req {
             ToTray::SetHiding(on) => {
@@ -245,6 +255,17 @@ impl Control {
             ToTray::Edit { store, edit } => {
                 let profiles = self.edit_profiles(&store, edit);
                 return self.engine.send(Command::SetProfiles(store, profiles));
+            }
+            ToTray::Map { guid, name, fields } => {
+                let Some(line) = learn::line(&guid, &name, &fields) else { return };
+                return self.edit_mappings(|m| {
+                    m.insert(guid, line);
+                });
+            }
+            ToTray::Unmap(guid) => {
+                return self.edit_mappings(|m| {
+                    m.remove(&guid);
+                });
             }
             ToTray::Quit => return self.post(Msg::Quit),
             // Answered by the window server, which has the pipe to answer on.
@@ -318,6 +339,7 @@ fn config(data_dir: &Path, settings: &Settings) -> Config {
         profiles: settings.controllers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         driver: settings.virtual_driver,
         split_joycons: settings.split_joycons,
+        mappings: settings.mappings.clone(),
     }
 }
 

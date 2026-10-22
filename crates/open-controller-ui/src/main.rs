@@ -11,6 +11,7 @@ mod frame;
 mod home;
 mod icons;
 mod keys;
+mod learn;
 mod programs;
 mod report;
 mod requirements;
@@ -77,6 +78,8 @@ pub struct Model {
     /// the settings file.
     demo_profiles: HashMap<String, Profiles>,
     demo_swaps: Vec<(open_controller_core::PadKey, open_controller_core::PadKey)>,
+    /// The GUIDs of the example joysticks mapped in the window.
+    demo_mapped: Vec<String>,
     last_real: Snapshot,
 }
 
@@ -122,6 +125,15 @@ impl Model {
             self.demo_profiles.entry(store).or_insert_with(|| current.unwrap_or_default()).apply(edit);
             return self.refresh_demo(cx);
         }
+        if self.demo
+            && let ToTray::Map { guid, .. } | ToTray::Unmap(guid) = &req
+        {
+            match req {
+                ToTray::Map { .. } => self.demo_mapped.push(guid.clone()),
+                _ => self.demo_mapped.retain(|g| g != guid),
+            }
+            return self.refresh_demo(cx);
+        }
         if self.demo && matches!(req, ToTray::SetVirtualDriver(_) | ToTray::SplitJoyCons(_)) {
             // Shown in the window only: the resident process's controllers stay as they are.
             return;
@@ -139,7 +151,7 @@ impl Model {
     }
 
     fn refresh_demo(&mut self, cx: &mut Context<Self>) {
-        self.snapshot = Arc::new(demo::snapshot(&self.last_real, &self.demo_profiles, &self.demo_swaps));
+        self.snapshot = Arc::new(demo::snapshot(&self.last_real, &self.demo_profiles, &self.demo_swaps, &self.demo_mapped));
         cx.notify();
     }
 }
@@ -290,7 +302,7 @@ fn main() {
         text_field::bind_keys(cx);
         let text = i18n::text(prefs.lang);
         let last_real = Snapshot::default();
-        let snapshot = Arc::new(if demo { demo::snapshot(&last_real, &HashMap::new(), &[]) } else { Snapshot::default() });
+        let snapshot = Arc::new(if demo { demo::snapshot(&last_real, &HashMap::new(), &[], &[]) } else { Snapshot::default() });
         let model = cx.new(|_| Model {
             snapshot,
             prefs,
@@ -302,8 +314,20 @@ fn main() {
             demo,
             demo_profiles: HashMap::new(),
             demo_swaps: Vec::new(),
+            demo_mapped: Vec::new(),
             last_real,
         });
+        // The example joystick presses its parts on its own.
+        if demo && std::env::var_os("OPEN_CONTROLLER_DEMO_STICKS").is_some() {
+            let model = model.clone();
+            cx.spawn(async move |cx| {
+                loop {
+                    cx.background_executor().timer(Duration::from_millis(100)).await;
+                    model.update(cx, |m, cx| m.refresh_demo(cx));
+                }
+            })
+            .detach();
+        }
         let Some(window) = open_window(model.clone(), cx) else {
             eprintln!("open-controller-ui: could not open a window");
             leave();
