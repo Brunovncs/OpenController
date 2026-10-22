@@ -387,6 +387,10 @@ pub static MODELS: &[Row] = &[
     (0x04d9, 0x0002, Family::Ps2Adapter, "TwinShock PS2 adapter"),
     (0x146b, 0x0303, Family::Ps2Adapter, "Bigben PS2 adapter"),
     (0x0d9d, 0x3013, Family::Ps2Adapter, "PS2 adapter"),
+    // PC twin-shock pads on the DragonRise 0079:0006 board (Microntek "USB Joystick", often sold
+    // as a DualShock, including ones whose name says KTS), read through OpenController's own
+    // mapping in `gamecontrollerdb.txt`. The id is shared, so a pad with another button order
+    // still lands on this row.
     (0x0079, 0x0006, Family::Other, "DragonRise generic PCB (PC Twin Shock)"),
     // Xbox-compatible pads (from the ids Linux' xpad driver lists), more PlayStation and Nintendo
     // ids, and handhelds whose built-in controller is an XInput pad.
@@ -996,6 +1000,7 @@ pub static ALIASES: &[Alias] = &[
 
 /// (vendor, product, drawing), for `drawing`.
 pub static DRAWINGS: &[(u16, u16, &str)] = &[
+    (0x0079, 0x0006, "dragonriseTwin"),
     (0x3250, 0x1002, "atariVcs"),
     (0x37d7, 0x2501, "flydigiApex"),
     (0x37d7, 0x2401, "flydigiVader"),
@@ -1084,6 +1089,7 @@ pub static DRAWINGS: &[(u16, u16, &str)] = &[
 
 /// (vendor, product, shape), for `layout`.
 pub static LAYOUTS: &[(u16, u16, Art)] = &[
+    (0x0079, 0x0006, Art::Symmetric),
     (0x0079, 0x0011, Art::Retro),
     (0x0079, 0x0122, Art::Retro),
     (0x0079, 0x0126, Art::Retro),
@@ -1232,6 +1238,8 @@ mod tests {
         assert_eq!(lookup(0x054C, 0x0268).map(|r| r.2), Some(Family::DualShock3));
         assert_eq!(lookup(0x0815, 0x0005).map(|r| r.2), Some(Family::Ps2Adapter));
         assert_eq!(drawing(0x046d, 0xc215), Some("logitechExtreme3d"));
+        assert_eq!(drawing(0x0079, 0x0006), Some("dragonriseTwin"));
+        assert_eq!(layout(0x0079, 0x0006), Some(Art::Symmetric));
         assert!(MODELS.iter().all(|r| !r.3.is_empty() && r.3.len() < 80));
     }
 

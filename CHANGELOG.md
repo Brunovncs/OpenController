@@ -3,6 +3,20 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+DragonRise PC twin-shock pads that report 0079:0006 (the Microntek USB joystick, often sold as a
+DualShock, including ones whose name says KTS) now work as controllers, with their own drawing.
+Before, they showed up as not mapped. Pads that share that id but use a different button order
+can still be wrong, since nothing SDL reads tells them apart.
+
+On Linux and macOS, a few older pads that were listed but had no mapping now use the community
+database's lines: the Thrustmaster Firestorm Dual Analog 2, Gravis Xterminator Force, Saitek
+P150, HORI Split Pad Pro and Split Pad Fit, Hyperkin Competitor, SCUF Envision and Envision Pro,
+and Nacon MG-X Pro. Windows still has no published mapping for those.
+
+Settings carry over.
+
 ## 0.8.10
 
 The Logitech Extreme 3D Pro now has its own drawing, with the grip leaning and turning as you

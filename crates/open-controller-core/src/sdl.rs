@@ -835,6 +835,26 @@ mod tests {
     ];
     /// The Logitech Extreme 3D Pro, a flight stick SDL has no line for anywhere.
     const EXTREME_3D: [&str; 2] = ["030000006d04000015c2000000000000", "030000006d04000015c2000010010000"];
+    /// Lines copied from the community database, or written here, for pads SDL's Windows list
+    /// leaves unmapped. Order is the order they appear in gamecontrollerdb.txt.
+    const COMMUNITY: [&str; 16] = [
+        "03000000790000000600000000000000",
+        "03000000790000000600000007010000",
+        "03000000790000000600000000000000",
+        "03000000790000000600000007010000",
+        "030000004f04000003b3000010010000",
+        "030000007d0400000740000000010000",
+        "03000000a30600001005000000010000",
+        "030000000d0f00008501000017010000",
+        "030000000d0f00008501000015010000",
+        "030000000d0f00000002000017010000",
+        "030000000d0f00000002000015010000",
+        "03000000242e00002811000000010000",
+        "03000000952e00004b43000011010000",
+        "03000000952e00004d43000011010000",
+        "03000000952e00004e43000011010000",
+        "05000000853200000503000000010000",
+    ];
 
     #[test]
     fn the_extreme_3d_is_mapped_alike_on_both_systems() {
@@ -855,14 +875,39 @@ mod tests {
         assert!(lines.len() > 500);
         let guid = |l: &str| l.split(',').next().map(|g| g.len() == 32 || g == "xinput").unwrap_or(false);
         assert!(lines.iter().all(|l| guid(l)), "{:?}", lines.iter().find(|l| !guid(l)));
-        let linux: Vec<&str> = lines.iter().filter(|l| !l.ends_with("platform:Windows,")).copied().collect();
-        assert!(linux.iter().all(|l| l.ends_with("platform:Linux,")), "{linux:?}");
-        let linux: Vec<&str> = linux.into_iter().filter(|l| !EXTREME_3D.iter().any(|g| l.starts_with(g))).collect();
-        let ids: Vec<&str> = linux.iter().filter_map(|l| l.split(',').next()).collect();
+        let other: Vec<&str> = lines.iter().filter(|l| !l.ends_with("platform:Windows,")).copied().collect();
+        assert!(other.iter().all(|l| l.ends_with("platform:Linux,") || l.ends_with("platform:Mac OS X,")), "{other:?}");
+        let playstation: Vec<&str> = other.iter().copied().filter(|l| LINUX_LINES.iter().any(|g| l.starts_with(g))).collect();
+        let ids: Vec<&str> = playstation.iter().filter_map(|l| l.split(',').next()).collect();
         assert_eq!(ids, LINUX_LINES);
         // The Xbox layout hid-playstation's buttons and axes come in.
         let layout = "a:b0,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b11,\
                       lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b12,righttrigger:a5,rightx:a3,righty:a4,start:b9,x:b3,y:b2,";
-        assert!(linux.iter().all(|l| l.contains(layout)), "{linux:?}");
+        assert!(playstation.iter().all(|l| l.contains(layout)), "{playstation:?}");
+        let community: Vec<&str> = other
+            .into_iter()
+            .filter(|l| !LINUX_LINES.iter().any(|g| l.starts_with(g)) && !EXTREME_3D.iter().any(|g| l.starts_with(g)))
+            .collect();
+        let ids: Vec<&str> = community.iter().filter_map(|l| l.split(',').next()).collect();
+        assert_eq!(ids, COMMUNITY);
+    }
+
+    #[test]
+    fn the_dragonrise_twin_shock_keeps_one_button_order() {
+        let lines: Vec<&str> = MAPPINGS.lines().filter(|l| l.contains("030000007900000006000000")).collect();
+        assert_eq!(lines.len(), 5, "{lines:?}");
+        let buttons = "a:b2,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,\
+                       leftstick:b10,lefttrigger:b6,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:b7,";
+        assert!(lines.iter().all(|l| l.contains(buttons) && l.contains("start:b9,x:b3,y:b0,") && !l.contains("crc:")), "{lines:?}");
+        // Windows DirectInput leaves a gap, so the right stick's Y is a4. Linux is a3/a4, macOS a2/a3.
+        assert!(lines.iter().any(|l| l.starts_with("03000000790000000600000000000000")
+            && l.contains("rightx:a2,righty:a4,")
+            && l.ends_with("platform:Windows,")));
+        assert!(lines.iter().any(|l| l.starts_with("03000000790000000600000007010000")
+            && l.contains("rightx:a3,righty:a4,")
+            && l.ends_with("platform:Linux,")));
+        assert!(lines.iter().any(|l| l.starts_with("03000000790000000600000007010000")
+            && l.contains("rightx:a2,righty:a3,")
+            && l.ends_with("platform:Mac OS X,")));
     }
 }

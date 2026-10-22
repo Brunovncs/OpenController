@@ -39,6 +39,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | `onikumaC1` | A retailer's front photo of the Onikuma C1 (compumarts.com), its watermark and the JPEG noise under the outline erased |
 | `leadjoyXenoPro` | LeadJoy's front render of the Xeno Pro on leadjoy.ai (`XenoPro_mainImages_01.png`), laid on white and cropped to the controller; the shoulders, light-coloured on a dark body, are drawn by hand |
 | `psClassic` | "PlayStation Controller transparent.png" on Wikimedia Commons, CC BY-SA 3.0 (Sony publishes no straight front view) |
+| `dragonriseTwin` | "Fuhengji USB game controller" on Wikimedia Commons, by NemesisAT, CC BY-SA 3.0, a straight front view of the common DragonRise/Microntek PC twin-shock shell. The photo crops the right grip and the center bottom, so the outline is the left half mirrored; a black pad has no lines to flood, so the buttons are measured |
 | `logitechExtreme3d` | Logitech's top view of the Extreme 3D Pro on logitechg.com (`3dpro-gallery-3.png`), measured and drawn by hand from above (`derive_flightstick.py`); every flight stick without a drawing of its own gets it |
 | `generic`, `handheld` | The Ultimate 2C's outline with neutral buttons, and a handheld drawn by hand (`derive_misc.py`) |
 

@@ -1,6 +1,42 @@
 {
  "rows": [
   {
+   "id": "0079:0006",
+   "name": "DragonRise generic PCB (PC Twin Shock)",
+   "family": "Other",
+   "layout": "Symmetric",
+   "models": [
+    "DragonRise Inc. PC TWIN SHOCK / Generic USB Joystick",
+    "Microntek USB Joystick (product string often includes KTS)",
+    "G-Shark GS-GP702",
+    "Speedlink Strike and Thunderstrike (SL-6515-BK)",
+    "Marvo GT-004",
+    "Tesun USB-703",
+    "NGS Phantom (same id, face buttons swapped, not the mapping used here)",
+    "Defender Joystick Cobra R4 (same id, right stick inverted; SDL already maps it by crc)"
+   ],
+   "reported": [
+    "Generic USB Joystick",
+    "USB Joystick",
+    "Microntek USB Joystick"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/mdqinc/SDL_GameControllerDB/blob/master/gamecontrollerdb.txt",
+    "https://github.com/mdqinc/SDL_GameControllerDB/issues/202",
+    "https://github.com/libsdl-org/SDL/commit/673bc5764942e3f645f1ff7d64f3d6a2059e3cdb",
+    "https://discourse.libsdl.org/t/duplicated-conflicting-guids-for-the-dragonrise-pc-twin-shock-controllers/24112",
+    "https://classiccomp.de/GamePads/GP2.html",
+    "https://github.com/torvalds/linux/blob/master/drivers/hid/hid-dr.c",
+    "A user's report from OpenController 0.8.10 on Windows 11 (21 October 2026): GUID 03000000790000000600000000000000, product name containing KTS, no buttons captured"
+   ]
+  },
+  {
    "id": "0079:0011",
    "name": "DragonRise USB Gamepad (SNES and Sega style pads, Retro-bit)",
    "family": "Other",

@@ -21,7 +21,9 @@ its sticks side by side like a PlayStation one, or a pad with no sticks at all.
 
 Many cheap pads copy someone else's ids: Xbox 360 clones are 045e:028e, PlayStation 4 clones
 054c:05c4 or 09cc (the Redragon Darkflame G820 among them), basic PC pads 0079:0006 or 0810:0001.
-They cannot be told apart from the original by id, and get the original's row.
+They cannot be told apart from the original by id, and get the original's row. 0079:0006 is the
+DragonRise twin-shock board, read through a mapping of OpenController's own in
+`gamecontrollerdb.txt`, with its own drawing.
 
 A controller that is not in the table can be sent from the window: Report a problem, on its
 Information page, sends its ids, its SDL mapping and its place in the device tree to the
