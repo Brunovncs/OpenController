@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.11
 
 PC pads that show up as Microntek USB Joystick (0079:0006), like the KTS ones shaped as a
 DualShock, now work as controllers. Before, they showed up as not mapped.
@@ -12,6 +12,8 @@ A controller whose buttons OpenController cannot read can now be mapped on its p
 buttons asks for each part in turn, lights it on the drawing, and the controller then works as an
 Xbox controller. Map again, under Information, starts over. A controller like this also shows its
 model's name and drawing when its ids are known.
+
+Settings carry over.
 
 ## 0.8.10
 
