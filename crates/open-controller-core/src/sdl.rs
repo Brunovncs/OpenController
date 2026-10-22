@@ -865,4 +865,21 @@ mod tests {
                       lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b12,righttrigger:a5,rightx:a3,righty:a4,start:b9,x:b3,y:b2,";
         assert!(linux.iter().all(|l| l.contains(layout)), "{linux:?}");
     }
+
+    #[test]
+    fn only_the_microntek_firmware_of_0079_0006_is_mapped() {
+        let mapped = |guid: &str| unsafe {
+            let io = SDL_IOFromConstMem(MAPPINGS.as_ptr().cast(), MAPPINGS.len());
+            SDL_AddGamepadMappingsFromIO(io, true);
+            let guid = std::ffi::CString::new(guid).unwrap();
+            let m = SDL_GetGamepadMappingForGUID(SDL_StringToGUID(guid.as_ptr()));
+            let found = !m.is_null();
+            SDL_free(m.cast());
+            found
+        };
+        // The GUID of a report from one, its name's CRC in the third and fourth bytes.
+        assert!(mapped("0300be79790000000600000000000000"));
+        assert!(!mapped("03000000790000000600000000000000"));
+        assert!(!mapped("03001234790000000600000000000000"));
+    }
 }

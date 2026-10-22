@@ -1084,6 +1084,7 @@ pub static DRAWINGS: &[(u16, u16, &str)] = &[
 
 /// (vendor, product, shape), for `layout`.
 pub static LAYOUTS: &[(u16, u16, Art)] = &[
+    (0x0079, 0x0006, Art::Symmetric),
     (0x0079, 0x0011, Art::Retro),
     (0x0079, 0x0122, Art::Retro),
     (0x0079, 0x0126, Art::Retro),

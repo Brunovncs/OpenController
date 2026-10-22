@@ -3,6 +3,11 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+PC pads that show up as Microntek USB Joystick (0079:0006), like the KTS ones shaped as a
+DualShock, now work as controllers. Before, they showed up as not mapped.
+
 ## 0.8.10
 
 The Logitech Extreme 3D Pro now has its own drawing, with the grip leaning and turning as you
