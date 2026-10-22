@@ -879,6 +879,8 @@ mod tests {
         assert!(linux.iter().all(|l| l.contains(layout)), "{linux:?}");
     }
 
+    /// Its line is a Windows one: SDL leaves out the other systems' lines as it reads them.
+    #[cfg(windows)]
     #[test]
     fn only_the_microntek_firmware_of_0079_0006_is_mapped() {
         let mapped = |guid: &str| unsafe {
