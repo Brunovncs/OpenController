@@ -258,30 +258,7 @@ struct Server {
 impl Server {
     fn spawn(exe: &Path) -> Result<(Server, SocketAddr), BusError> {
         let (api, usb) = free_ports().map_err(io)?;
-        let dir = exe.parent().unwrap_or(Path::new("."));
-        let mut cmd = Command::new(exe);
-        // Settings from the environment (VIIPER_API_ADDR...) would override nothing set below,
-        // but could turn on what is left at its default.
-        for (k, _) in std::env::vars_os() {
-            if k.to_string_lossy().to_ascii_uppercase().starts_with("VIIPER_") {
-                cmd.env_remove(k);
-            }
-        }
-        cmd.current_dir(dir)
-            .arg("--update-notify=none")
-            .arg("--log.level=info")
-            .arg(format!("--log.file={}", dir.join("viiper.log").display()))
-            .arg("server")
-            .arg(format!("--api.addr=127.0.0.1:{api}"))
-            .arg(format!("--usb.addr=127.0.0.1:{usb}"))
-            .arg(format!("--api.device-handler-connect-timeout={HANDLER_TIMEOUT}"))
-            .arg("--api.auto-attach-local-client=true")
-            .arg("--api.require-local-host-auth=false")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW);
-        let mut child = cmd.spawn().map_err(|e| BusError::Start(e.to_string()))?;
+        let mut child = command(exe, api, usb).spawn().map_err(|e| BusError::Start(e.to_string()))?;
         match kill_on_close(&child) {
             Ok(job) => Ok((Server { child: Mutex::new(child), _job: job }, SocketAddr::from(([127, 0, 0, 1], api)))),
             Err(e) => {
@@ -291,7 +268,39 @@ impl Server {
             }
         }
     }
+}
 
+/// The server's command line, listening on `api` and `usb`. `server` goes first: started by a
+/// program without a console, as OpenController is, the server puts a `server` of its own in
+/// front of anything else and stops at the second one (`cmd/viiper/startup_windows.go`).
+fn command(exe: &Path, api: u16, usb: u16) -> Command {
+    let dir = exe.parent().unwrap_or(Path::new("."));
+    let mut cmd = Command::new(exe);
+    // Settings from the environment (VIIPER_API_ADDR...) would override nothing set below,
+    // but could turn on what is left at its default.
+    for (k, _) in std::env::vars_os() {
+        if k.to_string_lossy().to_ascii_uppercase().starts_with("VIIPER_") {
+            cmd.env_remove(k);
+        }
+    }
+    cmd.current_dir(dir)
+        .arg("server")
+        .arg("--update-notify=none")
+        .arg("--log.level=info")
+        .arg(format!("--log.file={}", dir.join("viiper.log").display()))
+        .arg(format!("--api.addr=127.0.0.1:{api}"))
+        .arg(format!("--usb.addr=127.0.0.1:{usb}"))
+        .arg(format!("--api.device-handler-connect-timeout={HANDLER_TIMEOUT}"))
+        .arg("--api.auto-attach-local-client=true")
+        .arg("--api.require-local-host-auth=false")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+impl Server {
     /// The exit code, once the server has ended.
     fn ended(&self) -> Option<i32> {
         let mut c = self.child.lock().ok()?;
@@ -618,6 +627,15 @@ mod tests {
         assert_eq!(problem, Err(BusError::Problem(409, "Failed to auto-attach device: x".into())));
         assert!(matches!(answer(b"garbage"), Err(BusError::Io(_))));
         assert!(matches!(answer(b""), Err(BusError::Io(_))));
+    }
+
+    #[test]
+    fn server_comes_first_on_its_command_line() {
+        let cmd = command(Path::new(r"C:\oc\viiper\viiper.exe"), 4001, 4002);
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(args[0], "server");
+        assert_eq!(args.iter().filter(|a| *a == "server").count(), 1);
+        assert!(args.contains(&"--api.addr=127.0.0.1:4001".to_string()));
     }
 
     #[test]
