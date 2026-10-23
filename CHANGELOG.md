@@ -3,6 +3,12 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.8.13
+
+VIIPER now starts. Before, it always stopped with code 80 and ViGEmBus was used instead.
+
+Settings carry over.
+
 ## 0.8.12
 
 usbip-win2, which VIIPER needs, now shows as installed once Windows restarts. Before, Requirements
