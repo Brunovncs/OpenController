@@ -3,6 +3,13 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.8.12
+
+usbip-win2, which VIIPER needs, now shows as installed once Windows restarts. Before, Requirements
+kept showing it as not installed even though it was.
+
+Settings carry over.
+
 ## 0.8.11
 
 PC pads that show up as Microntek USB Joystick (0079:0006), like the KTS ones shaped as a
