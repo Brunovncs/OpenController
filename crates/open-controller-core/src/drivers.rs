@@ -153,7 +153,8 @@ pub const PACKAGES: [Package; 6] = [
             url: "https://github.com/vadimgrn/usbip-win2/releases/download/v.0.9.8.1/USBip-0.9.8.1-arm64.exe",
             sha256: "cab7ff97f79275eeb5c5b8bb2eb3111ff6b6c4eead07d9bec9be5bd1e3a35800",
         }),
-        found: Found::Prefixed("USBip version "),
+        // Its setup names it "USBip 0.9.8.1" in Programs and Features.
+        found: Found::Prefixed("USBip "),
         setup: Setup::Inno,
         home: "https://github.com/vadimgrn/usbip-win2",
     },
@@ -495,6 +496,13 @@ mod tests {
         assert!(dir.join("viiper").join("licenses.txt").is_file(), "the licenses go with it");
         assert_eq!(std::fs::read_to_string(dir.join("viiper").join(VERSION_FILE)).unwrap(), "0.8.2");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finds_usbip_by_its_programs_name() {
+        let programs = [("USBip 0.9.8.1".to_string(), "0.9.8.1".to_string())];
+        assert_eq!(installed_in(Component::UsbipWin2, &programs).as_deref(), Some("0.9.8.1"));
+        assert_eq!(installed_in(Component::UsbipWin2, &[("usbipd-win".into(), "5.0.0".into())]), None);
     }
 
     #[test]
