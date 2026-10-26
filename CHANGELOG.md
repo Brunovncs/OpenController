@@ -3,6 +3,11 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+Wii Remotes paired over Bluetooth on Windows now work as controllers. Before, they showed up with no
+buttons at all.
+
 ## 0.8.13
 
 VIIPER now starts. Before, it always stopped with code 80 and ViGEmBus was used instead.
