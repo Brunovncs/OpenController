@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.15
 
 A button can now press several Xbox buttons at once, like A and B together. Turn on Press several
 at once under Xbox button and pick them.

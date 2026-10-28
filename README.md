@@ -7,14 +7,14 @@ version for macOS. Every controller connected to the computer becomes an Xbox co
 understand: a DualSense on Bluetooth, a Switch Pro
 Controller on a cable and a DualShock 4 on Sony's receiver, all at once, each as its own player.
 There is nothing to map. The buttons an Xbox controller lacks (back paddles, L4 and R4, Capture,
-the touchpad) can press an Xbox button, hold a key or type a macro instead, and a controller with a
+the touchpad) can press Xbox buttons, hold a key or play a macro instead, and a controller with a
 gyro can aim by turning it.
 
 It works with the several hundred controllers SDL knows and keeps out of the way: a resident process of 3.2 MB that adds about 0.6 ms between the
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-OpenController is open source (MIT) and in beta, at version 0.8.14. With so many controllers out
+OpenController is open source (MIT) and in beta, at version 0.8.15. With so many controllers out
 there, some will not work as they should yet and some features are still missing, so every report
 helps. If your controller is not recognised, a button does nothing or anything else goes wrong,
 feel free to [open an issue](https://github.com/Brunovncs/OpenController/issues); see
@@ -32,8 +32,8 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.8.14-windows-x64-setup.exe` (on an ARM PC,
-`open-controller-0.8.14-windows-arm64-setup.exe`) and run it. It installs for your user only,
+Download `open-controller-0.8.15-windows-x64-setup.exe` (on an ARM PC,
+`open-controller-0.8.15-windows-arm64-setup.exe`) and run it. It installs for your user only,
 without administrator rights, adds OpenController to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
@@ -41,8 +41,8 @@ do it, and it updates in place: the running copy quits first, and your settings,
 too. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.8.14-windows-x64.zip` (or
-`open-controller-0.8.14-windows-arm64.zip`), extract it anywhere and run `open-controller.exe`.
+To run it without installing, download `open-controller-0.8.15-windows-x64.zip` (or
+`open-controller-0.8.15-windows-arm64.zip`), extract it anywhere and run `open-controller.exe`.
 The programs are not code-signed yet, so Windows SmartScreen warns on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs administrator
 rights.
 
@@ -74,7 +74,7 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.8.14-linux-x64.tar.gz` (or `open-controller-0.8.14-linux-arm64.tar.gz`),
+Download `open-controller-0.8.15-linux-x64.tar.gz` (or `open-controller-0.8.15-linux-arm64.tar.gz`),
 extract it and run `./install.sh`. The programs are built on Ubuntu 22.04 and need glibc 2.35 or
 newer, as in Ubuntu 22.04, Debian 12 and Fedora 36 and later; `ldd --version` shows yours.
 
@@ -103,7 +103,7 @@ controller keeps moving the pointer, as it does without OpenController.
 
 ### macOS
 
-Download `open-controller-0.8.14-macos-universal.zip`, which runs on Apple silicon and Intel, and
+Download `open-controller-0.8.15-macos-universal.zip`, which runs on Apple silicon and Intel, and
 move OpenController to Applications. It is not notarised, so macOS refuses to open it the first
 time. Open it once, then go to System Settings, Privacy & Security, and click Open Anyway.
 
@@ -170,11 +170,13 @@ Buttons an Xbox controller does not have never reach games through a virtual Xbo
 they are free to do something else. Each one, named as on the controller (L4, PL, Fn, Capture,
 Mic), can be:
 
-- an **Xbox button**, pressed while you hold it, like the paddles of an Elite controller;
+- an **Xbox button**, pressed while you hold it, like the paddles of an Elite controller, or
+  several pressed together, like A and B, with Press several at once;
 - a **key or shortcut**, held while you hold it: press it to record it, or pick one you cannot
   press, such as F13 to F24 or the media keys;
-- a **macro**: keys typed once per press, recorded with the gaps you left between them, which can
-  be edited afterwards;
+- a **macro**: keys and Xbox buttons played once per press, recorded with the gaps you left
+  between them, which can be edited afterwards. While it records, keys come from the keyboard and
+  Xbox buttons from the controller, the ones pressed together as one step;
 - nothing, which is where every button starts.
 
 Some games, online ones with anti-cheat above all, do not allow macros or automated input. Check a
@@ -297,7 +299,7 @@ can be added.
 | DualShock 4 (both versions) | yes | yes | Sony USB wireless adaptor | touchpad click |
 | DualSense, Access controller | yes | yes | | mic, touchpad click |
 | DualSense Edge | yes | yes | | back buttons, Fn buttons, mic, touchpad click |
-| DualShock 3, Sixaxis | with DsHidMini | with DsHidMini and BthPS3 | | none, but its pressure-sensitive buttons can move the triggers |
+| DualShock 3, Sixaxis | with DsHidMini | with DsHidMini and BthPS3 | | none, but its pressure-sensitive buttons can move the triggers and a stick |
 | PlayStation and PlayStation 2 pads | through USB adapters | | | none |
 | Switch Pro Controller and licensed pads | yes | yes | | Capture |
 | Joy-Con (pair or single) | | yes | | Capture, SL and SR; on its own, held sideways, L and ZL or R and ZR |
@@ -317,7 +319,8 @@ can be added.
 Light bars and player lights show the player number. Windows has no driver for the DualShock 3:
 with Nefarius' DsHidMini set to its SXS mode, OpenController reads it over USB, and BthPS3 adds
 Bluetooth once it has been paired by cable. In that mode its pressure-sensitive buttons can move
-the triggers, as in PlayStation 2 and 3 racing games, and its gyro aims, with tilting up and down
+the triggers, as in PlayStation 2 and 3 racing games, its d-pad can move a stick as hard as it is
+pressed, and its gyro aims, with tilting up and down
 taken from its accelerometer since the gyro only turns sideways. Both are experimental and were
 written without a DualShock 3 at hand, so reports from one help. Valve's controllers are taken by Steam while it runs,
 and a Flydigi pad's extra buttons need "Allow third-party apps to take over mappings" in Flydigi
