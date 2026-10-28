@@ -1,8 +1,8 @@
 //! What happens to a controller's movement on its way to the virtual Xbox controller: the sticks'
 //! centre, deadzones, full tilt and curve, and measuring a stick for them; a stick as the d-pad,
-//! pressure-sensitive buttons on the triggers, the gyro turned into right-stick movement, the
-//! rotation an accelerometer shows, and the touchpad split into buttons. Pure functions, so they
-//! are tested without a controller.
+//! pressure-sensitive buttons on the triggers and the d-pad on a stick, the gyro turned into
+//! right-stick movement, the rotation an accelerometer shows, and the touchpad split into
+//! buttons. Pure functions, so they are tested without a controller.
 
 use crate::mapping::{self, PadState, axis, button};
 use crate::profile::{DpadStick, Gyro, GyroMode, Pressure, Shape, Sticks};
@@ -173,7 +173,8 @@ pub fn apply_dpad_stick(s: &mut PadState, which: DpadStick) {
 
 /// Pressure-sensitive buttons on the triggers: how hard the chosen button is pressed is how far
 /// the trigger goes, as racing games on the PlayStation 2 and 3 used them. The button itself is
-/// let go unless it is kept, so it does not press A at the same time.
+/// let go unless it is kept, so it does not press A at the same time; the same goes for the d-pad
+/// when it moves a stick (see [`apply_pressure_stick`]).
 pub fn apply_pressure(s: &mut PadState, p: Pressure) {
     for (b, ax) in [(p.left_trigger, axis::LEFT_TRIGGER), (p.right_trigger, axis::RIGHT_TRIGGER)] {
         let Some(i) = b.and_then(|b| mapping::pressure_index(u32::from(b))) else { continue };
@@ -184,6 +185,32 @@ pub fn apply_pressure(s: &mut PadState, p: Pressure) {
         {
             s.buttons &= !(1 << b);
         }
+    }
+    if p.dpad != DpadStick::Off && !p.keep_buttons {
+        s.buttons &= !(1 << button::DPAD_UP | 1 << button::DPAD_DOWN | 1 << button::DPAD_LEFT | 1 << button::DPAD_RIGHT);
+    }
+}
+
+/// The d-pad's pressure as the chosen stick: how hard each direction is pressed is how far the
+/// stick goes that way, kept within its circle. After the sticks are shaped, so a light press is
+/// not lost in the deadzone; where the stick itself is pushed further, it stays as it is.
+pub fn apply_pressure_stick(s: &mut PadState, p: Pressure) {
+    let (ax, ay) = match p.dpad {
+        DpadStick::Off => return,
+        DpadStick::Left => (axis::LEFT_X, axis::LEFT_Y),
+        DpadStick::Right => (axis::RIGHT_X, axis::RIGHT_Y),
+    };
+    let at = |b: u32| mapping::pressure_index(b).map_or(0., |i| f32::from(s.pressure[i]) / 255.);
+    // SDL's Y grows downwards.
+    let (mut fx, mut fy) = (at(button::DPAD_RIGHT) - at(button::DPAD_LEFT), at(button::DPAD_DOWN) - at(button::DPAD_UP));
+    let mag = fx.hypot(fy);
+    if mag > 1. {
+        (fx, fy) = (fx / mag, fy / mag);
+    }
+    let stick = (f32::from(s.axes[ax]) / 32767.).hypot(f32::from(s.axes[ay]) / 32767.);
+    if mag.min(1.) > stick {
+        s.axes[ax] = to_axis(fx);
+        s.axes[ay] = to_axis(fy);
     }
 }
 
@@ -759,7 +786,7 @@ mod tests {
         pressure[mapping::pressure_index(button::SOUTH).unwrap()] = 128;
         pressure[mapping::pressure_index(button::WEST).unwrap()] = 255;
         let held = PadState { buttons: bits(&[button::SOUTH, button::WEST, button::NORTH]), pressure, ..PadState::default() };
-        let p = Pressure { left_trigger: Some(button::WEST as u8), right_trigger: Some(button::SOUTH as u8), keep_buttons: false };
+        let p = Pressure { left_trigger: Some(button::WEST as u8), right_trigger: Some(button::SOUTH as u8), ..Pressure::default() };
         let mut s = held;
         apply_pressure(&mut s, p);
         assert_eq!(s.axes[axis::LEFT_TRIGGER], 32767);
@@ -772,8 +799,58 @@ mod tests {
         apply_pressure(&mut s, p);
         assert_eq!(s.axes[axis::RIGHT_TRIGGER], 30000, "the real trigger still works");
         let mut s = held;
-        apply_pressure(&mut s, Pressure { left_trigger: Some(button::START as u8), right_trigger: None, keep_buttons: false });
+        apply_pressure(&mut s, Pressure { left_trigger: Some(button::START as u8), ..Pressure::default() });
         assert_eq!(s, held, "a button without pressure does nothing");
+    }
+
+    /// A state with the d-pad directions pressed this hard, 0 to 255: up, down, left, right.
+    fn dpad_pressed(up: u8, down: u8, left: u8, right: u8) -> PadState {
+        let mut s = PadState::default();
+        for (b, v) in [(button::DPAD_UP, up), (button::DPAD_DOWN, down), (button::DPAD_LEFT, left), (button::DPAD_RIGHT, right)] {
+            s.pressure[mapping::pressure_index(b).unwrap()] = v;
+            if v > 0 {
+                s.buttons |= 1 << b;
+            }
+        }
+        s
+    }
+
+    #[test]
+    fn the_dpad_moves_a_stick_as_hard_as_it_is_pressed() {
+        let p = Pressure { dpad: DpadStick::Left, ..Pressure::default() };
+        let mut s = dpad_pressed(0, 0, 0, 128);
+        apply_pressure(&mut s, p);
+        apply_pressure_stick(&mut s, p);
+        assert!((s.axes[axis::LEFT_X] - 16448).abs() < 2, "half pressed, half way: {}", s.axes[axis::LEFT_X]);
+        assert_eq!((s.axes[axis::LEFT_Y], s.buttons), (0, 0), "the d-pad itself is let go");
+        let mut s = dpad_pressed(255, 0, 0, 0);
+        apply_pressure_stick(&mut s, Pressure { dpad: DpadStick::Right, ..p });
+        assert_eq!((s.axes[axis::RIGHT_X], s.axes[axis::RIGHT_Y]), (0, -32767), "up is up, and the right stick");
+        let mut s = dpad_pressed(0, 255, 255, 0);
+        apply_pressure_stick(&mut s, p);
+        let (x, y) = (f32::from(s.axes[axis::LEFT_X]), f32::from(s.axes[axis::LEFT_Y]));
+        assert!((x.hypot(y) - 32767.).abs() < 2. && x < 0. && y > 0., "a full diagonal stays on the circle: {x} {y}");
+        let mut s = dpad_pressed(0, 0, 0, 0);
+        s.axes[axis::LEFT_X] = 12000;
+        apply_pressure_stick(&mut s, p);
+        assert_eq!(s.axes[axis::LEFT_X], 12000, "the stick works while the d-pad is let go");
+    }
+
+    #[test]
+    fn the_stick_pushed_further_wins() {
+        let p = Pressure { dpad: DpadStick::Left, keep_buttons: true, ..Pressure::default() };
+        let mut s = dpad_pressed(0, 0, 0, 64);
+        s.axes[axis::LEFT_Y] = -30000;
+        apply_pressure(&mut s, p);
+        apply_pressure_stick(&mut s, p);
+        assert_eq!((s.axes[axis::LEFT_X], s.axes[axis::LEFT_Y]), (0, -30000), "a light press does not pull the stick back");
+        assert!(s.pressed(button::DPAD_RIGHT), "kept, the d-pad still presses");
+        s.axes[axis::LEFT_Y] = -4000;
+        apply_pressure_stick(&mut s, p);
+        assert!(s.axes[axis::LEFT_X] > 8000 && s.axes[axis::LEFT_Y] == 0, "the press is further than the stick");
+        let mut s = dpad_pressed(0, 0, 0, 255);
+        apply_pressure_stick(&mut s, Pressure::default());
+        assert_eq!(s, dpad_pressed(0, 0, 0, 255), "off, nothing changes");
     }
 
     const G: f32 = crate::ds4::STANDARD_GRAVITY;

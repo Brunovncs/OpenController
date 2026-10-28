@@ -1,16 +1,20 @@
-//! What a button does: press an Xbox button, hold a key, or type a short macro. Kept per
+//! What a button does: press Xbox buttons, hold a key, or play a short macro. Kept per
 //! controller, by its serial when it has one and by model otherwise. An extra button does nothing
 //! else; any other button given something to do stops being itself.
 
 use crate::device::Identity;
 use crate::extras;
-use crate::mapping::{XusbReport, button, xusb};
+use crate::mapping::{PadState, XusbReport, button, to_xusb, xusb};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Steps a macro may have, and the longest wait between them.
 pub const MAX_STEPS: usize = 32;
 pub const MAX_WAIT_MS: u16 = 5000;
+
+/// How long a macro holds Xbox buttons, and then waits with them let go: games read the
+/// controller once a frame, so a shorter tap can fall between two reads.
+pub const XBOX_TAP_MS: u16 = 50;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum XboxButton {
@@ -99,6 +103,90 @@ impl XboxButton {
     }
 }
 
+/// Xbox buttons pressed together, a bit each in [`XboxButton::ALL`]'s order. Written as a list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(from = "Vec<XboxButton>", into = "Vec<XboxButton>")]
+pub struct Buttons(u32);
+
+impl Buttons {
+    pub fn of(list: &[XboxButton]) -> Buttons {
+        Buttons(list.iter().fold(0, |m, &x| m | 1 << x as u32))
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn len(self) -> usize {
+        self.0.count_ones() as usize
+    }
+
+    pub fn contains(self, x: XboxButton) -> bool {
+        self.0 & 1 << x as u32 != 0
+    }
+
+    pub fn toggled(self, x: XboxButton) -> Buttons {
+        Buttons(self.0 ^ 1 << x as u32)
+    }
+
+    pub fn with(self, other: Buttons) -> Buttons {
+        Buttons(self.0 | other.0)
+    }
+
+    /// The buttons in this one and not in `other`.
+    pub fn without(self, other: Buttons) -> Buttons {
+        Buttons(self.0 & !other.0)
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = XboxButton> {
+        XboxButton::ALL.into_iter().filter(move |&x| self.contains(x))
+    }
+
+    /// Presses them in a report; a trigger is pulled all the way.
+    pub fn press(self, r: &mut XusbReport) {
+        for x in self.iter() {
+            match (x, x.bit()) {
+                (_, Some(bit)) => r.buttons |= bit,
+                (XboxButton::LeftTrigger, None) => r.left_trigger = u8::MAX,
+                _ => r.right_trigger = u8::MAX,
+            }
+        }
+    }
+
+    /// The buttons a report presses, a trigger once it is past half way.
+    pub fn in_report(r: &XusbReport) -> Buttons {
+        let pulled = |t: u8| t > u8::MAX / 2;
+        let list: Vec<XboxButton> = XboxButton::ALL
+            .into_iter()
+            .filter(|&x| match (x, x.bit()) {
+                (_, Some(bit)) => r.buttons & bit != 0,
+                (XboxButton::LeftTrigger, None) => pulled(r.left_trigger),
+                _ => pulled(r.right_trigger),
+            })
+            .collect();
+        Buttons::of(&list)
+    }
+}
+
+impl From<Vec<XboxButton>> for Buttons {
+    fn from(list: Vec<XboxButton>) -> Buttons {
+        Buttons::of(&list)
+    }
+}
+
+impl From<Buttons> for Vec<XboxButton> {
+    fn from(b: Buttons) -> Vec<XboxButton> {
+        b.iter().collect()
+    }
+}
+
+impl std::fmt::Display for Buttons {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let labels: Vec<&str> = self.iter().map(XboxButton::label).collect();
+        f.write_str(&labels.join(" + "))
+    }
+}
+
 pub mod modifier {
     pub const CTRL: u8 = 1;
     pub const SHIFT: u8 = 2;
@@ -124,6 +212,8 @@ impl Chord {
 pub enum Step {
     Keys(Chord),
     Wait(u16),
+    /// Xbox buttons tapped together, for [`XBOX_TAP_MS`].
+    Xbox(Buttons),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,29 +222,45 @@ pub enum Action {
     Xbox(XboxButton),
     /// A key or shortcut, held while this one is.
     Keys(Chord),
-    /// Keys typed one after another, once per press.
+    /// Keys and Xbox buttons one after another, once per press.
     Macro(Vec<Step>),
+    /// Several Xbox buttons, held together while this one is.
+    Combo(Buttons),
 }
 
 impl Action {
     /// Clamped to what is allowed, so a hand-edited settings file cannot ask for a minute-long
-    /// macro.
+    /// macro. A combo of one button is that button.
     pub fn sanitised(self) -> Option<Action> {
         match self {
             Action::Keys(c) if c.is_empty() => None,
             Action::Macro(steps) => {
                 let steps: Vec<Step> = steps
                     .into_iter()
-                    .filter(|s| !matches!(s, Step::Keys(c) if c.is_empty()))
+                    .filter(|s| match s {
+                        Step::Keys(c) => !c.is_empty(),
+                        Step::Xbox(b) => !b.is_empty(),
+                        Step::Wait(_) => true,
+                    })
                     .map(|s| match s {
                         Step::Wait(ms) => Step::Wait(ms.min(MAX_WAIT_MS)),
                         k => k,
                     })
                     .take(MAX_STEPS)
                     .collect();
-                steps.iter().any(|s| matches!(s, Step::Keys(_))).then_some(Action::Macro(steps))
+                steps.iter().any(|s| !matches!(s, Step::Wait(_))).then_some(Action::Macro(steps))
             }
+            Action::Combo(b) if b.len() <= 1 => b.iter().next().map(Action::Xbox),
             a => Some(a),
+        }
+    }
+
+    /// The Xbox buttons it holds while its button is held, if that is what it does.
+    pub fn xbox(&self) -> Option<Buttons> {
+        match self {
+            Action::Xbox(x) => Some(Buttons::of(&[*x])),
+            Action::Combo(b) => Some(*b),
+            _ => None,
         }
     }
 }
@@ -215,17 +321,20 @@ pub fn remaps_normal(bindings: &Bindings) -> bool {
 /// before the buttons that do something else are taken out of the report.
 pub fn overlay(bindings: &Bindings, buttons: u64, r: &mut XusbReport) {
     for (&b, action) in bindings {
-        if buttons & bit(b) == 0 {
-            continue;
-        }
-        if let Action::Xbox(x) = action {
-            match (x, x.bit()) {
-                (_, Some(bit)) => r.buttons |= bit,
-                (XboxButton::LeftTrigger, None) => r.left_trigger = u8::MAX,
-                _ => r.right_trigger = u8::MAX,
-            }
+        if buttons & bit(b) != 0
+            && let Some(x) = action.xbox()
+        {
+            x.press(r);
         }
     }
+}
+
+/// The Xbox buttons games see pressed for a controller's state, through its assignments; a
+/// button that types keys presses none.
+pub fn xbox_pressed(bindings: &Bindings, s: &PadState) -> Buttons {
+    let mut r = to_xusb(&PadState { buttons: s.buttons & !taken(bindings), ..*s });
+    overlay(bindings, s.buttons, &mut r);
+    Buttons::in_report(&r)
 }
 
 /// Whether a virtual DualShock 4's touchpad is clicked: the controller's is, and no button the
@@ -254,7 +363,7 @@ pub fn uses_letters(bindings: &Bindings) -> bool {
 mod tests {
     use super::*;
 
-    use crate::mapping::{PadState, axis, to_xusb};
+    use crate::mapping::axis;
     use crate::motion;
     use crate::profile::DpadStick;
 
@@ -277,6 +386,52 @@ mod tests {
         assert_eq!(report(&b, &[16]).buttons, xusb::A);
         let r = report(&b, &[16, 17, 18]);
         assert_eq!((r.buttons, r.left_trigger, r.right_trigger), (xusb::A, 255, 0));
+    }
+
+    #[test]
+    fn a_combo_presses_every_button_at_once() {
+        let mut b = Bindings::new();
+        b.insert(button::RIGHT_STICK as u8, Action::Combo(Buttons::of(&[XboxButton::A, XboxButton::B, XboxButton::RightTrigger])));
+        let r = report(&b, &[button::RIGHT_STICK]);
+        assert_eq!((r.buttons, r.right_trigger), (xusb::A | xusb::B, 255), "the stick click itself is gone");
+        assert_eq!(report(&b, &[]), XusbReport::default());
+    }
+
+    #[test]
+    fn combos_of_one_or_none_are_simpler() {
+        assert_eq!(Action::Combo(Buttons::of(&[XboxButton::Y])).sanitised(), Some(Action::Xbox(XboxButton::Y)));
+        assert_eq!(Action::Combo(Buttons::default()).sanitised(), None);
+        let two = Action::Combo(Buttons::of(&[XboxButton::Y, XboxButton::X]));
+        assert_eq!(two.clone().sanitised(), Some(two));
+    }
+
+    #[test]
+    fn buttons_are_written_as_a_list() {
+        let b = Buttons::of(&[XboxButton::B, XboxButton::A]);
+        assert_eq!(serde_json::to_string(&Action::Combo(b)).unwrap(), r#"{"Combo":["A","B"]}"#);
+        assert_eq!(serde_json::from_str::<Buttons>(r#"["B","A","A"]"#).unwrap(), b);
+        assert_eq!(b.to_string(), "A + B");
+        assert!(b.contains(XboxButton::A) && !b.contains(XboxButton::X) && b.len() == 2);
+        assert_eq!(b.toggled(XboxButton::A), Buttons::of(&[XboxButton::B]));
+        assert_eq!(b.without(Buttons::of(&[XboxButton::B, XboxButton::Y])), Buttons::of(&[XboxButton::A]));
+    }
+
+    #[test]
+    fn what_games_see_pressed() {
+        let mut b = Bindings::new();
+        b.insert(button::SOUTH as u8, Action::Xbox(XboxButton::B));
+        b.insert(button::BACK as u8, Action::Keys(Chord { mods: 0, key: 0x4D }));
+        b.insert(extras::LEFT_PADDLE1, Action::Combo(Buttons::of(&[XboxButton::X, XboxButton::Y])));
+        let held = |list: &[u32], lt: i16| {
+            let mut s = PadState { buttons: list.iter().fold(0, |m, &x| m | 1 << x), ..PadState::default() };
+            s.axes[axis::LEFT_TRIGGER] = lt;
+            s
+        };
+        assert_eq!(xbox_pressed(&b, &held(&[button::SOUTH, button::NORTH], 0)), Buttons::of(&[XboxButton::B, XboxButton::Y]));
+        assert_eq!(xbox_pressed(&b, &held(&[button::BACK], 0)), Buttons::default(), "a key is no Xbox button");
+        assert_eq!(xbox_pressed(&b, &held(&[u32::from(extras::LEFT_PADDLE1)], 0)), Buttons::of(&[XboxButton::X, XboxButton::Y]));
+        assert_eq!(xbox_pressed(&b, &held(&[], 20000)), Buttons::of(&[XboxButton::LeftTrigger]));
+        assert_eq!(xbox_pressed(&b, &held(&[], 9000)), Buttons::default(), "a trigger barely pulled");
     }
 
     #[test]
@@ -376,6 +531,10 @@ mod tests {
         let ok = Action::Macro(vec![Step::Keys(Chord { mods: 0, key: 0x41 }), Step::Wait(60_000)]).sanitised();
         assert_eq!(ok, Some(Action::Macro(vec![Step::Keys(Chord { mods: 0, key: 0x41 }), Step::Wait(MAX_WAIT_MS)])));
         assert_eq!(Action::Keys(Chord::default()).sanitised(), None);
+        let a = Step::Xbox(Buttons::of(&[XboxButton::A]));
+        let pad = Action::Macro(vec![a, Step::Wait(20), Step::Xbox(Buttons::default())]);
+        assert_eq!(pad.sanitised(), Some(Action::Macro(vec![a, Step::Wait(20)])), "Xbox buttons alone make a macro");
+        assert_eq!(Action::Macro(vec![Step::Wait(20), Step::Xbox(Buttons::default())]).sanitised(), None);
     }
 
     #[test]
@@ -388,6 +547,8 @@ mod tests {
     fn bindings_round_trip_as_json() {
         let mut b = Bindings::new();
         b.insert(17, Action::Macro(vec![Step::Keys(Chord { mods: modifier::SHIFT, key: 0x31 }), Step::Wait(50)]));
+        b.insert(18, Action::Macro(vec![Step::Xbox(Buttons::of(&[XboxButton::LeftBumper, XboxButton::Up]))]));
+        b.insert(19, Action::Combo(Buttons::of(&[XboxButton::A, XboxButton::Guide])));
         let text = serde_json::to_string(&b).unwrap();
         assert_eq!(serde_json::from_str::<Bindings>(&text).unwrap(), b);
     }

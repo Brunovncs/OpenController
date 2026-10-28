@@ -11,14 +11,14 @@ use crate::text_field::{TextField, TextFieldEvent};
 use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::{MainView, Section, Tab};
 use crate::widgets::{
-    Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, row, segmented, stage, strong, title,
+    Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, row, segmented, stage, strong, switch, title,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, AppContext, Context, Div, Entity, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Subscription, Window, div, px, rgb,
 };
-use open_controller_core::binding::{self, Action, Chord, Step, XboxButton};
+use open_controller_core::binding::{self, Action, Buttons, Chord, Step, XboxButton};
 use open_controller_core::device::{Form, Power};
 use open_controller_core::extras::{self, Art, Family, HANDHELD, Hint};
 use open_controller_core::handheld;
@@ -190,10 +190,17 @@ fn summary(b: u8, action: Option<&Action>, text: &Text, t: &Theme) -> Div {
     match action {
         None if binding::is_normal(b) => caption(text.tab_default, t.text3),
         None => caption(text.not_assigned, t.text3),
-        Some(Action::Xbox(x)) => div().flex().items_center().gap(px(8.)).child(caption("Xbox", t.text2)).child(keycap(x.label(), t)),
+        Some(a @ (Action::Xbox(_) | Action::Combo(_))) => xbox_caps(a.xbox().unwrap_or_default(), t),
         Some(Action::Keys(c)) => keycaps(*c, t),
-        Some(Action::Macro(steps)) => caption(fill(text.macro_steps, steps.iter().filter(|s| matches!(s, Step::Keys(_))).count()), t.text2),
+        Some(Action::Macro(steps)) => {
+            caption(fill(text.macro_steps, steps.iter().filter(|s| !matches!(s, Step::Wait(_))).count()), t.text2)
+        }
     }
+}
+
+/// Xbox buttons as keycaps, after the word Xbox.
+fn xbox_caps(b: Buttons, t: &Theme) -> Div {
+    div().flex().items_center().gap(px(4.)).child(caption("Xbox", t.text2).mr(px(4.))).children(b.iter().map(|x| keycap(x.label(), t)))
 }
 
 fn rgb_of([r, g, b]: [u8; 3]) -> gpui::Hsla {
@@ -1193,9 +1200,13 @@ impl MainView {
 
         let content: AnyElement = match e.tab {
             Tab::Xbox => {
+                let picked = current.as_ref().and_then(Action::xbox).unwrap_or_default();
+                let several = e.several;
                 let mut grid = div().flex().flex_wrap().gap(px(6.));
                 for (i, x) in XboxButton::ALL.into_iter().enumerate() {
-                    let on = current == Some(Action::Xbox(x));
+                    let on = picked.contains(x);
+                    // With several, a button joins or leaves the ones pressed; the last one stays.
+                    let action = if !several || (on && picked.len() == 1) { Action::Xbox(x) } else { Action::Combo(picked.toggled(x)) };
                     grid = grid.child(
                         div()
                             .id(("xbox", i))
@@ -1212,10 +1223,37 @@ impl MainView {
                             .when(on, |d| d.bg(t.accent).border_color(t.accent).text_color(t.on_accent))
                             .when(!on, |d| d.bg(t.control).border_color(t.stroke).text_color(t.text).hover(move |s| s.bg(t.control_hover)))
                             .child(x.label())
-                            .on_click(cx.listener(move |this, _, _, cx| this.bind_now(key, b, Some(Action::Xbox(x)), cx))),
+                            .on_click(cx.listener(move |this, _, _, cx| this.bind_now(key, b, Some(action.clone()), cx))),
                     );
                 }
-                div().flex().flex_col().gap(px(10.)).child(caption(text.xbox_desc, t.text2)).child(grid).into_any_element()
+                let toggle = row(t)
+                    .id("xbox-several")
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(t.layer_hover))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .gap(px(2.))
+                            .child(body(text.xbox_several, t.text))
+                            .child(caption(text.xbox_several_desc, t.text2)),
+                    )
+                    .child(switch(several, text.on, text.off, t))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let Some(e) = this.editor.as_mut() else { return };
+                        e.several = !e.several;
+                        // Back to one button: the first of the ones it pressed.
+                        if !e.several
+                            && picked.len() > 1
+                            && let Some(first) = picked.iter().next()
+                        {
+                            this.bind_now(key, b, Some(Action::Xbox(first)), cx);
+                        }
+                        cx.notify();
+                    }));
+                div().flex().flex_col().gap(px(10.)).child(caption(text.xbox_desc, t.text2)).child(grid).child(toggle).into_any_element()
             }
             Tab::Key => {
                 let shown = match (&current, e.recording) {
@@ -1281,14 +1319,15 @@ impl MainView {
                     .when(other, |d| d.child(list))
                     .into_any_element()
             }
-            Tab::Macro => self.macro_editor(key, b, text, t, cx),
+            Tab::Macro => self.macro_editor(key, b, remappable(pad), text, t, cx),
             Tab::Nothing => caption(if normal { text.default_desc } else { text.nothing_desc }, t.text2).into_any_element(),
         };
 
         card(t).flex().flex_col().gap(px(14.)).p(px(16.)).child(div().flex().child(tabs)).child(content).into_any_element()
     }
 
-    fn macro_editor(&self, key: PadKey, b: u8, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
+    /// `xbox`: whether games see a virtual controller, on which the macro can press Xbox buttons.
+    fn macro_editor(&self, key: PadKey, b: u8, xbox: bool, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let Some(e) = &self.editor else { return div().into_any_element() };
         let mut steps = div().flex().flex_wrap().items_center().gap(px(6.));
         for (i, step) in e.steps.iter().enumerate() {
@@ -1304,6 +1343,7 @@ impl MainView {
                 .border_color(t.stroke);
             let chip = match *step {
                 Step::Keys(c) => chip.child(keycaps(c, t)),
+                Step::Xbox(x) => chip.child(xbox_caps(x, t)),
                 Step::Wait(ms) => {
                     let nudge = |id: &'static str, label: &'static str, delta: i32, cx: &mut Context<Self>| {
                         div()
@@ -1346,9 +1386,10 @@ impl MainView {
             .flex()
             .flex_col()
             .gap(px(10.))
-            .child(caption(text.macro_desc, t.text2))
+            .child(caption(if xbox { text.macro_desc_xbox } else { text.macro_desc }, t.text2))
             .child(if empty {
-                caption(if recording { text.listening } else { text.macro_empty }, if recording { t.accent } else { t.text3 })
+                let hint = if xbox { text.macro_empty_xbox } else { text.macro_empty };
+                caption(if recording { text.listening } else { hint }, if recording { t.accent } else { t.text3 })
             } else {
                 steps
             })
@@ -1367,6 +1408,7 @@ impl MainView {
                             if let Some(e) = this.editor.as_mut() {
                                 e.recording = !e.recording;
                                 e.last_key = None;
+                                e.xbox_held = None;
                             }
                             this.focus.focus(window, cx);
                             cx.notify();

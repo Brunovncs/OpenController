@@ -240,6 +240,9 @@ pub struct Pressure {
     pub right_trigger: Option<u8>,
     /// The game still gets the button itself too.
     pub keep_buttons: bool,
+    /// The stick the d-pad moves, as far as each direction is pressed hard. Never the one that
+    /// stands in for the d-pad (`Sticks::dpad`).
+    pub dpad: DpadStick,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -471,8 +474,21 @@ impl Profiles {
             Edit::Brightness(b) => self.active_mut().brightness = b.clamp(10, 100),
             Edit::LowBatteryFlash(on) => self.active_mut().low_battery_flash = on,
             Edit::Gyro(g) => self.active_mut().gyro = clean_gyro(g),
-            Edit::Sticks(s) => self.active_mut().sticks = clean_sticks(s),
-            Edit::Pressure(p) => self.active_mut().pressure = clean_pressure(p),
+            // A stick cannot both press the d-pad and be moved by it: the one just chosen wins.
+            Edit::Sticks(s) => {
+                let p = self.active_mut();
+                p.sticks = clean_sticks(s);
+                if p.pressure.dpad == p.sticks.dpad {
+                    p.pressure.dpad = DpadStick::Off;
+                }
+            }
+            Edit::Pressure(pressure) => {
+                let p = self.active_mut();
+                p.pressure = clean_pressure(pressure);
+                if p.sticks.dpad == p.pressure.dpad {
+                    p.sticks.dpad = DpadStick::Off;
+                }
+            }
             Edit::Output(o) => self.output = o,
             Edit::AddProgram(i, name) => {
                 let name = program_name(&name);
@@ -532,6 +548,9 @@ impl Profiles {
             p.gyro = clean_gyro(p.gyro);
             p.sticks = clean_sticks(p.sticks);
             p.pressure = clean_pressure(p.pressure);
+            if p.pressure.dpad == p.sticks.dpad {
+                p.pressure.dpad = DpadStick::Off;
+            }
             p.programs =
                 std::mem::take(&mut p.programs).iter().map(|x| program_name(x)).filter(|x| !x.is_empty()).take(MAX_PROGRAMS).collect();
             // Buttons are bits of a u64: a larger number from a damaged file would overflow.
@@ -599,7 +618,7 @@ fn clean_sticks(s: Sticks) -> Sticks {
 /// Only buttons that sense pressure can move a trigger.
 fn clean_pressure(p: Pressure) -> Pressure {
     let valid = |b: Option<u8>| b.filter(|&b| crate::mapping::pressure_index(u32::from(b)).is_some());
-    Pressure { left_trigger: valid(p.left_trigger), right_trigger: valid(p.right_trigger), keep_buttons: p.keep_buttons }
+    Pressure { left_trigger: valid(p.left_trigger), right_trigger: valid(p.right_trigger), ..p }
 }
 
 /// The colour a light bar shows for `light`, with the player's colours SDL and the consoles use.
@@ -815,11 +834,34 @@ mod tests {
     #[test]
     fn pressure_takes_only_buttons_that_sense_it() {
         let mut p = Profiles::default();
-        p.apply(Edit::Pressure(Pressure { left_trigger: Some(6), right_trigger: Some(0), keep_buttons: true }));
-        assert_eq!(p.active().pressure, Pressure { left_trigger: None, right_trigger: Some(0), keep_buttons: true }, "Start has none");
+        p.apply(Edit::Pressure(Pressure { left_trigger: Some(6), right_trigger: Some(0), keep_buttons: true, ..Pressure::default() }));
+        let kept = Pressure { left_trigger: None, right_trigger: Some(0), keep_buttons: true, ..Pressure::default() };
+        assert_eq!(p.active().pressure, kept, "Start has none");
         assert!(!p.is_default());
         let file: Profiles = serde_json::from_str(r#"{"list": [{"pressure": {"left_trigger": 99, "right_trigger": 2}}]}"#).unwrap();
-        assert_eq!(file.sanitised().list[0].pressure, Pressure { left_trigger: None, right_trigger: Some(2), keep_buttons: false });
+        assert_eq!(file.sanitised().list[0].pressure, Pressure { right_trigger: Some(2), ..Pressure::default() });
+    }
+
+    #[test]
+    fn a_stick_is_never_both_the_dpad_and_moved_by_it() {
+        let mut p = Profiles::default();
+        let sticks = |dpad| Edit::Sticks(Sticks { dpad, ..Sticks::default() });
+        let pressure = |dpad| Edit::Pressure(Pressure { dpad, ..Pressure::default() });
+        p.apply(sticks(DpadStick::Left));
+        p.apply(pressure(DpadStick::Right));
+        assert_eq!((p.active().sticks.dpad, p.active().pressure.dpad), (DpadStick::Left, DpadStick::Right), "one each is fine");
+        p.apply(pressure(DpadStick::Left));
+        assert_eq!((p.active().sticks.dpad, p.active().pressure.dpad), (DpadStick::Off, DpadStick::Left), "the pressure took it");
+        p.apply(sticks(DpadStick::Left));
+        assert_eq!((p.active().sticks.dpad, p.active().pressure.dpad), (DpadStick::Left, DpadStick::Off), "and the stick took it back");
+        let file = r#"{"list": [{"sticks": {"dpad": "Right"}, "pressure": {"dpad": "Right"}}]}"#;
+        let both = serde_json::from_str::<Profiles>(file).unwrap().sanitised();
+        assert_eq!((both.list[0].sticks.dpad, both.list[0].pressure.dpad), (DpadStick::Right, DpadStick::Off));
+        let newer = r#"{"list": [{"pressure": {"dpad": "Middle", "keep_buttons": true}}]}"#;
+        assert_eq!(
+            serde_json::from_str::<Profiles>(newer).unwrap().list[0].pressure,
+            Pressure { keep_buttons: true, ..Pressure::default() }
+        );
     }
 
     #[test]

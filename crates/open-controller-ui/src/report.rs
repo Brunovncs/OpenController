@@ -281,6 +281,7 @@ fn assignments(bindings: &Bindings) -> String {
         let name = BUTTON_NAMES.get(usize::from(b)).copied().unwrap_or("?");
         let does = match a {
             Action::Xbox(x) => format!("Xbox {}", x.label()),
+            Action::Combo(b) => format!("Xbox {b}"),
             Action::Keys(c) => keyboard::chord_names(*c).join("+"),
             Action::Macro(steps) => format!("macro of {} steps", steps.len()),
         };

@@ -13,7 +13,7 @@ use gpui::{
 use open_controller_core::i18n::Text;
 use open_controller_core::mapping::{self, button};
 use open_controller_core::platform;
-use open_controller_core::profile::{Acceleration, Edit, Gyro, GyroMode, Output, Pressure};
+use open_controller_core::profile::{Acceleration, DpadStick, Edit, Gyro, GyroMode, Output, Pressure};
 use open_controller_core::{PadKey, PadView};
 
 /// A row of choices that edits the controller's profile.
@@ -352,7 +352,16 @@ impl MainView {
             segmented("pressure-lt", choices(), p.left_trigger, &t, move |b| Edit::Pressure(Pressure { left_trigger: b, ..p }), key, cx);
         let rt =
             segmented("pressure-rt", choices(), p.right_trigger, &t, move |b| Edit::Pressure(Pressure { right_trigger: b, ..p }), key, cx);
-        let used = p.left_trigger.is_some() || p.right_trigger.is_some();
+        let dpad = segmented(
+            "pressure-dpad",
+            vec![(DpadStick::Off, text.off.into()), (DpadStick::Left, text.stick_left.into()), (DpadStick::Right, text.stick_right.into())],
+            p.dpad,
+            &t,
+            move |v| Edit::Pressure(Pressure { dpad: v, ..p }),
+            key,
+            cx,
+        );
+        let used = p.left_trigger.is_some() || p.right_trigger.is_some() || p.dpad != DpadStick::Off;
         let keep = used.then(|| {
             let edit = Edit::Pressure(Pressure { keep_buttons: !p.keep_buttons, ..p });
             self.toggle("pressure-keep", (text.pressure_keep, text.pressure_keep_desc), p.keep_buttons, edit, key, cx)
@@ -389,6 +398,7 @@ impl MainView {
             .child(meters)
             .child(setting(text.pressure_lt, &t, lt))
             .child(setting(text.pressure_rt, &t, rt))
+            .child(setting(text.pressure_dpad, &t, dpad).child(caption(text.pressure_dpad_desc, t.text2)))
             .children(keep)
             .into_any_element()
     }

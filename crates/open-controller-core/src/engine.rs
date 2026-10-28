@@ -2,14 +2,14 @@
 //! read what the controllers sent, forward it to the virtual controllers, pass rumble back,
 //! sleep about a millisecond. The UI only sends commands and reads snapshots.
 
-use crate::binding::{self, Action, Bindings, Chord};
+use crate::binding::{self, Action, Bindings, Buttons, Chord};
 use crate::device::{self, Brand, Form, Identity, Link, Power};
 use crate::ds3::Sixaxis;
 use crate::ds4::{self, Motion};
 use crate::extras::{self, Art, Family, Features, Hint};
 use crate::handheld;
 use crate::hiding::Hider;
-use crate::keyboard::Keyboard;
+use crate::keyboard::{Keyboard, Tap};
 use crate::mapping::{self, PadState, RawInput, XusbReport};
 use crate::models;
 use crate::motion::{self, GyroAim, TiltRate};
@@ -588,6 +588,8 @@ struct Core {
     keyboard: Keyboard,
     /// Keys held down for extra buttons that are held down, to be let go with them.
     held: Vec<(Owner, u8, Chord)>,
+    /// The Xbox buttons a macro holds down right now, by the controller that played it.
+    macro_held: HashMap<DeviceId, Buttons>,
     started: Instant,
     /// The program in front, which can switch profiles.
     foreground: String,
@@ -666,6 +668,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         profiles: config.profiles,
         keyboard: Keyboard::start(),
         held: Vec::new(),
+        macro_held: HashMap::new(),
         started: Instant::now(),
         foreground: String::new(),
         handheld: handheld::this_machine(),
@@ -709,6 +712,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         core.handheld_buttons();
         core.poll_sixaxis(now);
         core.forward(now);
+        core.macro_buttons();
         core.feedback(now);
         core.housekeeping(now);
 
@@ -1509,6 +1513,7 @@ impl Core {
             self.gone_halves.push((p.pad.pad_type() == device::PadType::JoyConRight, p.path.clone(), now));
         }
         self.updated.retain(|&d| d != id);
+        self.macro_held.remove(&id);
         if let Kind::Slot(s) = p.kind {
             self.roster.detach(id, now);
             let empty = self.roster.get(s).is_some_and(|slot| slot.devices.is_empty());
@@ -1601,6 +1606,9 @@ impl Core {
                 motion::apply_pressure(&mut state, pr.pressure);
             }
             motion::shape_sticks(&mut state, &pr.sticks);
+            if p.model.features.pressure {
+                motion::apply_pressure_stick(&mut state, pr.pressure);
+            }
             motion::apply_dpad_stick(&mut state, pr.sticks.dpad);
         }
         let mut r = mapping::to_xusb(&state);
@@ -1612,7 +1620,36 @@ impl Core {
         if let Some(pr) = profile {
             binding::overlay(&pr.bindings, p.state.buttons, &mut r);
         }
+        if let Some(b) = self.macro_held.get(&dev) {
+            b.press(&mut r);
+        }
         r
+    }
+
+    /// Presses and lets go of the Xbox buttons macros tap, on the virtual controller of the
+    /// controller that played each.
+    fn macro_buttons(&mut self) {
+        let mut moved = Vec::new();
+        while let Ok(tap) = self.keyboard.taps().try_recv() {
+            let (Tap::Down(dev, b) | Tap::Up(dev, b)) = tap;
+            let was = self.macro_held.remove(&dev).unwrap_or_default();
+            let held = if matches!(tap, Tap::Down(..)) { was.with(b) } else { was.without(b) };
+            if !held.is_empty() {
+                self.macro_held.insert(dev, held);
+            }
+            // Only the connection games are shown counts, as with the controller's own buttons.
+            if let Some(Kind::Slot(s)) = self.phys.get(&dev).map(|p| p.kind)
+                && self.roster.get(s).and_then(|slot| slot.source) == Some(dev)
+                && !moved.contains(&s)
+            {
+                moved.push(s);
+            }
+        }
+        for s in moved {
+            if !self.is_native(s) {
+                self.resend(s);
+            }
+        }
     }
 
     /// Brings the keys an owner holds in line with its controller's extra buttons, and starts
@@ -1643,7 +1680,7 @@ impl Core {
                     self.keyboard.press(*c);
                     self.held.push((s, button, *c));
                 }
-                Action::Macro(steps) if before & 1 << button == 0 => self.keyboard.play(steps.clone()),
+                Action::Macro(steps) if before & 1 << button == 0 => self.keyboard.play(steps.clone(), dev),
                 _ => {}
             }
         }

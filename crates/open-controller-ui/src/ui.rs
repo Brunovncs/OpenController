@@ -11,7 +11,7 @@ use gpui::{
     AnyElement, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent, ModifiersChangedEvent,
     MouseButton, ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowAppearance, div, img, px,
 };
-use open_controller_core::binding::{self, Action, Step};
+use open_controller_core::binding::{self, Action, Buttons, Step};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::profile::Edit;
@@ -60,13 +60,49 @@ pub enum Tab {
 pub struct Editor {
     pub button: u8,
     pub tab: Tab,
-    /// Listening for keys: one shortcut on the Key tab, a sequence on the Macro tab.
+    /// Listening for keys: one shortcut on the Key tab, a sequence on the Macro tab, where the
+    /// controller's Xbox buttons are listened for too.
     pub recording: bool,
     pub steps: Vec<Step>,
     pub last_key: Option<Instant>,
     /// Modifiers held right now, shown while listening.
     pub holding: u8,
     pub other_keys: bool,
+    /// Picking Xbox buttons adds them to the ones it presses, rather than taking their place.
+    pub several: bool,
+    /// The Xbox buttons the controller held when last seen while recording; `None` until then,
+    /// so buttons already held when recording starts are not steps.
+    pub xbox_held: Option<Buttons>,
+}
+
+impl Editor {
+    /// Adds a recorded step to the macro, after a wait as long as the pause before it. `false`
+    /// when the macro is full and nothing was added.
+    fn record(&mut self, step: Step, now: Instant) -> bool {
+        let room = binding::MAX_STEPS.saturating_sub(self.steps.len());
+        if room == 0 {
+            self.recording = false;
+            return false;
+        }
+        if let Some(gap) = self.last_key.map(|t| now.duration_since(t).as_millis() as u64) {
+            // Tapping Xbox buttons takes a while when played; only the pause after it is a wait.
+            let played = match self.steps.last() {
+                Some(Step::Xbox(_)) => 2 * u64::from(binding::XBOX_TAP_MS),
+                _ => 0,
+            };
+            // Gaps are kept to the nearest 10 ms; shorter ones are just typing.
+            let ms = ((gap.saturating_sub(played) + 5) / 10 * 10).min(binding::MAX_WAIT_MS as u64) as u16;
+            if ms >= 30 && room >= 2 {
+                self.steps.push(Step::Wait(ms));
+            }
+        }
+        self.steps.push(step);
+        self.last_key = Some(now);
+        if self.steps.len() >= binding::MAX_STEPS - 1 {
+            self.recording = false;
+        }
+        true
+    }
 }
 
 /// Where installing a driver from the settings stands.
@@ -351,7 +387,7 @@ impl MainView {
             let tab = match current {
                 None if keys_only => Tab::Key,
                 None if open_controller_core::binding::is_normal(button) => Tab::Nothing,
-                Some(Action::Xbox(_)) | None => Tab::Xbox,
+                Some(Action::Xbox(_) | Action::Combo(_)) | None => Tab::Xbox,
                 Some(Action::Keys(_)) => Tab::Key,
                 Some(Action::Macro(_)) => Tab::Macro,
             };
@@ -359,7 +395,18 @@ impl MainView {
                 Some(Action::Macro(s)) => s.clone(),
                 _ => Vec::new(),
             };
-            self.editor = Some(Editor { button, tab, recording: false, steps, last_key: None, holding: 0, other_keys: false });
+            let several = matches!(current, Some(Action::Combo(_)));
+            self.editor = Some(Editor {
+                button,
+                tab,
+                recording: false,
+                steps,
+                last_key: None,
+                holding: 0,
+                other_keys: false,
+                several,
+                xbox_held: None,
+            });
         }
         self.confirm_reset = false;
         cx.notify();
@@ -397,6 +444,7 @@ impl MainView {
             m.sample(&pad.input);
         }
         self.feed_learning(pad);
+        self.record_xbox(pad, cx);
         let held = extras_held(pad);
         let pressed = held & !self.held;
         self.held = held;
@@ -407,6 +455,24 @@ impl MainView {
             if self.editor.as_ref().is_none_or(|e| e.button != button) {
                 self.edit(pad, button, cx);
             }
+        }
+    }
+
+    /// While a macro records, the Xbox buttons the controller presses are steps of it, the ones
+    /// pressed together one step. Only where games see a virtual controller, which a macro can
+    /// press buttons on.
+    fn record_xbox(&mut self, pad: &PadView, cx: &mut Context<Self>) {
+        let Some(e) = self.editor.as_mut().filter(|e| e.recording && e.tab == Tab::Macro) else { return };
+        if !crate::detail::remappable(pad) {
+            return;
+        }
+        let held = binding::xbox_pressed(&pad.profiles.active().bindings, &pad.input);
+        let pressed = held.without(e.xbox_held.unwrap_or(held));
+        e.xbox_held = Some(held);
+        if !pressed.is_empty() && e.record(Step::Xbox(pressed), Instant::now()) {
+            let (button, steps) = (e.button, e.steps.clone());
+            self.bind(pad, button, Some(Action::Macro(steps)), cx);
+            cx.notify();
         }
     }
 
@@ -470,24 +536,9 @@ impl MainView {
                 Action::Keys(chord)
             }
             _ => {
-                let now = Instant::now();
-                let room = binding::MAX_STEPS.saturating_sub(e.steps.len());
-                if room == 0 {
-                    e.recording = false;
+                if !e.record(Step::Keys(chord), Instant::now()) {
                     cx.notify();
                     return;
-                }
-                if let Some(gap) = e.last_key.map(|t| now.duration_since(t).as_millis() as u64) {
-                    // Gaps are kept to the nearest 10 ms; shorter ones are just typing.
-                    let ms = ((gap + 5) / 10 * 10).min(binding::MAX_WAIT_MS as u64) as u16;
-                    if ms >= 30 && room >= 2 {
-                        e.steps.push(Step::Wait(ms));
-                    }
-                }
-                e.steps.push(Step::Keys(chord));
-                e.last_key = Some(now);
-                if e.steps.len() >= binding::MAX_STEPS - 1 {
-                    e.recording = false;
                 }
                 Action::Macro(e.steps.clone())
             }
@@ -611,5 +662,57 @@ impl Render for MainView {
             )
             .children(report);
         crate::frame::frame(page.into_any_element(), &t, window)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use open_controller_core::binding::{Chord, XboxButton};
+    use std::time::Duration;
+
+    fn editor() -> Editor {
+        Editor {
+            button: 16,
+            tab: Tab::Macro,
+            recording: true,
+            steps: Vec::new(),
+            last_key: None,
+            holding: 0,
+            other_keys: false,
+            several: false,
+            xbox_held: None,
+        }
+    }
+
+    #[test]
+    fn a_recorded_pause_leaves_out_the_time_a_tap_takes() {
+        let (a, key) = (Step::Xbox(Buttons::of(&[XboxButton::A])), Step::Keys(Chord { mods: 0, key: 0x41 }));
+        let mut e = editor();
+        let t = Instant::now();
+        assert!(e.record(a, t));
+        assert!(e.record(a, t + Duration::from_millis(120)), "a quick second tap");
+        assert!(e.record(key, t + Duration::from_millis(520)));
+        assert!(e.record(key, t + Duration::from_millis(720)));
+        let tap = 2 * u64::from(binding::XBOX_TAP_MS);
+        let waits: Vec<u16> = e.steps.iter().filter_map(|s| if let Step::Wait(ms) = s { Some(*ms) } else { None }).collect();
+        assert_eq!(waits, [(400 - tap) as u16, 200], "only the pause after A is shortened by its tap");
+        assert_eq!(e.steps.len(), 6);
+    }
+
+    #[test]
+    fn recording_stops_when_the_macro_is_full() {
+        let mut e = editor();
+        let t = Instant::now();
+        let a = Step::Xbox(Buttons::of(&[XboxButton::A]));
+        let mut added = 0;
+        while e.recording {
+            assert!(e.record(a, t));
+            added += 1;
+        }
+        assert_eq!(added, binding::MAX_STEPS - 1);
+        e.recording = true;
+        assert!(e.record(a, t), "one step of room left");
+        assert!(!e.record(a, t) && !e.recording, "full");
     }
 }

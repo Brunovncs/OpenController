@@ -1,12 +1,12 @@
 //! `--demo`: the window filled with example controllers, for screenshots and for working on
 //! the interface without hardware. Only the view is faked; the engine runs as usual.
 
-use open_controller_core::binding::{Action, Chord, Step, XboxButton, modifier};
+use open_controller_core::binding::{Action, Buttons, Chord, Step, XboxButton, modifier};
 use open_controller_core::device::{Brand, Form, Link, Power};
 use open_controller_core::extras::{self, Family, Features};
 use open_controller_core::mapping::{PadState, RawInput, axis, button};
 use open_controller_core::models;
-use open_controller_core::profile::{Edit, Gyro, GyroMode, Light, Output, Pressure, Profiles};
+use open_controller_core::profile::{DpadStick, Edit, Gyro, GyroMode, Light, Output, Pressure, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -97,6 +97,18 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     edge.can_power_off = true;
     edge.profiles.apply(Edit::Light(Light::Color([120, 0, 255])));
     edge.profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 150, ..Gyro::default() }));
+    edge.profiles
+        .apply(Edit::Bind { button: extras::LEFT_PADDLE1, action: Some(Action::Combo(Buttons::of(&[XboxButton::A, XboxButton::B]))) });
+    edge.profiles.apply(Edit::Bind {
+        button: extras::RIGHT_PADDLE1,
+        action: Some(Action::Macro(vec![
+            Step::Xbox(Buttons::of(&[XboxButton::Down])),
+            Step::Xbox(Buttons::of(&[XboxButton::Right])),
+            Step::Wait(40),
+            Step::Xbox(Buttons::of(&[XboxButton::X, XboxButton::RightBumper])),
+            Step::Keys(Chord { mods: 0, key: 0x46 }),
+        ])),
+    });
 
     let mut switch = pad(PadKey::Slot(3), "Nintendo Switch Pro Controller", Brand::Nintendo, Family::SwitchPro, (0x057E, 0x2009));
     switch.links = vec![Link::Usb, Link::Bluetooth];
@@ -157,7 +169,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     ds3.gyro = Some([0.12, -0.4, 0.]);
     ds3.features = Features { motion: true, rumble: true, pressure: true, sixaxis: true, ..Features::default() };
     ds3.profiles.apply(Edit::Output(Output::DualShock4));
-    ds3.profiles.apply(Edit::Pressure(Pressure { right_trigger: Some(button::SOUTH as u8), ..Pressure::default() }));
+    ds3.profiles.apply(Edit::Pressure(Pressure { right_trigger: Some(button::SOUTH as u8), dpad: DpadStick::Left, ..Pressure::default() }));
 
     let mut pads = vec![eightbitdo, edge, switch, native, joycons, xbox, ds4, ds3];
     // Flight sticks only when asked for, so the screenshots stay as they are.

@@ -3,6 +3,20 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+A button can now press several Xbox buttons at once, like A and B together. Turn on Press several
+at once under Xbox button and pick them.
+
+Macros can now press Xbox buttons too, not only keys. While a macro records, the buttons you press
+on the controller become steps, and the ones pressed together are one step.
+
+On a DualShock 3, the d-pad can now move a stick: the harder you press a direction, the further
+the stick goes. Pick a stick under D-pad as a stick, with the other pressure-sensitive buttons.
+
+Settings carry over. An older version reading them leaves out the buttons that press several at
+once, the macros with Xbox buttons and the d-pad stick.
+
 ## 0.8.14
 
 Wii Remotes paired over Bluetooth on Windows now work as controllers. Before, they showed up with no

@@ -2,10 +2,12 @@
 //!
 //! Keys go out from a thread of their own, so the input thread never waits on them, and macros
 //! play from another, so a macro's waits never hold up a key a button presses or lets go of.
+//! The Xbox buttons a macro taps go back to the input thread, which owns the virtual controllers.
 //! Chords are Windows virtual-key codes on every system, so settings carry over between them;
 //! each system's module turns them into its own key codes.
 
-use crate::binding::{Chord, Step, modifier};
+use crate::binding::{Buttons, Chord, Step, XBOX_TAP_MS, modifier};
+use crate::roster::DeviceId;
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -24,11 +26,20 @@ enum Out {
     Up(Chord),
 }
 
+/// Xbox buttons a macro presses or lets go of, on the virtual controller of the controller whose
+/// button played it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tap {
+    Down(DeviceId, Buttons),
+    Up(DeviceId, Buttons),
+}
+
 /// The threads that type. Dropping it stops the macro playing, lets go of its keys, and lets
 /// the threads end.
 pub struct Keyboard {
     keys: Sender<Out>,
-    macros: Sender<Vec<Step>>,
+    macros: Sender<(Vec<Step>, DeviceId)>,
+    taps: Receiver<Tap>,
     plays: Arc<Mutex<Plays>>,
     /// Never sent on: closed when the keyboard is dropped, which cuts a macro's wait short.
     _stop: Sender<()>,
@@ -59,20 +70,26 @@ impl Keyboard {
                 }
             })
             .expect("could not start the keyboard thread");
-        let (macros, queued) = unbounded::<Vec<Step>>();
+        let (macros, queued) = unbounded::<(Vec<Step>, DeviceId)>();
+        let (to_pads, taps) = unbounded::<Tap>();
         let (stop_tx, stop) = crossbeam_channel::bounded::<()>(0);
         let plays = Arc::new(Mutex::new(Plays::default()));
         let (to_keys, done) = (keys.clone(), plays.clone());
         std::thread::Builder::new()
             .name("open-controller-macros".into())
             .spawn(move || {
-                while let Ok(steps) = queued.recv() {
-                    play(&to_keys, &steps, &stop);
+                while let Ok((steps, by)) = queued.recv() {
+                    play(&to_keys, &to_pads, by, &steps, &stop);
                     done.lock().unwrap_or_else(PoisonError::into_inner).done(&steps);
                 }
             })
             .expect("could not start the macro thread");
-        Keyboard { keys, macros, plays, _stop: stop_tx }
+        Keyboard { keys, macros, taps, plays, _stop: stop_tx }
+    }
+
+    /// The Xbox buttons macros press and let go of, for the input thread to read.
+    pub fn taps(&self) -> &Receiver<Tap> {
+        &self.taps
     }
 
     pub fn press(&self, c: Chord) {
@@ -83,9 +100,10 @@ impl Keyboard {
         let _ = self.keys.send(Out::Up(c));
     }
 
-    pub fn play(&self, steps: Vec<Step>) {
+    /// Plays a macro a button of controller `by` started.
+    pub fn play(&self, steps: Vec<Step>, by: DeviceId) {
         if self.plays.lock().unwrap_or_else(PoisonError::into_inner).admit(&steps) {
-            let _ = self.macros.send(steps);
+            let _ = self.macros.send((steps, by));
         }
     }
 }
@@ -119,10 +137,11 @@ impl Plays {
     }
 }
 
-/// Plays `steps` through the key thread. Once `stop` closes it ends early, with every key it
-/// pressed let go of.
-fn play(keys: &Sender<Out>, steps: &[Step], stop: &Receiver<()>) {
+/// Plays `steps` through the key thread, and its Xbox buttons on `by`'s virtual controller. Once
+/// `stop` closes it ends early, with every key and button it pressed let go of.
+fn play(keys: &Sender<Out>, pads: &Sender<Tap>, by: DeviceId, steps: &[Step], stop: &Receiver<()>) {
     let wait = |d: Duration| !matches!(stop.recv_timeout(d), Err(RecvTimeoutError::Disconnected));
+    let xbox_tap = Duration::from_millis(XBOX_TAP_MS.into());
     for s in steps {
         match *s {
             Step::Keys(c) => {
@@ -130,6 +149,14 @@ fn play(keys: &Sender<Out>, steps: &[Step], stop: &Receiver<()>) {
                 let on = wait(TAP);
                 let _ = keys.send(Out::Up(c));
                 if !on || !wait(TAP) {
+                    return;
+                }
+            }
+            Step::Xbox(b) => {
+                let _ = pads.send(Tap::Down(by, b));
+                let on = wait(xbox_tap);
+                let _ = pads.send(Tap::Up(by, b));
+                if !on || !wait(xbox_tap) {
                     return;
                 }
             }
@@ -347,12 +374,43 @@ mod tests {
         let (stop_tx, stop) = crossbeam_channel::bounded(0);
         let steps = [Step::Keys(c), Step::Wait(5000), Step::Keys(c)];
         let started = std::time::Instant::now();
-        let player = std::thread::spawn(move || play(&keys, &steps, &stop));
+        let (pads, _) = unbounded();
+        let player = std::thread::spawn(move || play(&keys, &pads, 0, &steps, &stop));
         assert_eq!(typed.recv().unwrap(), Out::Down(c));
         drop(stop_tx);
         player.join().unwrap();
         assert!(started.elapsed() < Duration::from_secs(2), "the wait was cut short");
         let rest: Vec<Out> = typed.try_iter().collect();
         assert_eq!(rest, [Out::Up(c)]);
+    }
+
+    #[test]
+    fn a_macro_taps_xbox_buttons_on_the_controller_that_played_it() {
+        use crate::binding::XboxButton;
+        let (a, lb) = (Buttons::of(&[XboxButton::A]), Buttons::of(&[XboxButton::LeftBumper, XboxButton::Up]));
+        let c = Chord { mods: 0, key: 0x41 };
+        let (keys, typed) = unbounded();
+        let (pads, tapped) = unbounded();
+        let (_stop_tx, stop) = crossbeam_channel::bounded(0);
+        let started = std::time::Instant::now();
+        play(&keys, &pads, 7, &[Step::Xbox(a), Step::Keys(c), Step::Xbox(lb)], &stop);
+        let taps: Vec<Tap> = tapped.try_iter().collect();
+        assert_eq!(taps, [Tap::Down(7, a), Tap::Up(7, a), Tap::Down(7, lb), Tap::Up(7, lb)]);
+        assert_eq!(typed.try_iter().collect::<Vec<Out>>(), [Out::Down(c), Out::Up(c)]);
+        assert!(started.elapsed() >= Duration::from_millis(4 * u64::from(XBOX_TAP_MS)), "each button is held, then let go a while");
+    }
+
+    #[test]
+    fn a_stopped_macro_lets_go_of_its_buttons_at_once() {
+        use crate::binding::XboxButton;
+        let a = Buttons::of(&[XboxButton::A]);
+        let (keys, _) = unbounded();
+        let (pads, tapped) = unbounded();
+        let (stop_tx, stop) = crossbeam_channel::bounded(0);
+        let player = std::thread::spawn(move || play(&keys, &pads, 3, &[Step::Xbox(a), Step::Wait(5000)], &stop));
+        assert_eq!(tapped.recv().unwrap(), Tap::Down(3, a));
+        drop(stop_tx);
+        player.join().unwrap();
+        assert_eq!(tapped.try_iter().collect::<Vec<Tap>>(), [Tap::Up(3, a)]);
     }
 }
