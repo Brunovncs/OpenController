@@ -141,7 +141,9 @@ pub fn look(pad: &PadView) -> Look {
         Switch2 if pad.name.contains("Pro Controller") => Look::SwitchPro,
         EightBitDoUltimate2C => Look::Ultimate2C,
         EightBitDoUltimate => Look::Ultimate,
-        EightBitDoFour | EightBitDoPro2 if pad.art == Art::Offset || ultimate => Look::Ultimate2,
+        // 2dc8:3106 is also the first Ultimate (2.4G, or Bluetooth on its receiver) in XInput mode.
+        EightBitDoPro2 if ultimate => Look::Ultimate,
+        EightBitDoFour if pad.art == Art::Offset || ultimate => Look::Ultimate2,
         EightBitDoFour | EightBitDoPro2 => Look::Sn30Pro,
         EightBitDo if pad.art == Art::Retro => Look::Retro,
         EightBitDo if pad.art == Art::Symmetric => Look::Sn30Pro,
@@ -1040,6 +1042,21 @@ mod tests {
         // Over Bluetooth it says it is a DualShock 4, and is drawn as one.
         p = crate::demo::pad(PadKey::Slot(0), "Wireless Controller", Brand::PlayStation, Family::DualShock4, (0x054C, 0x05C4));
         assert_eq!(look(&p), Look::DualShock4);
+    }
+
+    #[test]
+    fn eightbitdo_3106_is_the_first_ultimate_unless_it_says_pro_2() {
+        use open_controller_core::PadKey;
+        let ids = (0x2DC8, 0x3106);
+        let mut p = crate::demo::pad(PadKey::Slot(0), "Ultimate Wireless Controller", Brand::EightBitDo, Family::EightBitDoPro2, ids);
+        assert_eq!(look(&p), Look::Ultimate);
+        assert_eq!(glyphs(&p, Look::Ultimate), Glyphs::Xbox);
+        p.profiles.apply(open_controller_core::profile::Edit::Model(Some("8bitdo-ultimate-bluetooth".into())));
+        assert_eq!(look(&p), Look::Traced("ultimateBluetooth"));
+        assert_eq!(glyphs(&p, look(&p)), Glyphs::Nintendo, "B at the bottom, as printed on it");
+        p.profiles.apply(open_controller_core::profile::Edit::Model(None));
+        p.name = "8BitDo Pro 2 Wired Controller".into();
+        assert_eq!(look(&p), Look::Sn30Pro);
     }
 
     #[test]

@@ -3,6 +3,15 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.8.16
+
+The 8BitDo Ultimate Bluetooth on its receiver is no longer told to move a mode switch it does not
+have. Its back buttons only copy other buttons, set in 8BitDo's app. The first 8BitDo Ultimate on
+its receiver is now drawn as itself, not as the Ultimate 2. If yours is the Ultimate Bluetooth, pick
+it under Model on the Information page to see its own name and Nintendo's letters on the buttons.
+
+Settings carry over.
+
 ## 0.8.15
 
 A button can now press several Xbox buttons at once, like A and B together. Turn on Press several

@@ -295,7 +295,8 @@ pub enum Hint {
     /// An 8BitDo pad in its XInput mode, where its extra buttons send nothing a program can read.
     /// Turned on while holding B, it uses D-input mode.
     EightBitDoDInput,
-    /// An 8BitDo pad with a mode switch on its back (Pro 2) in its XInput position; D is D-input.
+    /// 2dc8:3106, an 8BitDo pad in XInput mode: the Ultimate 2.4G or Pro 2 with their switch on X
+    /// (D is D-input), or the Ultimate Bluetooth on its receiver, which has no D-input mode.
     EightBitDoSwitchD,
     /// An 8BitDo Ultimate 2C on its receiver, where L4 and R4 are hidden; over Bluetooth they work.
     EightBitDo2CBluetooth,

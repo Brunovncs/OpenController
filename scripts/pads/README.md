@@ -8,6 +8,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | Look | Traced from |
 | --- | --- |
 | `ultimate2`, `ultimate2c`, `ultimate`, `sn30pro` (Pro 2), `retro` (SN30) | The vector drawings in 8BitDo's manuals, download.8bitdo.com/Manual/Controller/ |
+| `ultimateBluetooth` | `ultimate` with Nintendo's letters, as the Switch-made Ultimate Bluetooth prints them (`derive_ultimate_bt.py`) |
 | `dualsense` | The front view in Sony's DualSense manual (CFI-ZCT1) |
 | `dualsenseEdge` | The DualSense, with the Edge's Fn buttons (`derive_edge.py`) |
 | `ds4`, `ds3` | "Dualshock 4 Layout.svg" and "Dualshock3 Layout.svg" on Wikimedia Commons, by Tokyoship, CC BY 3.0 |

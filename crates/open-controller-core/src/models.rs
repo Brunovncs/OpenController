@@ -992,6 +992,8 @@ pub static MODELS: &[Row] = &[
 pub static ALIASES: &[Alias] = &[
     (0x057e, 0x2009, "onikuma-c1", "Onikuma", "Onikuma C1", "onikumaC1"),
     (0x057e, 0x2009, "leadjoy-xeno-pro", "LeadJoy", "LeadJoy Xeno Pro", "leadjoyXenoPro"),
+    // On its receiver it is 2dc8:3106 like the Ultimate 2.4G, which prints Xbox's letters; it prints Nintendo's.
+    (0x2dc8, 0x3106, "8bitdo-ultimate-bluetooth", "8BitDo", "8BitDo Ultimate Bluetooth", "ultimateBluetooth"),
 ];
 
 /// (vendor, product, drawing), for `drawing`.
@@ -1249,6 +1251,7 @@ mod tests {
         assert_eq!(alias(0x057e, 0x2009, Some("onikuma-c1")).map(|a| a.4), Some("Onikuma C1"));
         assert_eq!(alias(0x057e, 0x2009, Some("leadjoy-xeno-pro")).map(|a| a.5), Some("leadjoyXenoPro"));
         assert_eq!(aliases(0x057e, 0x2009).count(), 2);
+        assert_eq!(alias(0x2dc8, 0x3106, Some("8bitdo-ultimate-bluetooth")).map(|a| a.5), Some("ultimateBluetooth"));
         assert!(alias(0x057e, 0x2009, Some("gone")).is_none() && alias(0x057e, 0x2009, None).is_none());
         assert!(alias(0x054c, 0x05c4, Some("onikuma-c1")).is_none(), "a key only counts for its own ids");
     }
