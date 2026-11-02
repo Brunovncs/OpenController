@@ -3,10 +3,12 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.17
 
 Wii Remotes paired over Bluetooth on a Mac now work as controllers, with what is plugged into them
 like the Classic Controller Pro. Before, they showed up with no buttons at all.
+
+Settings carry over.
 
 ## 0.8.16
 
