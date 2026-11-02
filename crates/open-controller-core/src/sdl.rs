@@ -110,9 +110,10 @@ impl Sdl {
             for (name, value) in hints {
                 SDL_SetHint(name, value.as_ptr());
             }
-            // A Wii Remote on Bluetooth gives Windows no buttons or axes; only SDL's Wii driver
-            // reads it, and SDL leaves that off by default (it fails on the DolphinBar).
-            #[cfg(windows)]
+            // A Wii Remote on Bluetooth gives Windows and macOS no buttons or axes; only SDL's
+            // Wii driver reads it, and SDL leaves that off by default (it fails on the
+            // DolphinBar). Linux has its own driver in the kernel.
+            #[cfg(any(windows, target_os = "macos"))]
             SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_WII, c"1".as_ptr());
             if !SDL_Init(SDL_INIT_GAMEPAD) {
                 return Err(error());
