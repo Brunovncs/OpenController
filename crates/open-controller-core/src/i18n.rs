@@ -1,8 +1,11 @@
-//! Interface text in English and Brazilian Portuguese. English until the user picks another
-//! language in the settings, which keep the choice. Strings with `{}` take one value, filled in
-//! by [`fill`].
+//! Interface text in English, Brazilian Portuguese and Simplified Chinese. English until the
+//! user picks another language in the settings, which keep the choice. Strings with `{}` take
+//! one value, filled in by [`fill`].
 
 use serde::{Deserialize, Serialize};
+
+mod zh;
+pub use zh::ZH;
 
 /// A language the interface is written in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -11,16 +14,19 @@ pub enum Lang {
     #[default]
     En,
     Pt,
+    #[serde(rename = "zh-cn", alias = "zh", alias = "zh-CN")]
+    ZhCn,
 }
 
 impl Lang {
-    pub const ALL: [Lang; 2] = [Lang::En, Lang::Pt];
+    pub const ALL: [Lang; 3] = [Lang::En, Lang::Pt, Lang::ZhCn];
 
     /// Its name in itself, as language pickers show it.
     pub fn name(self) -> &'static str {
         match self {
             Lang::En => "English",
             Lang::Pt => "Português",
+            Lang::ZhCn => "简体中文",
         }
     }
 }
@@ -1382,14 +1388,16 @@ pub fn fill(template: &str, value: impl std::fmt::Display) -> String {
     template.replacen("{}", &value.to_string(), 1)
 }
 
-/// The text in `lang`. `OPEN_CONTROLLER_LANG=en` or `pt` overrides it.
+/// The text in `lang`. `OPEN_CONTROLLER_LANG=en`, `pt` or `zh-cn` overrides it.
 pub fn text(lang: Lang) -> &'static Text {
     match std::env::var("OPEN_CONTROLLER_LANG").as_deref() {
         Ok("en") => &EN,
         Ok("pt") => &PT,
+        Ok("zh" | "zh-cn" | "zh-CN") => &ZH,
         _ => match lang {
             Lang::En => &EN,
             Lang::Pt => &PT,
+            Lang::ZhCn => &ZH,
         },
     }
 }
@@ -1402,6 +1410,8 @@ mod tests {
     fn fill_replaces_the_placeholder() {
         assert_eq!(fill(EN.player, 2), "Player 2");
         assert_eq!(fill(PT.wait_ms, 50), "Esperar 50 ms");
+        assert_eq!(fill(ZH.player, 2), "玩家 2");
+        assert_eq!(fill(ZH.wait_ms, 50), "等待 50 毫秒");
     }
 
     #[test]
@@ -1409,5 +1419,13 @@ mod tests {
         assert_eq!(serde_json::to_string(&Lang::Pt).unwrap(), r#""pt""#);
         assert_eq!(serde_json::from_str::<Lang>(r#""en""#).unwrap(), Lang::En);
         assert_eq!(Lang::default(), Lang::En);
+    }
+
+    #[test]
+    fn simplified_chinese_language_names_round_trip() {
+        assert_eq!(serde_json::to_string(&Lang::ZhCn).unwrap(), r#""zh-cn""#);
+        for name in ["zh", "zh-cn", "zh-CN"] {
+            assert_eq!(serde_json::from_str::<Lang>(&format!("\"{name}\"")).unwrap(), Lang::ZhCn);
+        }
     }
 }
