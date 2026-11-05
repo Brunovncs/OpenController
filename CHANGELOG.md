@@ -3,6 +3,13 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.8.18
+
+The d-pad now works on the Wii U Pro Controller, the Classic Controller and the Wii Remote paired
+over Bluetooth. Before, it did nothing while every other button worked.
+
+Settings carry over.
+
 ## 0.8.17
 
 Wii Remotes paired over Bluetooth on a Mac now work as controllers, with what is plugged into them
