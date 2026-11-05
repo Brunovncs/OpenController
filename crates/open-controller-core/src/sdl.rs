@@ -293,7 +293,8 @@ impl Sdl {
         (!gp.is_null()).then(|| {
             let path = text(unsafe { SDL_GetGamepadPath(gp) }).unwrap_or_default();
             let pressure = unsafe { has_pressure(gp) };
-            Gamepad { gp, rumbler: Rumbler::start(SDL_JoystickID(id), path), pressure }
+            let wii_dpad = unsafe { wii_dpad_as_buttons(gp) };
+            Gamepad { gp, rumbler: Rumbler::start(SDL_JoystickID(id), path), pressure, wii_dpad }
         })
     }
 }
@@ -539,6 +540,8 @@ pub struct Gamepad {
     rumbler: Rumbler,
     /// Its pressure-sensitive buttons come as joystick axes [`PRESSURE_AXIS`] on.
     pressure: bool,
+    /// Its d-pad comes as joystick buttons, which its mapping does not read.
+    wii_dpad: bool,
 }
 
 const BUTTONS: u32 = button::COUNT;
@@ -558,6 +561,28 @@ unsafe fn has_pressure(gp: *mut SDL_Gamepad) -> bool {
             && SDL_GetGamepadType(gp) == SDL_GAMEPAD_TYPE_PS3
             && SDL_GetJoystickGUID(js).data[14] == b'h'
             && SDL_GetNumJoystickAxes(js) == PRESSURE_AXIS + mapping::PRESSURE.len() as i32
+    }
+}
+
+/// Whether SDL's Wii driver reads the controller and gives its d-pad as joystick buttons 11 to
+/// 14, the gamepad buttons' own numbers, with no hat. SDL's mappings for its HIDAPI drivers read
+/// the d-pad from hat 0 (`SDL_FixupHIDAPIMapping`), so through the gamepad it never moves. The
+/// GUID's last byte is the Wii extension the driver found, 128 to 131.
+///
+/// # Safety
+/// `gp` must be an open gamepad.
+unsafe fn wii_dpad_as_buttons(gp: *mut SDL_Gamepad) -> bool {
+    unsafe {
+        let js = SDL_GetGamepadJoystick(gp);
+        if js.is_null() {
+            return false;
+        }
+        let guid = SDL_GetJoystickGUID(js);
+        SDL_GetJoystickVendor(js) == 0x057E
+            && guid.data[14] == b'h'
+            && (128..=131).contains(&guid.data[15])
+            && SDL_GetNumJoystickHats(js) == 0
+            && SDL_GetNumJoystickButtons(js) > button::DPAD_RIGHT as i32
     }
 }
 
@@ -721,6 +746,14 @@ impl Gamepad {
             }
         }
         b |= self.touch_buttons(b & 1 << button::TOUCHPAD != 0);
+        if self.wii_dpad {
+            let js = unsafe { SDL_GetGamepadJoystick(self.gp) };
+            for i in button::DPAD_UP..=button::DPAD_RIGHT {
+                if unsafe { SDL_GetJoystickButton(js, i as i32) } {
+                    b |= 1 << i;
+                }
+            }
+        }
         out.buttons = b;
         for i in 0..axis::COUNT {
             out.axes[i] = unsafe { SDL_GetGamepadAxis(self.gp, SDL_GamepadAxis(i as i32)) };
