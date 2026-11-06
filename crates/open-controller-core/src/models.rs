@@ -709,6 +709,8 @@ pub static MODELS: &[Row] = &[
     (0x046d, 0xc21a, Family::Other, "Logitech Precision Gamepad"),
     // A flight stick, read through OpenController's own mapping in `gamecontrollerdb.txt`.
     (0x046d, 0xc215, Family::Other, "Logitech Extreme 3D Pro"),
+    // A racing wheel, read through OpenController's own mapping in `gamecontrollerdb.txt`.
+    (0x046d, 0xc24f, Family::Other, "Logitech G29 Driving Force"),
     (0x046d, 0xca84, Family::Xbox, "Logitech Cordless Controller for Xbox"),
     (0x046d, 0xca88, Family::Xbox, "Logitech Compact Controller for Xbox"),
     (0x047d, 0x4005, Family::Other, "Gravis Eliminator GamePad Pro"),
@@ -1038,6 +1040,7 @@ pub static DRAWINGS: &[(u16, u16, &str)] = &[
     (0x0f0d, 0x0165, "horiOcta"),
     (0x0f0d, 0x01be, "horiOcta"),
     (0x046d, 0xc215, "logitechExtreme3d"),
+    (0x046d, 0xc24f, "logitechG29"),
     (0x046d, 0xc216, "logitechF310"),
     (0x046d, 0xc218, "logitechF310"),
     (0x046d, 0xc219, "logitechF310"),

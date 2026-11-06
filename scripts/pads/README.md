@@ -41,6 +41,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | `leadjoyXenoPro` | LeadJoy's front render of the Xeno Pro on leadjoy.ai (`XenoPro_mainImages_01.png`), laid on white and cropped to the controller; the shoulders, light-coloured on a dark body, are drawn by hand |
 | `psClassic` | "PlayStation Controller transparent.png" on Wikimedia Commons, CC BY-SA 3.0 (Sony publishes no straight front view) |
 | `logitechExtreme3d` | Logitech's top view of the Extreme 3D Pro on logitechg.com (`3dpro-gallery-3.png`), measured and drawn by hand from above (`derive_flightstick.py`); every flight stick without a drawing of its own gets it |
+| `logitechG29` | Logitech's front view of the G29 on logitechg.com (`g29-playstation-front-angle-gallery-8.png`), measured and drawn by hand (`derive_wheel.py`); every wheel without a drawing of its own gets it |
 | `generic`, `handheld` | The Ultimate 2C's outline with neutral buttons, and a handheld drawn by hand (`derive_misc.py`) |
 
 `looks/*.json` says, for each, where its source is and where each part is (a seed point inside it,
@@ -53,8 +54,10 @@ look; `build_pads.py` joins them:
 
 A flight stick's grip, seen from above, is a `grip` path on its stick: it leans with the stick
 and turns with the twist (the right stick's x) by up to `twist` degrees, carrying the buttons
-marked `grip`. A throttle is a `levers` slot, filled from the back as far as its trigger. A key
-that is not round can still carry a `label`, printed in its middle.
+marked `grip`. A wheel is a `grip` with `steer` instead: it turns with the left stick's x by up
+to `steer` degrees and does not lean, and the `panels` marked `grip` (its plate, its hub) turn
+with it. A throttle is a `levers` slot, filled from the back as far as its trigger; a pedal is one
+with `"handle": false`. A key that is not round can still carry a `label`, printed in its middle.
 
 The looks traced from one model's pictures are given to its USB ids in `DRAWINGS`, in
 `crates/open-controller-core/src/models.rs`; the rest are drawn by family. A model that copies

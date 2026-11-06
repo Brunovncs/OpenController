@@ -888,3 +888,10 @@ xinput,XInput Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,
 # bumpers, the six on the base as View, Menu, the stick clicks, the left trigger and one of its own.
 030000006d04000015c2000000000000,Logitech Extreme 3D Pro,a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,back:b6,start:b7,leftstick:b8,rightstick:b9,lefttrigger:b10,misc1:b11,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,lefty:a1,rightx:a2,righttrigger:a3~,platform:Windows,
 030000006d04000015c2000010010000,Logitech Extreme 3D Pro,a:b0,b:b1,x:b2,y:b3,leftshoulder:b4,rightshoulder:b5,back:b6,start:b7,leftstick:b8,rightstick:b9,lefttrigger:b10,misc1:b11,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,lefty:a1,rightx:a2,righttrigger:a3~,platform:Linux,
+# Logitech G29, a racing wheel SDL leaves without a mapping on purpose, as its Logitech wheel driver
+# (SDL_hidapi_lg4ff.c, 'h' in the GUID) reads it on Linux and macOS: the wheel as the left stick,
+# the throttle and the brake as the right and left triggers, full when pressed, the paddles as the
+# bumpers. The face buttons and the rest follow the line SDL had for it in 2022. R2, L2, plus, minus
+# and the dial's press become extra buttons; the dial's turn, the clutch and the shifter stay out.
+030000006d0400004fc2000000006800,Logitech G29,a:b0,b:b2,x:b1,y:b3,rightshoulder:b4,leftshoulder:b5,back:b8,start:b9,rightstick:b10,leftstick:b11,guide:b24,misc2:b6,misc3:b7,misc4:b19,misc5:b20,misc6:b23,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,righttrigger:a2~,lefttrigger:a3~,platform:Linux,
+030000006d0400004fc2000000006800,Logitech G29,a:b0,b:b2,x:b1,y:b3,rightshoulder:b4,leftshoulder:b5,back:b8,start:b9,rightstick:b10,leftstick:b11,guide:b24,misc2:b6,misc3:b7,misc4:b19,misc5:b20,misc6:b23,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,righttrigger:a2~,lefttrigger:a3~,platform:Mac OS X,

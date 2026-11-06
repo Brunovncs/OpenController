@@ -176,6 +176,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     if std::env::var_os("OPEN_CONTROLLER_DEMO_STICKS").is_some() {
         pads.extend(flight_sticks());
         pads.push(twin_shock(mapped));
+        pads.push(wheel());
     }
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
@@ -237,6 +238,19 @@ fn flight_sticks() -> [PadView; 2] {
     t16000.store = None;
     t16000.raw = Some(RawInput { buttons: 1, axes: vec![1200, -8000, 300, 32767], hats: vec![0] });
     [e3d, t16000]
+}
+
+/// A Logitech G29, left to racing games as it starts, turned a quarter to the right with the
+/// throttle most of the way down and R2 held.
+fn wheel() -> PadView {
+    let mut g29 = pad(PadKey::Slot(12), "Logitech G29 Driving Force", Brand::Other, Family::Other, (0x046D, 0xC24F));
+    g29.form = Form::Wheel;
+    g29.role = Role::KeptNative;
+    g29.hidden = false;
+    g29.store = Some("model:046d:c24f".into());
+    g29.extras = vec![extras::MISC2, extras::MISC3, extras::MISC4, extras::MISC5, extras::MISC6];
+    g29.input = input(&[u32::from(extras::MISC2)], [6554, 0, 0, 0, 0, 24000]);
+    g29
 }
 
 /// A PC twin shock pad SDL has no layout for, pressing every part in turn on its own so mapping

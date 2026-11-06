@@ -886,6 +886,27 @@ mod tests {
     ];
     /// The Logitech Extreme 3D Pro, a flight stick SDL has no line for anywhere.
     const EXTREME_3D: [&str; 2] = ["030000006d04000015c2000000000000", "030000006d04000015c2000010010000"];
+    /// The Logitech G29 as SDL's Logitech wheel driver reads it, any firmware: SDL leaves wheels
+    /// without a mapping on purpose.
+    const G29: &str = "030000006d0400004fc2000000006800";
+
+    #[test]
+    fn the_g29_is_mapped_alike_on_linux_and_macos() {
+        let lines: Vec<&str> = MAPPINGS.lines().filter(|l| l.starts_with(G29)).collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].ends_with("platform:Linux,") && lines[1].ends_with("platform:Mac OS X,"));
+        let body = |l: &str| l.split_once(',').and_then(|(_, b)| b.rsplit_once("platform:").map(|(b, _)| b.to_string()));
+        assert_eq!(body(lines[0]), body(lines[1]));
+        let b = body(lines[0]).unwrap();
+        // The wheel, the throttle and the brake full when pressed, the paddles, the PS button.
+        for part in
+            ["leftx:a0,", "righttrigger:a2~,", "lefttrigger:a3~,", "rightshoulder:b4,", "leftshoulder:b5,", "guide:b24,", "dpup:h0.1,"]
+        {
+            assert!(b.contains(part), "{part} in {b}");
+        }
+        // The clutch and the shifter are left out.
+        assert!(!b.contains(":a1,") && !b.contains(":b12,"), "{b}");
+    }
 
     #[test]
     fn the_extreme_3d_is_mapped_alike_on_both_systems() {
@@ -906,7 +927,7 @@ mod tests {
         assert!(lines.len() > 500);
         let guid = |l: &str| l.split(',').next().map(|g| g.len() == 32 || g == "xinput").unwrap_or(false);
         assert!(lines.iter().all(|l| guid(l)), "{:?}", lines.iter().find(|l| !guid(l)));
-        let linux: Vec<&str> = lines.iter().filter(|l| !l.ends_with("platform:Windows,")).copied().collect();
+        let linux: Vec<&str> = lines.iter().filter(|l| !l.ends_with("platform:Windows,") && !l.starts_with(G29)).copied().collect();
         assert!(linux.iter().all(|l| l.ends_with("platform:Linux,")), "{linux:?}");
         let linux: Vec<&str> = linux.into_iter().filter(|l| !EXTREME_3D.iter().any(|g| l.starts_with(g))).collect();
         let ids: Vec<&str> = linux.iter().filter_map(|l| l.split(',').next()).collect();

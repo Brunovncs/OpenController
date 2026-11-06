@@ -1000,6 +1000,30 @@
    ]
   },
   {
+   "id": "046d:c24f",
+   "name": "Logitech G29 Driving Force",
+   "family": "Other",
+   "layout": null,
+   "models": [
+    "Logitech G29 Driving Force Racing Wheel (racing wheel, read through OpenController's own SDL mapping for SDL's Logitech wheel driver)"
+   ],
+   "reported": [
+    "Logitech G29"
+   ],
+   "modes": [
+    "usb"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libsdl-org/SDL/blob/release-3.4.x/src/joystick/hidapi/SDL_hidapi_lg4ff.c",
+    "https://github.com/libsdl-org/SDL/commit/33a68f575f484723aa326f8a2d96f2b8a084da4a",
+    "https://github.com/sonik-br/lgff_wheel_adapter/blob/main/pico_lgff_wheel_adapter/reports.h",
+    "A user's report from OpenController 0.8.18 on Linux (November 2026): 046d:c24f, SDL's HIDAPI driver, 4 axes, 25 buttons, 1 hat"
+   ]
+  },
+  {
    "id": "046d:ca84",
    "name": "Logitech Cordless Controller for Xbox",
    "family": "Xbox",
