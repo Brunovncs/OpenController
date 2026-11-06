@@ -437,12 +437,13 @@ fn has_display() -> bool {
     ["WAYLAND_DISPLAY", "DISPLAY"].iter().any(|v| std::env::var_os(v).is_some_and(|d| !d.is_empty()))
 }
 
-/// `OPEN_CONTROLLER_LANG=en` or `pt` shows the window in that language whatever was picked, for
-/// screenshots.
+/// `OPEN_CONTROLLER_LANG=en`, `pt` or `zh-cn` shows the window in that language whatever was
+/// picked, for screenshots.
 fn forced_lang() -> Option<Lang> {
     match std::env::var("OPEN_CONTROLLER_LANG").ok()?.as_str() {
         "en" => Some(Lang::En),
         "pt" => Some(Lang::Pt),
+        "zh" | "zh-cn" | "zh-CN" => Some(Lang::ZhCn),
         _ => None,
     }
 }
