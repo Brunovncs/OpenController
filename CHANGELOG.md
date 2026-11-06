@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.19
 
 The Logitech G29 now has its name and an Xbox layout on Linux and Mac. It is still left to racing
 games as it is. To play a gamepad game with it, turn off Keep native on its page: the wheel steers
@@ -11,6 +11,8 @@ as the left stick, the throttle and the brake are the triggers and the paddles a
 
 The G29 also has its own drawing, which turns as you steer and fills its pedals as you press them.
 Other racing wheels are drawn as the G29 too, instead of as a gamepad.
+
+Settings carry over.
 
 ## 0.8.18
 
