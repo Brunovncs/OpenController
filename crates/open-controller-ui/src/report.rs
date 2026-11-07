@@ -852,7 +852,7 @@ mod tests {
         assert_eq!(assignments(&Bindings::new()), "none");
         let mut b = Bindings::new();
         b.insert(0, Action::Xbox(XboxButton::B));
-        b.insert(17, Action::Keys(Chord { mods: modifier::CTRL, key: 0x43 }));
+        b.insert(17, Action::Keys(Chord::new(modifier::CTRL, 0x43)));
         assert_eq!(assignments(&b), "south (A/✕) → Xbox B, left paddle 1 → Ctrl+C");
     }
 

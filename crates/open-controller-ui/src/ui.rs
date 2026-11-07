@@ -8,10 +8,12 @@ use crate::widgets::{caption, icon_button, strong};
 use crate::{Connection, Model};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, Context, Entity, FocusHandle, Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent, ModifiersChangedEvent,
-    MouseButton, ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowAppearance, div, img, px,
+    AnyElement, Context, Entity, FocusHandle, Focusable, Image, ImageFormat, InteractiveElement, IntoElement, KeyDownEvent,
+    ModifiersChangedEvent, MouseButton, ParentElement, Render, StatefulInteractiveElement, Styled, Subscription, Window, WindowAppearance,
+    div, img, px,
 };
 use open_controller_core::binding::{self, Action, Buttons, Step};
+use open_controller_core::button_mode::Mode;
 use open_controller_core::ipc::ToTray;
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::profile::Edit;
@@ -53,7 +55,31 @@ pub enum Tab {
     Xbox,
     Key,
     Macro,
+    Combinations,
     Nothing,
+}
+
+impl From<Mode> for Tab {
+    fn from(mode: Mode) -> Self {
+        match mode {
+            Mode::Xbox => Self::Xbox,
+            Mode::Key => Self::Key,
+            Mode::Macro => Self::Macro,
+            Mode::Combinations => Self::Combinations,
+            Mode::Nothing => Self::Nothing,
+        }
+    }
+}
+impl From<Tab> for Mode {
+    fn from(tab: Tab) -> Self {
+        match tab {
+            Tab::Xbox => Self::Xbox,
+            Tab::Key => Self::Key,
+            Tab::Macro => Self::Macro,
+            Tab::Combinations => Self::Combinations,
+            Tab::Nothing => Self::Nothing,
+        }
+    }
 }
 
 /// The assignment being edited: one extra button of the open controller.
@@ -120,6 +146,12 @@ pub struct MainView {
     pub screen: Screen,
     pub section: Section,
     pub editor: Option<Editor>,
+    pub shortcut_editor: Option<crate::shortcuts::ShortcutEditor>,
+    pub combination_help: bool,
+    pub press_meter: Option<crate::press_meter::MeterUi>,
+    pub config: crate::configuration::ConfigUi,
+    pub mouse_picker: Option<crate::mouse_picker::MousePicker>,
+    pub editing_profile: Option<(usize, String)>,
     pub confirm_reset: bool,
     pub profile_menu: bool,
     pub renaming: Option<crate::detail::Rename>,
@@ -174,6 +206,11 @@ impl MainView {
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             // Behind a game, the drawings need not follow every frame of input.
             this.send(ToTray::Focused(window.is_window_active()), cx);
+            if !window.is_window_active() {
+                this.stop_press_meter(cx);
+                this.stop_shortcut_recording(cx);
+                this.stop_shortcut_key_capture(cx);
+            }
             // GPUI tells of light and dark changing but not of the accent colour, which is
             // picked in Windows' settings: coming back from them makes the window active.
             let now = theme(window);
@@ -192,6 +229,12 @@ impl MainView {
             screen: Screen::Home,
             section: Section::Buttons,
             editor: None,
+            shortcut_editor: None,
+            combination_help: false,
+            press_meter: None,
+            config: Default::default(),
+            mouse_picker: None,
+            editing_profile: None,
             confirm_reset: false,
             profile_menu: false,
             renaming: None,
@@ -260,6 +303,11 @@ impl MainView {
     /// before is told again. The snapshot and the preferences come on their own.
     pub fn linked(&self, window: &Window, cx: &mut Context<Self>) {
         self.send(ToTray::Focused(window.is_window_active()), cx);
+        if self.shortcut_editor.as_ref().is_some_and(|e| e.recorder.is_some())
+            && let Screen::Device(key, _) = self.screen
+        {
+            self.send(ToTray::RecordShortcuts(Some(key)), cx);
+        }
         let m = self.model.read(cx);
         if let Some(r) = &self.report
             && !m.diagnosis.as_ref().is_some_and(|(k, _)| *k == r.key)
@@ -268,8 +316,16 @@ impl MainView {
         }
     }
 
-    fn reset_page(&mut self) {
+    fn reset_page(&mut self, cx: &mut Context<Self>) {
+        self.close_shortcut(cx);
+        self.combination_help = false;
+        self.stop_press_meter(cx);
+        self.press_meter = None;
+        self.config.pending = None;
+        self.config.status = None;
+        self.mouse_picker = None;
         self.editor = None;
+        self.editing_profile = None;
         self.confirm_reset = false;
         self.profile_menu = false;
         self.renaming = None;
@@ -285,7 +341,7 @@ impl MainView {
         let pad = snap.pads.iter().find(|p| p.key == key);
         self.screen = Screen::Device(key, pad.and_then(|p| p.store.clone()));
         self.section = Section::Buttons;
-        self.reset_page();
+        self.reset_page(cx);
         self.learn = None;
         self.stick_right = false;
         self.held = pad.map(extras_held).unwrap_or(0);
@@ -294,7 +350,7 @@ impl MainView {
 
     pub fn home(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Home;
-        self.reset_page();
+        self.reset_page(cx);
         self.learn = None;
         self.follow = None;
         cx.notify();
@@ -302,7 +358,7 @@ impl MainView {
 
     pub fn settings(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Settings;
-        self.reset_page();
+        self.reset_page(cx);
         self.learn = None;
         self.follow = None;
         self.read_installed(cx);
@@ -311,7 +367,7 @@ impl MainView {
 
     pub fn show(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
-        self.reset_page();
+        self.reset_page(cx);
         cx.notify();
     }
 
@@ -379,18 +435,13 @@ impl MainView {
 
     /// Opens the editor for `button`, on the tab of what it does now.
     pub fn edit(&mut self, pad: &PadView, button: u8, cx: &mut Context<Self>) {
+        self.close_shortcut(cx);
         if self.editor.as_ref().is_some_and(|e| e.button == button) {
             self.editor = None;
         } else {
             let current = pad.profiles.active().bindings.get(&button);
             let keys_only = crate::detail::native(pad);
-            let tab = match current {
-                None if keys_only => Tab::Key,
-                None if open_controller_core::binding::is_normal(button) => Tab::Nothing,
-                Some(Action::Xbox(_) | Action::Combo(_)) | None => Tab::Xbox,
-                Some(Action::Keys(_)) => Tab::Key,
-                Some(Action::Macro(_)) => Tab::Macro,
-            };
+            let tab = if keys_only && current.is_none() { Tab::Key } else { pad.profiles.active().button_mode(button).into() };
             let steps = match current {
                 Some(Action::Macro(s)) => s.clone(),
                 _ => Vec::new(),
@@ -409,6 +460,28 @@ impl MainView {
             });
         }
         self.confirm_reset = false;
+        cx.notify();
+    }
+
+    pub fn select_button_tab(&mut self, key: PadKey, button: u8, tab: Tab, cx: &mut Context<Self>) {
+        self.close_shortcut(cx);
+        let Some(pad) = self.pad(key, cx) else { return };
+        let mut preview = pad.profiles.active().clone();
+        preview.select_button_mode(button, tab.into());
+        if let Some(e) = self.editor.as_mut() {
+            e.tab = tab;
+            e.recording = false;
+            e.other_keys = false;
+            e.holding = 0;
+            e.last_key = None;
+            e.xbox_held = None;
+            e.steps = match preview.bindings.get(&button) {
+                Some(Action::Macro(s)) => s.clone(),
+                _ => Vec::new(),
+            };
+            e.several = matches!(preview.bindings.get(&button), Some(Action::Combo(_)));
+        }
+        self.edit_profiles(&pad, Edit::ButtonMode { button, mode: tab.into() }, cx);
         cx.notify();
     }
 
@@ -443,7 +516,23 @@ impl MainView {
         if let Some(m) = self.measuring.as_mut().filter(|m| m.key == pad.key) {
             m.sample(&pad.input);
         }
+        let identity = (pad.profiles.active, pad.profiles.active().name.clone());
+        if self.editing_profile.as_ref().is_some_and(|old| old != &identity) {
+            self.close_shortcut(cx);
+            self.stop_press_meter(cx);
+            self.press_meter = None;
+            self.editor = None;
+            self.mouse_picker = None;
+            self.config.pending = None;
+        }
+        self.editing_profile = Some(identity);
+        self.feed_press_meter(&snap);
         self.feed_learning(pad);
+        if self.shortcut_editor.is_some() {
+            self.feed_shortcut(pad, cx);
+            self.held = extras_held(pad);
+            return;
+        }
         self.record_xbox(pad, cx);
         let held = extras_held(pad);
         let pressed = held & !self.held;
@@ -478,7 +567,28 @@ impl MainView {
 
     fn key_down(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = ev.keystroke.key.as_str();
-        let escape = key == "escape";
+        let escape = key == "escape" && keys::mods(&ev.keystroke.modifiers) == 0;
+        if self.combination_help {
+            if escape {
+                self.combination_help = false;
+                cx.notify();
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if self.shortcut_editor.is_some() {
+            if !escape
+                && self
+                    .shortcut_editor
+                    .as_ref()
+                    .is_some_and(|e| e.name.focus_handle(cx).is_focused(window) || e.hold.focus_handle(cx).is_focused(window))
+            {
+                return;
+            }
+            self.shortcut_key(ev, cx);
+            cx.stop_propagation();
+            return;
+        }
         if self.report.is_some() {
             if escape {
                 self.close_report(window, cx);
@@ -550,6 +660,10 @@ impl MainView {
     }
 
     fn modifiers_changed(&mut self, ev: &ModifiersChangedEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(e) = self.shortcut_editor.as_mut().filter(|e| e.key_recording) {
+            e.holding = keys::mods(&ev.modifiers);
+            cx.notify();
+        }
         if let Some(e) = self.editor.as_mut().filter(|e| e.recording) {
             e.holding = keys::mods(&ev.modifiers);
             cx.notify();
@@ -637,6 +751,7 @@ impl Render for MainView {
             },
         };
         let report = self.render_report(cx);
+        let combination_help = self.render_combination_help(cx);
         let page = div()
             .id("root")
             .relative()
@@ -660,7 +775,8 @@ impl Render for MainView {
                         .child(div().w_full().max_w(px(max_w)).px(px(layout::GUTTER)).pt(px(28.)).pb(px(40.)).child(content)),
                 ),
             )
-            .children(report);
+            .children(report)
+            .children(combination_help);
         crate::frame::frame(page.into_any_element(), &t, window)
     }
 }
@@ -687,7 +803,7 @@ mod tests {
 
     #[test]
     fn a_recorded_pause_leaves_out_the_time_a_tap_takes() {
-        let (a, key) = (Step::Xbox(Buttons::of(&[XboxButton::A])), Step::Keys(Chord { mods: 0, key: 0x41 }));
+        let (a, key) = (Step::Xbox(Buttons::of(&[XboxButton::A])), Step::Keys(Chord::new(0, 0x41)));
         let mut e = editor();
         let t = Instant::now();
         assert!(e.record(a, t));

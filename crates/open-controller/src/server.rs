@@ -142,7 +142,9 @@ fn serve(pipe: &Pipe, control: &Control, notify: &Notify) {
             let what = notify.pending.swap(0, Ordering::AcqRel);
             let mut sent = Ok(());
             if what & PREFS != 0 {
-                sent = pipe.send(&ToWindow::Prefs(control.prefs()));
+                sent = pipe
+                    .send(&ToWindow::Prefs(control.prefs()))
+                    .and_then(|_| pipe.send(&ToWindow::ActionLibrary(control.action_library())));
             }
             if sent.is_ok() && what & SNAPSHOT != 0 {
                 sent = pipe.send(&ToWindow::Snapshot(control.engine.snapshot()));

@@ -798,6 +798,17 @@ impl Gamepad {
         if ok { Ok(()) } else { Err(error()) }
     }
 
+    /// A native game can change the report mode while SDL's handle stays open. Ask the
+    /// Switch Pro HIDAPI driver for full reports again when emulation takes over.
+    pub fn restore_switch_input_mode(&self) -> Result<(), String> {
+        if unsafe { SDL_GetRealGamepadType(self.gp) } != SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO {
+            return Ok(());
+        }
+        // Switch subcommand 0x03 (Set Input Report Mode), 0x30 (Full Controller State).
+        let request = [0x03u8, 0x30];
+        unsafe { SDL_SendGamepadEffect(self.gp, request.as_ptr().cast(), request.len() as i32) }.then_some(()).ok_or_else(error)
+    }
+
     /// The accelerometer's last reading in m/s², if it is on.
     pub fn accel(&self) -> Option<[f32; 3]> {
         let mut v = [0f32; 3];

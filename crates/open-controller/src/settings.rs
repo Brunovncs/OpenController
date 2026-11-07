@@ -2,6 +2,7 @@
 
 use open_controller_core::i18n::Lang;
 use open_controller_core::platform::VirtualDriver;
+use open_controller_core::portable::ActionLibrary;
 use open_controller_core::profile::{Profiles, readable_fields};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -27,6 +28,7 @@ pub struct Settings {
     pub language: Lang,
     /// Each controller's profiles, by where its settings are kept.
     pub controllers: BTreeMap<String, Profiles>,
+    pub action_library: ActionLibrary,
     /// The driver that makes the virtual controllers on Windows: ViGEmBus, or the experimental
     /// VIIPER. A value this version does not know reads as ViGEmBus; a version without the field
     /// ignores it.
@@ -48,6 +50,7 @@ impl Default for Settings {
             check_updates: true,
             language: Lang::En,
             controllers: BTreeMap::new(),
+            action_library: ActionLibrary::default(),
             virtual_driver: VirtualDriver::ViGEmBus,
             split_joycons: false,
             mappings: BTreeMap::new(),
@@ -67,6 +70,7 @@ impl Settings {
             keep_bad(dir, &bytes);
             Settings::salvage(&bytes)
         });
+        s.action_library = std::mem::take(&mut s.action_library).validate().unwrap_or_default();
         s.controllers = std::mem::take(&mut s.controllers).into_iter().map(|(k, v)| (k, v.sanitised())).collect();
         s
     }
@@ -327,7 +331,7 @@ mod tests {
         let p = s.controllers.entry("serial:e417d8bc366c".into()).or_default();
         p.apply(Edit::Bind { button: 17, action: Some(Action::Xbox(XboxButton::A)) });
         p.apply(Edit::Add("Racing".into()));
-        p.apply(Edit::Bind { button: 19, action: Some(Action::Macro(vec![Step::Keys(Chord { mods: 1, key: 0x43 }), Step::Wait(40)])) });
+        p.apply(Edit::Bind { button: 19, action: Some(Action::Macro(vec![Step::Keys(Chord::new(1, 0x43)), Step::Wait(40)])) });
         p.apply(Edit::Light(Light::Color([255, 80, 0])));
         s.save(&dir);
         assert_eq!(Settings::load(&dir), s);
@@ -381,7 +385,7 @@ mod tests {
         let mut s = Settings::default();
         let p = s.controllers.entry("serial:98b6e9a1c2d3".into()).or_default();
         p.apply(Edit::Letters(true));
-        p.apply(Edit::Bind { button: 6, action: Some(Action::Keys(Chord { mods: 0, key: 0x1B })) });
+        p.apply(Edit::Bind { button: 6, action: Some(Action::Keys(Chord::new(0, 0x1B))) });
         s.save(&dir);
         let back = Settings::load(&dir);
         assert_eq!(back, s);
@@ -400,5 +404,32 @@ mod tests {
         let back = Settings::load(&dir);
         assert!(back.controllers["model:054c:0ce6"].native);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn global_mouse_actions_survive_save_alongside_unchanged_controller_profiles() {
+        use open_controller_core::{binding::Chord, portable::NamedAction, profile::Edit};
+        let dir = std::env::temp_dir().join(format!("oc-settings-library-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut settings = Settings::default();
+        let mut profiles = Profiles::default();
+        profiles.apply(Edit::Shortcut {
+            anchor: 15,
+            input: (1 << 15) | 1,
+            name: Some("Existing action".into()),
+            keys: Some(Chord::new(5, 121)),
+        });
+        settings.controllers.insert("serial:current".into(), profiles.clone());
+        settings.action_library.actions.push(NamedAction {
+            name: "OBS recording".into(),
+            keys: Chord::new(3, 5),
+            hold_ms: 100,
+            hold_until_release: false,
+        });
+        settings.save(&dir);
+        let loaded = Settings::load(&dir);
+        assert_eq!(loaded, settings);
+        assert_eq!(loaded.controllers["serial:current"], profiles);
+        assert_eq!(loaded.action_library.actions[0].keys, Chord::new(3, 5));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -5,17 +5,24 @@
 //! while the controllers keep working.
 
 mod art;
+mod combination_help;
+mod configuration;
 mod demo;
 mod detail;
 mod frame;
 mod home;
 mod icons;
+#[cfg(any(windows, test))]
+mod key_capture;
 mod keys;
 mod learn;
+mod mouse_picker;
+mod press_meter;
 mod programs;
 mod report;
 mod requirements;
 mod settings;
+mod shortcuts;
 mod sticks;
 mod text_field;
 mod theme;
@@ -66,6 +73,7 @@ pub struct Model {
     /// Shared, so drawing a frame never copies it.
     pub snapshot: Arc<Snapshot>,
     pub prefs: Prefs,
+    pub action_library: open_controller_core::portable::ActionLibrary,
     pub text: &'static Text,
     pub connection: Connection,
     /// The resident process's version, when it speaks another version of the pipe's messages.
@@ -306,6 +314,7 @@ fn main() {
         let model = cx.new(|_| Model {
             snapshot,
             prefs,
+            action_library: Default::default(),
             text,
             connection: if running { Connection::Connecting } else { Connection::Starting },
             other_version: None,
@@ -362,6 +371,10 @@ fn main() {
                         }),
                         Event::FromTray(ToWindow::Diagnosis(key, d)) => model.update(cx, |m, cx| {
                             m.diagnosis = Some((key, d));
+                            cx.notify();
+                        }),
+                        Event::FromTray(ToWindow::ActionLibrary(library)) => model.update(cx, |m, cx| {
+                            m.action_library = library;
                             cx.notify();
                         }),
                         Event::FromTray(ToWindow::Prefs(mut p)) => model.update(cx, |m, cx| {

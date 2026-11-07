@@ -22,6 +22,7 @@ use crate::report::{Diagnosis, GyroFacts};
 use crate::roster::{Attached, DeviceId, Roster, SlotId};
 use crate::rt;
 use crate::sdl::{Event, Gamepad, Joystick, Sdl};
+use crate::shortcuts;
 #[cfg(windows)]
 use crate::vigem::gone;
 #[cfg(windows)]
@@ -140,6 +141,7 @@ pub enum Command {
     PowerOff(PadKey),
     /// Whether someone is looking: live input in snapshots is only kept up to date then.
     Watch(bool),
+    RecordShortcuts(Option<PadKey>),
     /// Whether the window looking is the one in front; behind, live input comes less often.
     Focused(bool),
     /// Replaces the profiles of the controllers whose settings are kept under this key.
@@ -257,6 +259,8 @@ pub enum Driver {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub pads: Vec<PadView>,
+    #[serde(default)]
+    pub press_measurement: Option<Box<(PadKey, crate::press_meter::Reading)>>,
     pub vigem: Driver,
     pub hidhide: Driver,
     pub hiding: bool,
@@ -283,6 +287,7 @@ impl Default for Snapshot {
     fn default() -> Self {
         Snapshot {
             pads: Vec::new(),
+            press_measurement: None,
             vigem: Driver::Missing,
             hidhide: Driver::Missing,
             hiding: false,
@@ -485,10 +490,17 @@ struct Unmapped {
 
 /// Who holds a key down: a slot (its virtual controller's controller), or an XInput controller
 /// of its own (a handheld's built-in one).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 enum Owner {
     Slot(SlotId),
     Device(DeviceId),
+}
+
+fn output_owner(owner: Owner) -> PadKey {
+    match owner {
+        Owner::Slot(s) => PadKey::Slot(s.0),
+        Owner::Device(d) => PadKey::Device(d),
+    }
 }
 
 /// A virtual controller.
@@ -588,6 +600,9 @@ struct Core {
     keyboard: Keyboard,
     /// Keys held down for extra buttons that are held down, to be let go with them.
     held: Vec<(Owner, u8, Chord)>,
+    shortcut_states: HashMap<Owner, shortcuts::State>,
+    shortcut_recording: Option<DeviceId>,
+    press_meter: Option<(PadKey, crate::press_meter::Meter)>,
     /// The Xbox buttons a macro holds down right now, by the controller that played it.
     macro_held: HashMap<DeviceId, Buttons>,
     started: Instant,
@@ -668,6 +683,9 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         profiles: config.profiles,
         keyboard: Keyboard::start(),
         held: Vec::new(),
+        shortcut_states: HashMap::new(),
+        shortcut_recording: None,
+        press_meter: None,
         macro_held: HashMap::new(),
         started: Instant::now(),
         foreground: String::new(),
@@ -698,6 +716,9 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
                 Msg::Quit => break 'run,
                 Msg::Command(Command::Watch(on)) => {
                     watching = on;
+                    if !on {
+                        core.command(Command::RecordShortcuts(None), now);
+                    }
                     focused = true;
                     core.changed = true;
                 }
@@ -844,6 +865,20 @@ impl Core {
                 }
             }
             Command::Watch(_) | Command::Focused(_) => {}
+            Command::RecordShortcuts(key) => {
+                let was = self.shortcut_recording.take();
+                self.shortcut_recording = key.and_then(|key| self.device_for(key));
+                self.press_meter = key.zip(self.shortcut_recording).map(|(key, dev)| {
+                    let held = self.phys.get(&dev).map_or(0, |p| shortcuts::input(&p.state));
+                    (key, crate::press_meter::Meter::new(held, Instant::now()))
+                });
+                for d in [was, self.shortcut_recording].into_iter().flatten() {
+                    self.release_keys(self.owner_of(d));
+                    if let Some(Kind::Slot(s)) = self.phys.get(&d).map(|p| p.kind) {
+                        self.resend(s);
+                    }
+                }
+            }
             Command::SetProfiles(store, profiles) => {
                 let devices: Vec<DeviceId> = self.phys.iter().filter(|(_, p)| p.model.store == store).map(|(&id, _)| id).collect();
                 for &d in &devices {
@@ -1023,6 +1058,11 @@ impl Core {
                 for d in &devices {
                     if let Some(p) = self.phys.get_mut(d) {
                         p.led = None;
+                        if p.link == Link::Bluetooth
+                            && let Err(error) = p.pad.restore_switch_input_mode()
+                        {
+                            self.note(format!("slot {} could not restore Switch input reports: {error}", s.0));
+                        }
                     }
                 }
                 continue;
@@ -1536,7 +1576,7 @@ impl Core {
             Kind::Slot(s) if !self.is_native(s) => self.roster.get(s).and_then(|x| x.source),
             _ => None,
         };
-        match other.and_then(|d| self.phys.get(&d).map(|q| (d, q.state.buttons))) {
+        match other.and_then(|d| self.phys.get(&d).map(|q| (d, shortcuts::input(&q.state)))) {
             Some((d, held)) => self.type_keys(owner, d, held, held),
             None => self.release_keys(owner),
         }
@@ -1598,10 +1638,15 @@ impl Core {
     /// that does something else is taken out first, so the d-pad a stick makes stays.
     fn report_of(&self, dev: DeviceId) -> XusbReport {
         let Some(p) = self.phys.get(&dev) else { return XusbReport::default() };
+        if self.shortcut_recording == Some(dev) {
+            return XusbReport::default();
+        }
         let profile = self.profile_of(&p.model.store);
         let mut state = p.state;
         if let Some(pr) = profile {
             state.buttons &= !binding::taken(&pr.bindings);
+            let used = self.shortcut_states.get(&self.owner_of(dev)).map_or(0, |s| s.used);
+            shortcuts::suppress(&mut state, used | shortcuts::deferred(pr.enabled_shortcuts()));
             if p.model.features.pressure {
                 motion::apply_pressure(&mut state, pr.pressure);
             }
@@ -1618,7 +1663,8 @@ impl Core {
             r.thumb_ry = (i32::from(r.thumb_ry) + i32::from(p.aim_out.1)).clamp(-32768, 32767) as i16;
         }
         if let Some(pr) = profile {
-            binding::overlay(&pr.bindings, p.state.buttons, &mut r);
+            let used = self.shortcut_states.get(&self.owner_of(dev)).map_or(0, |s| s.used);
+            binding::overlay(&pr.bindings, p.state.buttons & !used & !shortcuts::deferred(pr.enabled_shortcuts()), &mut r);
         }
         if let Some(b) = self.macro_held.get(&dev) {
             b.press(&mut r);
@@ -1656,8 +1702,44 @@ impl Core {
     /// the macros of the buttons just pressed. Held keys follow the buttons' state rather than
     /// their release, which can come from another connection of the controller than the press.
     fn type_keys(&mut self, s: Owner, dev: DeviceId, before: u64, after: u64) {
+        if self.shortcut_recording == Some(dev) {
+            return;
+        }
         let program = self.foreground.as_str();
-        let bindings = self.phys.get(&dev).and_then(|p| self.profiles.get(&p.model.store)).map(|p| &p.for_program(program).bindings);
+        let profile = self.phys.get(&dev).and_then(|p| self.profiles.get(&p.model.store)).map(|p| p.for_program(program));
+        let bindings = profile.map(|p| &p.bindings);
+        let (before, after) = if let Some(profile) = profile {
+            let transition = self.shortcut_states.entry(s).or_default().update_modes(
+                profile.enabled_shortcuts(),
+                &profile.bindings,
+                &profile.shortcut_held,
+                before,
+                after,
+            );
+            for chord in transition.releases {
+                self.keyboard.release(chord);
+            }
+            for chord in transition.presses {
+                self.keyboard.press(chord);
+            }
+            if let Some(keys) = transition.fire {
+                self.keyboard.shortcut(keys, output_owner(s), profile.shortcut_hold_ms(transition.fire_input.unwrap_or(0)));
+            }
+            for (input, chord) in transition.shortcut_taps {
+                self.keyboard.shortcut(chord, output_owner(s), profile.shortcut_hold_ms(input));
+            }
+            for action in transition.taps {
+                let steps = match action {
+                    Action::Keys(c) => vec![binding::Step::Keys(c)],
+                    Action::Macro(steps) => steps,
+                    a => vec![binding::Step::Xbox(a.xbox().unwrap_or_default())],
+                };
+                self.keyboard.play(steps, dev);
+            }
+            (transition.before, transition.after)
+        } else {
+            (before, after)
+        };
         let mut i = 0;
         while i < self.held.len() {
             let (owner, button, chord) = self.held[i];
@@ -1724,6 +1806,12 @@ impl Core {
 
     /// Lets go of every key an owner holds down: its controller left, or its assignments changed.
     fn release_keys(&mut self, s: Owner) {
+        self.keyboard.cancel_shortcuts(output_owner(s));
+        if let Some(mut state) = self.shortcut_states.remove(&s) {
+            for chord in state.release_all() {
+                self.keyboard.release(chord);
+            }
+        }
         let (mine, rest): (Vec<_>, Vec<_>) = self.held.drain(..).partition(|h| h.0 == s);
         self.held = rest;
         for (_, _, c) in mine {
@@ -1808,8 +1896,14 @@ impl Core {
             }
             let (kind, state) = (p.kind, p.state);
             // Any button can type keys, not only the extra ones.
-            if kind == Kind::Native && before.buttons != state.buttons {
-                self.type_keys(Owner::Device(id), id, before.buttons, state.buttons);
+            let (before_input, after_input) = (shortcuts::input(&before), shortcuts::input(&state));
+            if self.shortcut_recording == Some(id)
+                && let Some((_, meter)) = self.press_meter.as_mut()
+            {
+                meter.feed(after_input, Instant::now());
+            }
+            if kind == Kind::Native && before_input != after_input {
+                self.type_keys(Owner::Device(id), id, before_input, after_input);
             }
             if let Kind::Slot(s) = kind {
                 // Stick noise on the idle connection of a controller connected twice must not
@@ -1819,10 +1913,10 @@ impl Core {
                     self.move_rumble(s);
                 }
                 if self.roster.get(s).and_then(|x| x.source) == Some(id) && !self.is_native(s) {
-                    self.resend(s);
-                    if before.buttons != state.buttons || !self.held.is_empty() {
-                        self.type_keys(Owner::Slot(s), id, before.buttons, state.buttons);
+                    if before_input != after_input || !self.held.is_empty() {
+                        self.type_keys(Owner::Slot(s), id, before_input, after_input);
                     }
+                    self.resend(s);
                 }
             }
         }
@@ -2205,6 +2299,10 @@ impl Core {
         };
         Snapshot {
             pads,
+            press_measurement: self
+                .press_meter
+                .as_ref()
+                .and_then(|(key, meter)| meter.latest.clone().map(|reading| Box::new((*key, reading)))),
             vigem,
             hidhide: self.hider.state().clone(),
             hiding: self.hiding,
@@ -2260,6 +2358,11 @@ impl Core {
     fn shutdown(&mut self) {
         for p in self.phys.values().filter(|p| !(matches!(p.kind, Kind::Slot(_)) && native(&self.profiles, &p.model.store, p.model.form))) {
             p.pad.rumble(0, 0, 0);
+        }
+        for (_, mut state) in self.shortcut_states.drain() {
+            for chord in state.release_all() {
+                self.keyboard.release(chord);
+            }
         }
         for (_, _, c) in std::mem::take(&mut self.held) {
             self.keyboard.release(c);

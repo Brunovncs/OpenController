@@ -7,6 +7,7 @@
 //! tested on its own.
 
 pub mod binding;
+pub mod button_mode;
 pub mod crash;
 pub mod device;
 pub mod ds3;
@@ -16,10 +17,14 @@ pub mod i18n;
 pub mod mapping;
 pub mod models;
 pub mod motion;
+pub mod portable;
+pub mod press_meter;
 pub mod profile;
 pub mod rating;
 pub mod report;
 pub mod roster;
+pub mod shortcut_edit;
+pub mod shortcuts;
 
 mod engine;
 pub mod handheld;

@@ -19,9 +19,11 @@ use std::time::Duration;
 mod sys;
 
 pub use sys::{key_name, vk_for_char};
+mod timed;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Out {
+    Finish,
     Down(Chord),
     Up(Chord),
 }
@@ -38,17 +40,20 @@ pub enum Tap {
 /// the threads end.
 pub struct Keyboard {
     keys: Sender<Out>,
-    macros: Sender<(Vec<Step>, DeviceId)>,
+    macros: Sender<Job>,
+    shortcuts: Sender<timed::Command>,
     taps: Receiver<Tap>,
     plays: Arc<Mutex<Plays>>,
     /// Never sent on: closed when the keyboard is dropped, which cuts a macro's wait short.
-    _stop: Sender<()>,
+    _stop: Option<Sender<()>>,
+    workers: Vec<std::thread::JoinHandle<()>>,
+    key_worker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Keyboard {
     pub fn start() -> Keyboard {
         let (keys, rx) = unbounded::<Out>();
-        std::thread::Builder::new()
+        let key_worker = std::thread::Builder::new()
             .name("open-controller-keys".into())
             .spawn(move || {
                 // The only owner of the sink and of the counts of held keys: macros send their
@@ -59,6 +64,9 @@ impl Keyboard {
                 let mut sink = sys::Sink::open();
                 let mut held = Held::default();
                 while let Ok(out) = rx.recv() {
+                    if out == Out::Finish {
+                        break;
+                    }
                     if sink.is_none() {
                         sink = sys::Sink::open();
                     }
@@ -66,25 +74,25 @@ impl Keyboard {
                     match out {
                         Out::Down(c) => sink.down(held.down(c)),
                         Out::Up(c) => sink.up(held.up(c)),
+                        Out::Finish => break,
                     }
                 }
             })
             .expect("could not start the keyboard thread");
-        let (macros, queued) = unbounded::<(Vec<Step>, DeviceId)>();
         let (to_pads, taps) = unbounded::<Tap>();
         let (stop_tx, stop) = crossbeam_channel::bounded::<()>(0);
-        let plays = Arc::new(Mutex::new(Plays::default()));
-        let (to_keys, done) = (keys.clone(), plays.clone());
-        std::thread::Builder::new()
-            .name("open-controller-macros".into())
-            .spawn(move || {
-                while let Ok((steps, by)) = queued.recv() {
-                    play(&to_keys, &to_pads, by, &steps, &stop);
-                    done.lock().unwrap_or_else(PoisonError::into_inner).done(&steps);
-                }
-            })
-            .expect("could not start the macro thread");
-        Keyboard { keys, macros, taps, plays, _stop: stop_tx }
+        let (macros, plays, macro_worker) = start_player("open-controller-macros", keys.clone(), to_pads.clone(), stop.clone());
+        let (shortcuts, shortcut_worker) = timed::start(keys.clone(), stop);
+        Keyboard {
+            keys,
+            macros,
+            shortcuts,
+            taps,
+            plays,
+            _stop: Some(stop_tx),
+            workers: vec![macro_worker, shortcut_worker],
+            key_worker: Some(key_worker),
+        }
     }
 
     /// The Xbox buttons macros press and let go of, for the input thread to read.
@@ -100,16 +108,64 @@ impl Keyboard {
         let _ = self.keys.send(Out::Up(c));
     }
 
+    /// A controller shortcut holds its output long enough for background hotkey polling.
+    /// Its worker and queue are separate from macros and direct key/button input.
+    pub fn shortcut(&self, chord: Chord, owner: crate::PadKey, hold_ms: u16) {
+        let _ = self.shortcuts.send(timed::Command::Press(chord, owner, Duration::from_millis(crate::shortcuts::hold_ms(hold_ms).into())));
+    }
+
+    pub fn cancel_shortcuts(&self, owner: crate::PadKey) {
+        let _ = self.shortcuts.send(timed::Command::Cancel(owner));
+    }
+
     /// Plays a macro a button of controller `by` started.
     pub fn play(&self, steps: Vec<Step>, by: DeviceId) {
         if self.plays.lock().unwrap_or_else(PoisonError::into_inner).admit(&steps) {
-            let _ = self.macros.send((steps, by));
+            let _ = self.macros.send((steps, by, TAP));
         }
     }
 }
 
-/// Gap between the keys of a macro step, so programs that poll the keyboard see each one.
+impl Drop for Keyboard {
+    fn drop(&mut self) {
+        drop(self._stop.take());
+        for worker in self.workers.drain(..) {
+            let _ = worker.join();
+        }
+        let _ = self.keys.send(Out::Finish);
+        if let Some(worker) = self.key_worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// Preserve the original macro timing. Only controller shortcuts get the longer hold.
 const TAP: Duration = Duration::from_millis(15);
+#[cfg(test)]
+const SHORTCUT_TAP: Duration = Duration::from_millis(100);
+type Job = (Vec<Step>, DeviceId, Duration);
+type Player = (Sender<Job>, Arc<Mutex<Plays>>, std::thread::JoinHandle<()>);
+
+fn start_player(name: &str, keys: Sender<Out>, pads: Sender<Tap>, stop: Receiver<()>) -> Player {
+    let (send, queued) = unbounded::<Job>();
+    let plays = Arc::new(Mutex::new(Plays::default()));
+    let done = plays.clone();
+    let worker = std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            loop {
+                crossbeam_channel::select! {
+                    recv(stop) -> _ => break,
+                    recv(queued) -> job => match job {
+                        Ok((steps, by, tap)) => { play(&keys, &pads, by, &steps, &stop, tap); done.lock().unwrap_or_else(PoisonError::into_inner).done(&steps); }
+                        Err(_) => break,
+                    }
+                }
+            }
+        })
+        .expect("could not start the playback thread");
+    (send, plays, worker)
+}
 
 /// Macros playing or waiting their turn, at most.
 const MAX_PLAYS: usize = 4;
@@ -139,16 +195,16 @@ impl Plays {
 
 /// Plays `steps` through the key thread, and its Xbox buttons on `by`'s virtual controller. Once
 /// `stop` closes it ends early, with every key and button it pressed let go of.
-fn play(keys: &Sender<Out>, pads: &Sender<Tap>, by: DeviceId, steps: &[Step], stop: &Receiver<()>) {
+fn play(keys: &Sender<Out>, pads: &Sender<Tap>, by: DeviceId, steps: &[Step], stop: &Receiver<()>, tap: Duration) {
     let wait = |d: Duration| !matches!(stop.recv_timeout(d), Err(RecvTimeoutError::Disconnected));
     let xbox_tap = Duration::from_millis(XBOX_TAP_MS.into());
     for s in steps {
         match *s {
             Step::Keys(c) => {
                 let _ = keys.send(Out::Down(c));
-                let on = wait(TAP);
+                let on = wait(tap);
                 let _ = keys.send(Out::Up(c));
-                if !on || !wait(TAP) {
+                if !on || !wait(tap) {
                     return;
                 }
             }
@@ -188,15 +244,15 @@ impl Held {
                 *n += 1;
             }
         }
-        if c.key != 0 {
-            *self.keys.entry(c.key).or_default() += 1;
+        for key in c.keys() {
+            *self.keys.entry(key).or_default() += 1;
         }
         c
     }
 
     /// The part of the chord no other one holds. A key nothing pressed is let go of anyway.
     fn up(&mut self, c: Chord) -> Chord {
-        let mut out = Chord { mods: 0, key: 0 };
+        let mut out = Chord::new(0, 0);
         for (n, &m) in self.mods.iter_mut().zip(&MODIFIER_BITS) {
             if c.mods & m != 0 {
                 *n = n.saturating_sub(1);
@@ -205,12 +261,12 @@ impl Held {
                 }
             }
         }
-        if c.key != 0 {
-            let n = self.keys.remove(&c.key).unwrap_or(0).saturating_sub(1);
+        for key in c.keys() {
+            let n = self.keys.remove(&key).unwrap_or(0).saturating_sub(1);
             if n == 0 {
-                out.key = c.key;
+                out.add_key(key);
             } else {
-                self.keys.insert(c.key, n);
+                self.keys.insert(key, n);
             }
         }
         out
@@ -220,6 +276,11 @@ impl Held {
 /// Keys whose system name is missing or unhelpful.
 fn fixed_name(vk: u16) -> Option<&'static str> {
     Some(match vk {
+        0x01 => "Mouse 1 (Left)",
+        0x02 => "Mouse 2 (Right)",
+        0x04 => "Mouse 3 (Middle)",
+        0x05 => "Mouse 4 (Back)",
+        0x06 => "Mouse 5 (Forward)",
         0x5B | 0x5C => sys::META,
         0xAD => "Mute",
         0xAE => "Volume −",
@@ -316,15 +377,26 @@ pub fn chord_names(c: Chord) -> Vec<String> {
             v.push(name.into());
         }
     }
-    if c.key != 0 {
-        v.push(key_name(c.key));
-    }
+    v.extend(c.keys().map(key_name));
     v
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_keys_in_multi_key_outputs_stay_down_until_the_last_owner_releases() {
+        let chord = Chord::from_keys(modifier::CTRL, [0x56, 0x26]);
+        let other = Chord::new(modifier::CTRL, 0x56);
+        let mut held = Held::default();
+        assert_eq!(held.down(chord), chord);
+        held.down(other);
+        assert_eq!(held.up(chord), Chord::new(0, 0x26));
+        assert_eq!(held.up(other), other);
+        assert!(held.keys.is_empty());
+        assert_eq!(held.mods, [0; 4]);
+    }
 
     #[test]
     fn plain_names() {
@@ -343,10 +415,10 @@ mod tests {
     fn a_key_two_chords_hold_stays_down_until_both_let_go() {
         use modifier::{CTRL, SHIFT};
         let mut held = Held::default();
-        let (copy, paste) = (Chord { mods: CTRL, key: 0x43 }, Chord { mods: CTRL | SHIFT, key: 0x56 });
+        let (copy, paste) = (Chord::new(CTRL, 0x43), Chord::new(CTRL | SHIFT, 0x56));
         assert_eq!(held.down(copy), copy);
         assert_eq!(held.down(paste), paste);
-        assert_eq!(held.up(copy), Chord { mods: 0, key: 0x43 }, "Ctrl stays down for the other");
+        assert_eq!(held.up(copy), Chord::new(0, 0x43), "Ctrl stays down for the other");
         assert_eq!(held.up(paste), paste);
         // Let go of without having been pressed here: let go of all the same.
         assert_eq!(held.up(copy), copy);
@@ -354,7 +426,7 @@ mod tests {
 
     #[test]
     fn a_macro_pressed_again_while_it_plays_is_not_queued() {
-        let (a, b) = (vec![Step::Keys(Chord { mods: 0, key: 0x41 })], vec![Step::Wait(10)]);
+        let (a, b) = (vec![Step::Keys(Chord::new(0, 0x41))], vec![Step::Wait(10)]);
         let mut plays = Plays::default();
         assert!(plays.admit(&a));
         assert!(!plays.admit(&a), "already playing");
@@ -369,13 +441,13 @@ mod tests {
 
     #[test]
     fn a_stopped_macro_lets_go_of_its_keys_at_once() {
-        let c = Chord { mods: modifier::CTRL, key: 0x43 };
+        let c = Chord::new(modifier::CTRL, 0x43);
         let (keys, typed) = unbounded();
         let (stop_tx, stop) = crossbeam_channel::bounded(0);
         let steps = [Step::Keys(c), Step::Wait(5000), Step::Keys(c)];
         let started = std::time::Instant::now();
         let (pads, _) = unbounded();
-        let player = std::thread::spawn(move || play(&keys, &pads, 0, &steps, &stop));
+        let player = std::thread::spawn(move || play(&keys, &pads, 0, &steps, &stop, TAP));
         assert_eq!(typed.recv().unwrap(), Out::Down(c));
         drop(stop_tx);
         player.join().unwrap();
@@ -388,12 +460,12 @@ mod tests {
     fn a_macro_taps_xbox_buttons_on_the_controller_that_played_it() {
         use crate::binding::XboxButton;
         let (a, lb) = (Buttons::of(&[XboxButton::A]), Buttons::of(&[XboxButton::LeftBumper, XboxButton::Up]));
-        let c = Chord { mods: 0, key: 0x41 };
+        let c = Chord::new(0, 0x41);
         let (keys, typed) = unbounded();
         let (pads, tapped) = unbounded();
         let (_stop_tx, stop) = crossbeam_channel::bounded(0);
         let started = std::time::Instant::now();
-        play(&keys, &pads, 7, &[Step::Xbox(a), Step::Keys(c), Step::Xbox(lb)], &stop);
+        play(&keys, &pads, 7, &[Step::Xbox(a), Step::Keys(c), Step::Xbox(lb)], &stop, TAP);
         let taps: Vec<Tap> = tapped.try_iter().collect();
         assert_eq!(taps, [Tap::Down(7, a), Tap::Up(7, a), Tap::Down(7, lb), Tap::Up(7, lb)]);
         assert_eq!(typed.try_iter().collect::<Vec<Out>>(), [Out::Down(c), Out::Up(c)]);
@@ -407,10 +479,57 @@ mod tests {
         let (keys, _) = unbounded();
         let (pads, tapped) = unbounded();
         let (stop_tx, stop) = crossbeam_channel::bounded(0);
-        let player = std::thread::spawn(move || play(&keys, &pads, 3, &[Step::Xbox(a), Step::Wait(5000)], &stop));
+        let player = std::thread::spawn(move || play(&keys, &pads, 3, &[Step::Xbox(a), Step::Wait(5000)], &stop, TAP));
         assert_eq!(tapped.recv().unwrap(), Tap::Down(3, a));
         drop(stop_tx);
         player.join().unwrap();
         assert_eq!(tapped.try_iter().collect::<Vec<Tap>>(), [Tap::Up(3, a)]);
+    }
+    #[test]
+    fn shortcut_taps_span_several_background_hotkey_poll_intervals() {
+        let chord = Chord::new(modifier::CTRL | modifier::SHIFT, 5);
+        let (keys, output) = unbounded();
+        let (pads, _) = unbounded();
+        let (_stop, stopped) = crossbeam_channel::bounded(0);
+        let player = std::thread::spawn(move || play(&keys, &pads, 0, &[Step::Keys(chord)], &stopped, SHORTCUT_TAP));
+        assert_eq!(output.recv().unwrap(), Out::Down(chord));
+        // OBS polls background hotkeys every 25 ms. It must see a held chord,
+        // including at an unfavourable polling phase, rather than just a queued release.
+        assert!(matches!(output.recv_timeout(Duration::from_millis(60)), Err(RecvTimeoutError::Timeout)));
+        assert_eq!(output.recv_timeout(Duration::from_secs(1)).unwrap(), Out::Up(chord));
+        player.join().unwrap();
+    }
+    #[test]
+    fn a_long_shortcut_does_not_queue_or_slow_a_regular_macro() {
+        let shortcut = Chord::new(3, 5);
+        let macro_key = Chord::new(0, 0x41);
+        let (keys, output) = unbounded();
+        let (pads, _) = unbounded();
+        let (stop_tx, stop) = crossbeam_channel::bounded(0);
+        // A generous test hold makes worker isolation deterministic even on a busy machine.
+        let (shortcuts, _, _shortcut_worker) = start_player("test-shortcuts", keys.clone(), pads.clone(), stop.clone());
+        let (macros, _, _macro_worker) = start_player("test-macros", keys, pads, stop);
+        shortcuts.send((vec![Step::Keys(shortcut)], 0, Duration::from_secs(2))).unwrap();
+        assert_eq!(output.recv().unwrap(), Out::Down(shortcut));
+        macros.send((vec![Step::Keys(macro_key)], 0, TAP)).unwrap();
+        assert_eq!(output.recv_timeout(Duration::from_secs(1)).unwrap(), Out::Down(macro_key));
+        assert_eq!(output.recv_timeout(Duration::from_secs(1)).unwrap(), Out::Up(macro_key));
+        drop(stop_tx);
+        assert_eq!(output.recv_timeout(Duration::from_secs(1)).unwrap(), Out::Up(shortcut));
+    }
+    #[test]
+    fn chosen_shortcut_duration_is_forwarded_per_job_and_macros_keep_their_timing() {
+        let chord = Chord::new(3, 5);
+        let (keys, _output) = unbounded();
+        let (macros, macro_jobs) = unbounded();
+        let (shortcuts, shortcut_jobs) = unbounded();
+        let (_pads, taps) = unbounded();
+        let (stop, _) = crossbeam_channel::bounded(0);
+        let keyboard =
+            Keyboard { keys, macros, shortcuts, taps, plays: Default::default(), _stop: Some(stop), workers: Vec::new(), key_worker: None };
+        keyboard.shortcut(chord, crate::PadKey::Slot(7), 60_000);
+        assert_eq!(shortcut_jobs.recv().unwrap(), timed::Command::Press(chord, crate::PadKey::Slot(7), Duration::from_secs(60)));
+        keyboard.play(vec![Step::Keys(chord)], 7);
+        assert_eq!(macro_jobs.recv().unwrap(), (vec![Step::Keys(chord)], 7, TAP));
     }
 }

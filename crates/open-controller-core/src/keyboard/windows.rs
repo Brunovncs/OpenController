@@ -3,8 +3,9 @@
 
 use crate::binding::{Chord, modifier};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyNameTextW, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC_EX,
-    MapVirtualKeyW, SendInput, VK_CONTROL, VK_LWIN, VK_MENU, VK_SHIFT, VkKeyScanW,
+    GetKeyNameTextW, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC_EX,
+    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+    MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSEINPUT, MapVirtualKeyW, SendInput, VK_CONTROL, VK_LWIN, VK_MENU, VK_SHIFT, VkKeyScanW,
 };
 
 /// `SendInput` needs nothing opened first.
@@ -32,22 +33,33 @@ const MODIFIERS: [(u8, u16); 4] =
 
 fn down(c: Chord) -> Vec<INPUT> {
     let mut v: Vec<INPUT> = MODIFIERS.iter().filter(|(m, _)| c.mods & m != 0).map(|&(_, vk)| key(vk, false)).collect();
-    if c.key != 0 {
-        v.push(key(c.key, false));
-    }
+    v.extend(c.keys().map(|vk| key(vk, false)));
     v
 }
 
 fn up(c: Chord) -> Vec<INPUT> {
     let mut v = Vec::new();
-    if c.key != 0 {
-        v.push(key(c.key, true));
-    }
+    v.extend(c.keys().rev().map(|vk| key(vk, true)));
     v.extend(MODIFIERS.iter().rev().filter(|(m, _)| c.mods & m != 0).map(|&(_, vk)| key(vk, true)));
     v
 }
 
 fn key(vk: u16, release: bool) -> INPUT {
+    if let Some((down, up, data)) = match vk {
+        1 => Some((MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, 0)),
+        2 => Some((MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, 0)),
+        4 => Some((MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, 0)),
+        5 => Some((MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, 1)),
+        6 => Some((MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, 2)),
+        _ => None,
+    } {
+        return INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT { dx: 0, dy: 0, mouseData: data, dwFlags: if release { up } else { down }, time: 0, dwExtraInfo: 0 },
+            },
+        };
+    }
     let scan = unsafe { MapVirtualKeyW(vk as u32, MAPVK_VK_TO_VSC_EX) };
     let mut flags = if release { KEYEVENTF_KEYUP } else { 0 };
     if is_extended(vk, scan) {
@@ -113,13 +125,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn multi_key_output_presses_every_key_and_releases_in_reverse_order() {
+        let c = Chord::from_keys(modifier::CTRL, [0x56, 0x26]);
+        let vks = |v: Vec<INPUT>| v.iter().map(|i| unsafe { (i.Anonymous.ki.wVk, i.Anonymous.ki.dwFlags) }).collect::<Vec<_>>();
+        let pressed = vks(down(c));
+        assert_eq!(pressed.iter().map(|i| i.0).collect::<Vec<_>>(), [VK_CONTROL, 0x56, 0x26]);
+        assert!(pressed[2].1 & KEYEVENTF_EXTENDEDKEY != 0, "Up must arrive as the arrow, not the numpad key");
+        assert!(pressed.iter().all(|i| i.1 & KEYEVENTF_KEYUP == 0));
+        let released = vks(up(c));
+        assert_eq!(released.iter().map(|i| i.0).collect::<Vec<_>>(), [0x26, 0x56, VK_CONTROL]);
+        assert!(released.iter().all(|i| i.1 & KEYEVENTF_KEYUP != 0));
+        assert_eq!(super::super::chord_names(c), ["Ctrl".to_string(), "V".to_string(), key_name(0x26)]);
+    }
+
+    #[test]
     fn chords_press_modifiers_first_and_release_them_last() {
-        let c = Chord { mods: modifier::CTRL | modifier::SHIFT, key: 0x41 };
+        let c = Chord::new(modifier::CTRL | modifier::SHIFT, 0x41);
         let vks = |v: Vec<INPUT>| {
             v.iter().map(|i| unsafe { (i.Anonymous.ki.wVk, i.Anonymous.ki.dwFlags & KEYEVENTF_KEYUP != 0) }).collect::<Vec<_>>()
         };
         assert_eq!(vks(down(c)), [(VK_CONTROL, false), (VK_SHIFT, false), (0x41, false)]);
         assert_eq!(vks(up(c)), [(0x41, true), (VK_SHIFT, true), (VK_CONTROL, true)]);
+    }
+
+    #[test]
+    fn obs_mouse4_chord_sends_modifiers_before_the_side_button_and_releases_them_last() {
+        let c = Chord::new(modifier::CTRL | modifier::SHIFT, 5);
+        let down = down(c);
+        let up = up(c);
+        assert_eq!(down.iter().map(|i| i.r#type).collect::<Vec<_>>(), [INPUT_KEYBOARD, INPUT_KEYBOARD, INPUT_MOUSE]);
+        assert_eq!(unsafe { down[2].Anonymous.mi.dwFlags }, MOUSEEVENTF_XDOWN);
+        assert_eq!(unsafe { down[2].Anonymous.mi.mouseData }, 1);
+        assert_eq!(up.iter().map(|i| i.r#type).collect::<Vec<_>>(), [INPUT_MOUSE, INPUT_KEYBOARD, INPUT_KEYBOARD]);
+        assert_eq!(unsafe { up[0].Anonymous.mi.dwFlags }, MOUSEEVENTF_XUP);
+        assert_eq!(unsafe { up[0].Anonymous.mi.mouseData }, 1);
     }
 
     #[test]
@@ -133,7 +172,7 @@ mod tests {
     #[test]
     fn names() {
         assert_eq!(key_name(0x7C), "F13");
-        assert_eq!(super::super::chord_names(Chord { mods: modifier::CTRL, key: 0x70 }), ["Ctrl", "F1"]);
+        assert_eq!(super::super::chord_names(Chord::new(modifier::CTRL, 0x70)), ["Ctrl", "F1"]);
         assert_eq!(vk_for_char('a'), Some(0x41));
     }
 }

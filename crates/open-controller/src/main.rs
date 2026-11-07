@@ -210,6 +210,10 @@ impl Control {
         self.engine.send(Command::SetMappings(s.mappings.clone()));
     }
 
+    pub fn action_library(&self) -> open_controller_core::portable::ActionLibrary {
+        self.settings.lock().map(|s| s.action_library.clone()).unwrap_or_default()
+    }
+
     pub fn apply(&self, req: ToTray) {
         match req {
             ToTray::SetHiding(on) => {
@@ -248,7 +252,25 @@ impl Control {
                 }
                 self.engine.send(Command::SplitJoyCons(on));
             }
+            ToTray::ApplyConfiguration { store, profiles, actions } => {
+                let Ok(actions) = actions.validate() else { return };
+                if profiles.is_some() && store.is_none() {
+                    return;
+                }
+                let profiles = profiles.map(|p| p.sanitised());
+                let Ok(mut settings) = self.settings.lock() else { return };
+                if let (Some(store), Some(profiles)) = (&store, &profiles) {
+                    settings.controllers.insert(store.clone(), profiles.clone());
+                }
+                settings.action_library = actions;
+                settings.save(&self.data_dir);
+                drop(settings);
+                if let (Some(store), Some(profiles)) = (store, profiles) {
+                    self.engine.send(Command::SetProfiles(store, profiles));
+                }
+            }
             ToTray::Focused(on) => return self.engine.send(Command::Focused(on)),
+            ToTray::RecordShortcuts(key) => return self.engine.send(Command::RecordShortcuts(key)),
             ToTray::Identify(key) => return self.engine.send(Command::Identify(key)),
             ToTray::PowerOff(key) => return self.engine.send(Command::PowerOff(key)),
             ToTray::SwapPlayers(a, b) => return self.engine.send(Command::SwapPlayers(a, b)),
