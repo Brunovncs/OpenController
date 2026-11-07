@@ -2,11 +2,15 @@
 //! its sticks and gyro behave, and which programs switch to them. One is in use; a profile that
 //! names the program in front takes over while that program is in front.
 
+use crate::binding::Chord;
 use crate::binding::{self, Action, Bindings};
+use crate::button_mode::{Mode, Presets};
 use crate::device::Form;
+use crate::shortcuts::{self, Shortcuts};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_PROFILES: usize = 8;
 pub const MAX_NAME: usize = 32;
@@ -253,6 +257,22 @@ pub struct Profile {
     #[serde(deserialize_with = "lenient_bindings")]
     pub bindings: Bindings,
     #[serde(deserialize_with = "lenient")]
+    pub shortcuts: Shortcuts,
+    #[serde(deserialize_with = "lenient", skip_serializing_if = "BTreeMap::is_empty")]
+    pub shortcut_durations: BTreeMap<u64, u16>,
+    #[serde(deserialize_with = "lenient", skip_serializing_if = "BTreeSet::is_empty")]
+    pub shortcut_held: BTreeSet<u64>,
+    #[serde(deserialize_with = "lenient", skip_serializing_if = "BTreeMap::is_empty")]
+    pub unassigned_shortcuts: BTreeMap<u64, shortcuts::ShortcutAction>,
+    #[serde(deserialize_with = "lenient", skip_serializing_if = "BTreeMap::is_empty")]
+    pub button_modes: BTreeMap<u8, Mode>,
+    #[serde(deserialize_with = "lenient", skip_serializing_if = "BTreeMap::is_empty")]
+    pub button_presets: BTreeMap<u8, Presets>,
+    #[serde(deserialize_with = "lenient", skip_serializing_if = "BTreeMap::is_empty")]
+    pub shortcut_anchors: BTreeMap<u64, u8>,
+    #[serde(deserialize_with = "lenient", skip_serializing_if = "BTreeMap::is_empty")]
+    pub shortcut_names: BTreeMap<u64, String>,
+    #[serde(deserialize_with = "lenient")]
     pub light: Light,
     /// How bright a chosen or battery colour is, in percent.
     pub brightness: u8,
@@ -274,6 +294,14 @@ impl Default for Profile {
         Profile {
             name: String::new(),
             bindings: Bindings::new(),
+            shortcuts: Shortcuts::new(),
+            shortcut_durations: BTreeMap::new(),
+            shortcut_held: BTreeSet::new(),
+            unassigned_shortcuts: BTreeMap::new(),
+            button_modes: BTreeMap::new(),
+            button_presets: BTreeMap::new(),
+            shortcut_anchors: BTreeMap::new(),
+            shortcut_names: BTreeMap::new(),
             light: Light::Player,
             brightness: 100,
             low_battery_flash: true,
@@ -344,6 +372,28 @@ pub enum Edit {
     },
     /// Clears every assignment of the profile in use.
     ClearBindings,
+    ChangeShortcut(crate::shortcut_edit::Change),
+    RemoveShortcut {
+        profile: usize,
+        input: u64,
+    },
+    RemoveUnassigned {
+        profile: usize,
+        id: u64,
+    },
+    /// An incoming controller combination that taps a keyboard shortcut.
+    ButtonMode {
+        button: u8,
+        mode: Mode,
+    },
+    Shortcut {
+        /// Missing in earlier requests: keep the name when only the binding is edited.
+        #[serde(default)]
+        name: Option<String>,
+        anchor: u8,
+        input: u64,
+        keys: Option<Chord>,
+    },
     /// Makes a Nintendo controller's face buttons follow their letters rather than their places
     /// (see [`binding::letters`]), or puts them back.
     Letters(bool),
@@ -358,7 +408,7 @@ pub enum Edit {
     /// Makes a profile the one in use while this program is in front.
     AddProgram(usize, String),
     RemoveProgram(usize, String),
-    /// A new profile, a copy of the one in use, which it replaces as the one in use.
+    /// A new independent profile with default settings.
     Add(String),
     Rename(usize, String),
     Delete(usize),
@@ -452,21 +502,79 @@ impl Profiles {
         match edit {
             // The same limit `sanitised` keeps: buttons are bits of a u64.
             Edit::Bind { button: 64.., .. } => {}
-            Edit::Bind { button, action } => {
-                let b = &mut self.active_mut().bindings;
-                match action.and_then(|a| a.sanitised()) {
-                    Some(a) => b.insert(button, a),
-                    None => b.remove(&button),
-                };
+            Edit::Bind { button, action } => self.active_mut().assign_button(button, action),
+            Edit::ButtonMode { button, mode } => self.active_mut().select_button_mode(button, mode),
+            Edit::ClearBindings => {
+                let p = self.active_mut();
+                p.bindings.clear();
+                p.shortcuts.clear();
+                p.shortcut_durations.clear();
+                p.shortcut_held.clear();
+                p.unassigned_shortcuts.clear();
+                p.button_modes.clear();
+                p.button_presets.clear();
+                p.shortcut_anchors.clear();
+                p.shortcut_names.clear();
             }
-            Edit::ClearBindings => self.active_mut().bindings.clear(),
+            Edit::RemoveShortcut { profile, input } => {
+                if profile == self.active {
+                    let p = self.active_mut();
+                    p.shortcuts.remove(&input);
+                    p.shortcut_durations.remove(&input);
+                    p.shortcut_held.remove(&input);
+                    p.shortcut_names.remove(&input);
+                    p.shortcut_anchors.remove(&input);
+                }
+            }
+            Edit::ChangeShortcut(change) => {
+                if change.profile == self.active {
+                    self.active_mut().change_shortcut(change);
+                }
+            }
+            Edit::RemoveUnassigned { profile, id } => {
+                if profile == self.active {
+                    self.active_mut().unassigned_shortcuts.remove(&id);
+                }
+            }
+            Edit::Shortcut { name, anchor, input, keys } => {
+                let p = self.active_mut();
+                match keys {
+                    Some(c)
+                        if anchor < 62
+                            && shortcuts::valid(input, c)
+                            && (p.shortcuts.contains_key(&input) || p.shortcuts.len() < shortcuts::MAX_SHORTCUTS) =>
+                    {
+                        p.shortcuts.insert(input, c);
+                        p.shortcut_anchors.insert(input, anchor);
+                        if let Some(name) = name {
+                            let name = shortcuts::clean_name(&name);
+                            if name.is_empty() {
+                                p.shortcut_names.remove(&input);
+                            } else {
+                                p.shortcut_names.insert(input, name);
+                            }
+                        }
+                        p.select_button_mode(anchor, Mode::Combinations);
+                    }
+                    None => {
+                        p.shortcuts.remove(&input);
+                        p.shortcut_durations.remove(&input);
+                        p.shortcut_held.remove(&input);
+                        p.shortcut_anchors.remove(&input);
+                        p.shortcut_names.remove(&input);
+                    }
+                    _ => {}
+                }
+            }
             Edit::Letters(on) => {
-                let b = &mut self.active_mut().bindings;
+                let p = self.active_mut();
                 for (button, action) in binding::letters() {
                     if on {
-                        b.insert(button, action);
-                    } else if b.get(&button) == Some(&action) {
-                        b.remove(&button);
+                        p.assign_button(button, Some(action));
+                    } else if p.bindings.get(&button) == Some(&action) {
+                        p.bindings.remove(&button);
+                        p.button_modes.remove(&button);
+                        p.button_presets.remove(&button);
                     }
                 }
             }
@@ -510,7 +618,7 @@ impl Profiles {
             }
             Edit::Add(name) if self.list.len() < MAX_PROFILES => {
                 // Programs stay with the profile that named them.
-                let copy = Profile { name: clean_name(&name), programs: Vec::new(), ..self.active().clone() };
+                let copy = Profile { name: clean_name(&name), ..Profile::default() };
                 self.list.push(copy);
                 self.active = self.list.len() - 1;
             }
@@ -544,6 +652,23 @@ impl Profiles {
         }
         for p in &mut self.list {
             p.name = clean_name(&p.name);
+            p.shortcut_held.retain(|input| p.shortcuts.contains_key(input));
+            p.shortcut_durations.retain(|input, ms| {
+                *ms = shortcuts::hold_ms(*ms);
+                p.shortcuts.contains_key(input)
+            });
+            p.shortcuts.retain(|&mask, keys| shortcuts::valid(mask, *keys));
+            p.shortcuts = std::mem::take(&mut p.shortcuts).into_iter().take(shortcuts::MAX_SHORTCUTS).collect();
+            p.shortcut_names.retain(|input, name| {
+                *name = shortcuts::clean_name(name);
+                p.shortcuts.contains_key(input) && !name.is_empty()
+            });
+            p.unassigned_shortcuts.retain(|_, a| {
+                a.name = shortcuts::clean_name(&a.name);
+                a.hold_ms = shortcuts::hold_ms(a.hold_ms);
+                a.anchor < 62 && !a.keys.is_empty() && a.keys.mods & !15 == 0 && a.keys.key <= 255
+            });
+            p.unassigned_shortcuts = std::mem::take(&mut p.unassigned_shortcuts).into_iter().take(shortcuts::MAX_UNASSIGNED).collect();
             p.brightness = p.brightness.clamp(10, 100);
             p.gyro = clean_gyro(p.gyro);
             p.sticks = clean_sticks(p.sticks);
@@ -559,6 +684,7 @@ impl Profiles {
                 .filter(|&(b, _)| b < 64)
                 .filter_map(|(b, a)| a.sanitised().map(|a| (b, a)))
                 .collect();
+            p.sanitise_button_modes();
         }
         self.active = self.active.min(self.list.len() - 1);
         self
@@ -650,12 +776,52 @@ mod tests {
     use crate::binding::XboxButton;
 
     #[test]
+    fn incoming_shortcuts_roundtrip_and_new_profiles_do_not_inherit_assignments() {
+        let mut p = Profiles::default();
+        let mask = (1 << 15) | crate::shortcuts::LT;
+        let keys = crate::binding::Chord::new(5, 121);
+        p.apply(Edit::Bind { button: 15, action: Some(Action::Keys(keys)) });
+        p.apply(Edit::Shortcut { name: Some("  Captura HDR: región  ".into()), anchor: 15, input: mask, keys: Some(keys) });
+        assert_eq!(p.active().shortcut_names[&mask], "Captura HDR: región");
+        p.apply(Edit::Shortcut { name: None, anchor: 15, input: mask, keys: Some(keys) });
+        assert_eq!(p.active().shortcut_names[&mask], "Captura HDR: región", "an older edit preserves the name");
+        let json = serde_json::to_string(&p).unwrap();
+        let restored: Profiles = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, p);
+        p.apply(Edit::Add("Copy".into()));
+        assert!(p.active().shortcuts.is_empty());
+        p.apply(Edit::ClearBindings);
+        assert!(p.active().shortcuts.is_empty());
+        assert!(p.active().shortcut_names.is_empty());
+        assert!(p.active().bindings.is_empty());
+        assert_eq!(p.list[0].shortcuts.get(&mask), Some(&keys));
+        assert_eq!(p.list[0].shortcut_names[&mask], "Captura HDR: región");
+        let old: Profiles = serde_json::from_str(r#"{"list":[{"bindings":{"15":{"Keys":{"mods":0,"key":121}}}}]}"#).unwrap();
+        assert!(old.active().shortcuts.is_empty());
+        assert_eq!(old.active().bindings.len(), 1);
+    }
+
+    #[test]
+    fn incoming_shortcuts_reject_empty_inputs_and_invalid_keys() {
+        let mut p = Profiles::default();
+        let valid = crate::binding::Chord::new(5, 121);
+        for (input, keys) in [(0, valid), (3, Chord::default()), (3, Chord::new(32, 121)), (3, Chord::new(0, 65535))] {
+            p.apply(Edit::Shortcut { name: None, anchor: 15, input, keys: Some(keys) });
+        }
+        assert!(p.active().shortcuts.is_empty());
+        p.apply(Edit::Shortcut { name: None, anchor: 15, input: 3, keys: Some(valid) });
+        assert_eq!(p.active().shortcuts.len(), 1);
+        p.apply(Edit::Shortcut { name: None, anchor: 15, input: 3, keys: None });
+        assert!(p.active().shortcuts.is_empty());
+    }
+
+    #[test]
     fn edits_apply_to_the_profile_in_use() {
         let mut p = Profiles::new("Default".into());
         p.apply(Edit::Bind { button: 17, action: Some(Action::Xbox(XboxButton::A)) });
         p.apply(Edit::Add("Racing".into()));
         assert_eq!(p.active, 1);
-        assert_eq!(p.active().bindings.len(), 1, "a new profile starts as a copy");
+        assert!(p.active().bindings.is_empty(), "a new profile starts independently");
         p.apply(Edit::Bind { button: 17, action: None });
         assert!(p.active().bindings.is_empty());
         p.apply(Edit::Bind { button: 64, action: Some(Action::Xbox(XboxButton::A)) });
@@ -683,7 +849,7 @@ mod tests {
     fn remapped_buttons_round_trip() {
         let mut p = Profiles::new("Zelda".into());
         p.apply(Edit::Letters(true));
-        p.apply(Edit::Bind { button: 4, action: Some(Action::Keys(crate::binding::Chord { mods: 0, key: 0x4D })) });
+        p.apply(Edit::Bind { button: 4, action: Some(Action::Keys(crate::binding::Chord::new(0, 0x4D))) });
         let text = serde_json::to_string(&p).unwrap();
         let back = serde_json::from_str::<Profiles>(&text).unwrap().sanitised();
         assert_eq!(back, p);
@@ -1043,5 +1209,21 @@ mod tests {
         assert_eq!((old.mode, old.sensitivity, old.invert_y), (GyroMode::Holding(9), 150, true));
         let back: Gyro = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
         assert_eq!(back, g);
+    }
+    #[test]
+    fn shortcut_durations_default_roundtrip_and_do_not_leak_to_other_profiles() {
+        let mut p: Profiles = serde_json::from_str(r#"{"list":[{}]}"#).unwrap();
+        assert_eq!(p.active().shortcut_hold_ms(32769), 100);
+        p.apply(Edit::Shortcut { name: None, anchor: 15, input: 32769, keys: Some(Chord::new(0, 121)) });
+        p.list[0].shortcut_durations.insert(32769, 250);
+        assert_eq!(p.active().shortcut_hold_ms(32769), 250);
+        p.apply(Edit::Add("Other".into()));
+        assert_eq!(p.active().shortcut_hold_ms(32769), 100);
+        assert_eq!(serde_json::from_str::<Profiles>(&serde_json::to_string(&p).unwrap()).unwrap(), p);
+        p.list[0].shortcut_durations.insert(32769, 0);
+        p.list[0].shortcut_durations.insert(123, 250);
+        let cleaned = p.sanitised();
+        assert_eq!(cleaned.list[0].shortcut_hold_ms(32769), shortcuts::MIN_HOLD_MS);
+        assert!(!cleaned.list[0].shortcut_durations.contains_key(&123));
     }
 }

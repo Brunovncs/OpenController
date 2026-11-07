@@ -51,12 +51,12 @@ impl Sink {
 
     pub fn down(&self, c: Chord) {
         let mods = MODIFIERS.iter().filter(|(m, _)| c.mods & m != 0).map(|&(_, k)| k);
-        self.keys(mods.chain(code(c.key)), 1);
+        self.keys(mods.chain(c.keys().filter_map(code)), 1);
     }
 
     pub fn up(&self, c: Chord) {
         let mods = MODIFIERS.iter().rev().filter(|(m, _)| c.mods & m != 0).map(|&(_, k)| k);
-        self.keys(code(c.key).into_iter().chain(mods), 0);
+        self.keys(c.keys().rev().filter_map(code).chain(mods), 0);
     }
 }
 

@@ -50,17 +50,10 @@ pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor
 fn eightbitdo_profiles() -> Profiles {
     let mut p = Profiles::default();
     p.apply(Edit::Bind { button: extras::LEFT_PADDLE2, action: Some(Action::Xbox(XboxButton::A)) });
-    p.apply(Edit::Bind {
-        button: extras::RIGHT_PADDLE2,
-        action: Some(Action::Keys(Chord { mods: modifier::CTRL | modifier::SHIFT, key: 0x4D })),
-    });
+    p.apply(Edit::Bind { button: extras::RIGHT_PADDLE2, action: Some(Action::Keys(Chord::new(modifier::CTRL | modifier::SHIFT, 0x4D))) });
     p.apply(Edit::Bind {
         button: extras::RIGHT_PADDLE1,
-        action: Some(Action::Macro(vec![
-            Step::Keys(Chord { mods: 0, key: 0x31 }),
-            Step::Wait(80),
-            Step::Keys(Chord { mods: 0, key: 0x52 }),
-        ])),
+        action: Some(Action::Macro(vec![Step::Keys(Chord::new(0, 0x31)), Step::Wait(80), Step::Keys(Chord::new(0, 0x52))])),
     });
     p.apply(Edit::Add("Racing".into()));
     p.apply(Edit::Select(0));
@@ -106,7 +99,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
             Step::Xbox(Buttons::of(&[XboxButton::Right])),
             Step::Wait(40),
             Step::Xbox(Buttons::of(&[XboxButton::X, XboxButton::RightBumper])),
-            Step::Keys(Chord { mods: 0, key: 0x46 }),
+            Step::Keys(Chord::new(0, 0x46)),
         ])),
     });
 
@@ -117,7 +110,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     switch.extras = vec![extras::MISC1];
     switch.features = Features { motion: true, rumble: true, player_lights: true, ..Features::default() };
     switch.profiles.apply(Edit::Letters(true));
-    switch.profiles.apply(Edit::Bind { button: button::BACK as u8, action: Some(Action::Keys(Chord { mods: 0, key: 0x4D })) });
+    switch.profiles.apply(Edit::Bind { button: button::BACK as u8, action: Some(Action::Keys(Chord::new(0, 0x4D))) });
 
     let mut joycons = pad(PadKey::Slot(5), "Joy-Con (L/R)", Brand::Nintendo, Family::JoyCons, (0x057E, 0x2008));
     joycons.links = vec![Link::Bluetooth];
@@ -208,6 +201,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
         _ => 100,
     });
     Snapshot {
+        press_measurement: None,
         pads,
         vigem: Driver::Ready { version: Some("1.22.0".into()) },
         hidhide: Driver::Ready { version: None },

@@ -6,7 +6,8 @@
 use crate::engine::{PadKey, Snapshot};
 use crate::i18n::Lang;
 use crate::platform::VirtualDriver;
-use crate::profile::Edit;
+use crate::portable::ActionLibrary;
+use crate::profile::{Edit, Profiles};
 use crate::report::Diagnosis;
 use serde::{Deserialize, Serialize};
 
@@ -18,13 +19,14 @@ pub use pipe::{Pipe, Reader, is_disconnect, remove_socket};
 
 /// The version of these messages. Raised whenever either side would misread the other's, so a
 /// window from one release meeting a resident process from another can tell.
-pub const PROTO: u32 = 1;
+pub const PROTO: u32 = 2;
 
 /// What the resident process tells the window.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToWindow {
     Snapshot(Snapshot),
     Prefs(Prefs),
+    ActionLibrary(ActionLibrary),
     /// The answer to [`ToTray::Diagnose`]; `None` when the controller is gone.
     Diagnosis(PadKey, Option<Box<Diagnosis>>),
     /// The first message on a connection. Resident processes before it send none.
@@ -77,6 +79,13 @@ pub enum ToTray {
     SplitJoyCons(bool),
     /// Whether the window is the one in front: behind a game it is sent live input less often.
     Focused(bool),
+    RecordShortcuts(Option<PadKey>),
+    /// Apply a reviewed import, atomically preserving all unrelated controllers.
+    ApplyConfiguration {
+        store: Option<String>,
+        profiles: Option<Box<Profiles>>,
+        actions: ActionLibrary,
+    },
     /// A joystick SDL has no layout for gets one its owner made: its GUID, a name, and the
     /// parts as a mapping line has them (`a:b2,b:b1,`).
     Map {

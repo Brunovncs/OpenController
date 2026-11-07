@@ -194,17 +194,91 @@ pub mod modifier {
     pub const WIN: u8 = 8;
 }
 
-/// A key with the modifiers held with it. `key` is a Windows virtual-key code; 0 is a chord of
-/// modifiers only.
+/// A simultaneous set of keys, with modifiers pressed first. `key` remains the first
+/// Windows virtual-key code for compatibility with older configurations. Mouse buttons
+/// use their Windows VKeys (1, 2, 4, 5, 6); additional keys are stored only when needed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Chord {
     pub mods: u8,
     pub key: u16,
+    #[serde(default, skip_serializing_if = "ExtraKeys::is_empty")]
+    pub extra: ExtraKeys,
+}
+
+/// A bounded, allocation-free set covering every Windows virtual key. Serialized as a
+/// readable list of key codes rather than internal bit masks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "Vec<u16>", into = "Vec<u16>")]
+pub struct ExtraKeys([u64; 4]);
+
+impl ExtraKeys {
+    fn is_empty(&self) -> bool {
+        self.0 == [0; 4]
+    }
+
+    fn insert(&mut self, key: u16) {
+        if (1..=255).contains(&key) {
+            self.0[key as usize / 64] |= 1 << (key % 64);
+        }
+    }
+
+    fn iter(&self) -> impl DoubleEndedIterator<Item = u16> + use<> {
+        let bits = self.0;
+        (1..=255).filter(move |&key| bits[key as usize / 64] & (1 << (key % 64)) != 0)
+    }
+}
+
+impl TryFrom<Vec<u16>> for ExtraKeys {
+    type Error = &'static str;
+    fn try_from(keys: Vec<u16>) -> Result<Self, Self::Error> {
+        let mut out = Self::default();
+        for key in keys {
+            if !(1..=255).contains(&key) {
+                return Err("Invalid additional virtual-key code");
+            }
+            out.insert(key);
+        }
+        Ok(out)
+    }
+}
+
+impl From<ExtraKeys> for Vec<u16> {
+    fn from(keys: ExtraKeys) -> Self {
+        keys.iter().collect()
+    }
 }
 
 impl Chord {
+    pub const fn new(mods: u8, key: u16) -> Self {
+        Self { mods, key, extra: ExtraKeys([0; 4]) }
+    }
+
+    pub fn from_keys(mods: u8, keys: impl IntoIterator<Item = u16>) -> Self {
+        let mut chord = Self::new(mods, 0);
+        for key in keys {
+            chord.add_key(key);
+        }
+        chord
+    }
+
+    pub fn add_key(&mut self, key: u16) {
+        if key == 0 || key == self.key {
+            return;
+        }
+        if self.key == 0 {
+            self.key = key;
+        } else {
+            self.extra.insert(key);
+        }
+    }
+
+    pub fn keys(&self) -> impl DoubleEndedIterator<Item = u16> + use<> {
+        let first = self.key;
+        std::iter::once(first).filter(|&key| key != 0).chain(self.extra.iter().filter(move |&key| key != first))
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.mods == 0 && self.key == 0
+        self.mods == 0 && self.key == 0 && self.extra.is_empty()
     }
 }
 
@@ -377,11 +451,23 @@ mod tests {
     }
 
     #[test]
+    fn multi_key_chords_round_trip_without_changing_legacy_files() {
+        let old = r#"{"mods":1,"key":86}"#;
+        let legacy: Chord = serde_json::from_str(old).unwrap();
+        assert_eq!(serde_json::to_string(&legacy).unwrap(), old);
+        let chord = Chord::from_keys(modifier::CTRL, [0x56, 0x26, 0x26, 0x56]);
+        assert_eq!(chord.keys().collect::<Vec<_>>(), [0x56, 0x26]);
+        let json = serde_json::to_string(&chord).unwrap();
+        assert_eq!(serde_json::from_str::<Chord>(&json).unwrap(), chord);
+        assert!(serde_json::from_str::<Chord>(r#"{"mods":1,"key":86,"extra":[256]}"#).is_err());
+    }
+
+    #[test]
     fn overlay_adds_only_held_buttons() {
         let mut b = Bindings::new();
         b.insert(16, Action::Xbox(XboxButton::A));
         b.insert(17, Action::Xbox(XboxButton::LeftTrigger));
-        b.insert(18, Action::Keys(Chord { mods: modifier::CTRL, key: 0x41 }));
+        b.insert(18, Action::Keys(Chord::new(modifier::CTRL, 0x41)));
         assert_eq!(report(&b, &[]), XusbReport::default());
         assert_eq!(report(&b, &[16]).buttons, xusb::A);
         let r = report(&b, &[16, 17, 18]);
@@ -420,7 +506,7 @@ mod tests {
     fn what_games_see_pressed() {
         let mut b = Bindings::new();
         b.insert(button::SOUTH as u8, Action::Xbox(XboxButton::B));
-        b.insert(button::BACK as u8, Action::Keys(Chord { mods: 0, key: 0x4D }));
+        b.insert(button::BACK as u8, Action::Keys(Chord::new(0, 0x4D)));
         b.insert(extras::LEFT_PADDLE1, Action::Combo(Buttons::of(&[XboxButton::X, XboxButton::Y])));
         let held = |list: &[u32], lt: i16| {
             let mut s = PadState { buttons: list.iter().fold(0, |m, &x| m | 1 << x), ..PadState::default() };
@@ -454,9 +540,9 @@ mod tests {
     #[test]
     fn a_button_given_a_key_leaves_the_game() {
         let mut b = Bindings::new();
-        b.insert(button::BACK as u8, Action::Keys(Chord { mods: 0, key: 0x4D }));
+        b.insert(button::BACK as u8, Action::Keys(Chord::new(0, 0x4D)));
         assert_eq!(report(&b, &[button::BACK]), XusbReport::default());
-        b.insert(button::START as u8, Action::Macro(vec![Step::Keys(Chord { mods: 0, key: 0x41 })]));
+        b.insert(button::START as u8, Action::Macro(vec![Step::Keys(Chord::new(0, 0x41))]));
         assert_eq!(report(&b, &[button::START, button::SOUTH]).buttons, xusb::A);
     }
 
@@ -526,10 +612,10 @@ mod tests {
 
     #[test]
     fn macros_are_clamped() {
-        let long = Action::Macro((0..100).map(|_| Step::Wait(60_000)).chain([Step::Keys(Chord { mods: 0, key: 0x41 })]).collect());
+        let long = Action::Macro((0..100).map(|_| Step::Wait(60_000)).chain([Step::Keys(Chord::new(0, 0x41))]).collect());
         assert_eq!(long.sanitised(), None, "the key fell beyond the step limit");
-        let ok = Action::Macro(vec![Step::Keys(Chord { mods: 0, key: 0x41 }), Step::Wait(60_000)]).sanitised();
-        assert_eq!(ok, Some(Action::Macro(vec![Step::Keys(Chord { mods: 0, key: 0x41 }), Step::Wait(MAX_WAIT_MS)])));
+        let ok = Action::Macro(vec![Step::Keys(Chord::new(0, 0x41)), Step::Wait(60_000)]).sanitised();
+        assert_eq!(ok, Some(Action::Macro(vec![Step::Keys(Chord::new(0, 0x41)), Step::Wait(MAX_WAIT_MS)])));
         assert_eq!(Action::Keys(Chord::default()).sanitised(), None);
         let a = Step::Xbox(Buttons::of(&[XboxButton::A]));
         let pad = Action::Macro(vec![a, Step::Wait(20), Step::Xbox(Buttons::default())]);
@@ -546,7 +632,7 @@ mod tests {
     #[test]
     fn bindings_round_trip_as_json() {
         let mut b = Bindings::new();
-        b.insert(17, Action::Macro(vec![Step::Keys(Chord { mods: modifier::SHIFT, key: 0x31 }), Step::Wait(50)]));
+        b.insert(17, Action::Macro(vec![Step::Keys(Chord::new(modifier::SHIFT, 0x31)), Step::Wait(50)]));
         b.insert(18, Action::Macro(vec![Step::Xbox(Buttons::of(&[XboxButton::LeftBumper, XboxButton::Up]))]));
         b.insert(19, Action::Combo(Buttons::of(&[XboxButton::A, XboxButton::Guide])));
         let text = serde_json::to_string(&b).unwrap();

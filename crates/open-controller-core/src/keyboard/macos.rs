@@ -62,14 +62,14 @@ impl Sink {
                 self.post(key, true, flags);
             }
         }
-        if let Some(k) = code(c.key) {
+        for k in c.keys().filter_map(code) {
             self.post(k, true, flags);
         }
     }
 
     pub fn up(&self, c: Chord) {
         let mut flags: u64 = MODIFIERS.iter().filter(|(m, ..)| c.mods & m != 0).map(|&(.., f)| f).sum();
-        if let Some(k) = code(c.key) {
+        for k in c.keys().rev().filter_map(code) {
             self.post(k, false, flags);
         }
         for &(m, key, flag) in MODIFIERS.iter().rev() {

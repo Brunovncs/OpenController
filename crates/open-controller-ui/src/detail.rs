@@ -19,6 +19,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Window, div, px, rgb,
 };
 use open_controller_core::binding::{self, Action, Buttons, Chord, Step, XboxButton};
+use open_controller_core::button_mode::Mode;
 use open_controller_core::device::{Form, Power};
 use open_controller_core::extras::{self, Art, Family, HANDHELD, Hint};
 use open_controller_core::handheld;
@@ -122,7 +123,7 @@ fn sideways(pad: &PadView) -> bool {
 }
 
 /// What is printed on one of `binding::NORMAL`, on this controller.
-fn normal_label(pad: &PadView, b: u8) -> &'static str {
+pub(crate) fn normal_label(pad: &PadView, b: u8) -> &'static str {
     const XBOX: [&str; 15] = ["A", "B", "X", "Y", "LB", "RB", "View", "Menu", "Xbox", "LS", "RS", "↑", "↓", "←", "→"];
     const NINTENDO: [&str; 15] = ["B", "A", "Y", "X", "L", "R", "−", "+", "⌂", "LS", "RS", "↑", "↓", "←", "→"];
     const DUALSHOCK3: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Select", "Start", "PS", "L3", "R3", "↑", "↓", "←", "→"];
@@ -222,6 +223,14 @@ impl MainView {
     }
 
     pub(crate) fn edit_now(&mut self, key: PadKey, edit: Edit, cx: &mut Context<Self>) {
+        if matches!(&edit, Edit::Select(_) | Edit::Add(_) | Edit::Delete(_)) {
+            self.stop_press_meter(cx);
+            self.press_meter = None;
+            self.close_shortcut(cx);
+            self.editor = None;
+            self.mouse_picker = None;
+            self.config.pending = None;
+        }
         if let Some(pad) = self.pad(key, cx) {
             self.edit_profiles(&pad, edit, cx);
         }
@@ -690,9 +699,12 @@ impl MainView {
                         .child(self.extras_column(pad, text, &t, cx))
                         .when(remappable(pad), |d| d.child(self.all_buttons_column(pad, text, &t, cx)))
                         .when(pad.features.pressure && remappable(pad), |d| d.child(self.pressure_card(pad, text, cx)))
-                        .when(pad.store.is_some() && !kept_native(pad) && !pad.profiles.active().bindings.is_empty(), |d| {
-                            d.child(self.restore_button(pad.key, text, &t, cx))
-                        }),
+                        .when(
+                            pad.store.is_some()
+                                && !kept_native(pad)
+                                && (!pad.profiles.active().bindings.is_empty() || !pad.profiles.active().shortcuts.is_empty()),
+                            |d| d.child(self.restore_button(pad.key, text, &t, cx)),
+                        ),
                 ),
             )
             .into_any_element()
@@ -740,7 +752,11 @@ impl MainView {
                     .when(printed.is_some(), |d| d.child(caption(place.clone(), t.text2)))
                     .when(printed.is_none(), |d| d.child(strong(place.clone(), t.text))),
             )
-            .child(summary(b, pad.profiles.active().bindings.get(&b), text, &t))
+            .child(if pad.profiles.active().button_mode(b) == Mode::Combinations {
+                caption(text.combinations.tab, t.accent)
+            } else {
+                summary(b, pad.profiles.active().bindings.get(&b), text, &t)
+            })
             .child(icon(if selected { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT }, 12., t.text2));
         let mut g = group().child(row);
         if selected {
@@ -1172,19 +1188,7 @@ impl MainView {
                 .cursor_pointer()
                 .when(on, |d| d.bg(t.layer).border_1().border_color(t.stroke_strong))
                 .child(body(label, if on { t.text } else { t.text2 }).when(on, |d| d.font_weight(gpui::FontWeight::SEMIBOLD)))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    let Some(e) = this.editor.as_mut() else { return };
-                    e.tab = which;
-                    e.recording = which == Tab::Key;
-                    e.other_keys = false;
-                    if which == Tab::Key {
-                        this.focus.focus(window, cx);
-                    }
-                    if which == Tab::Nothing {
-                        this.bind_now(key, b, None, cx);
-                    }
-                    cx.notify();
-                }))
+                .on_click(cx.listener(move |this, _, _, cx| this.select_button_tab(key, b, which, cx)))
         };
         let tabs = div()
             .flex()
@@ -1196,6 +1200,7 @@ impl MainView {
             .when(!keys_only, |d| d.child(tab("tab-xbox", text.tab_xbox, Tab::Xbox, cx)))
             .child(tab("tab-key", text.tab_key, Tab::Key, cx))
             .child(tab("tab-macro", text.tab_macro, Tab::Macro, cx))
+            .when(remappable(pad), |d| d.child(tab("tab-combinations", text.combinations.tab, Tab::Combinations, cx)))
             .child(tab("tab-nothing", if normal { text.tab_default } else { text.tab_nothing }, Tab::Nothing, cx));
 
         let content: AnyElement = match e.tab {
@@ -1257,7 +1262,7 @@ impl MainView {
             }
             Tab::Key => {
                 let shown = match (&current, e.recording) {
-                    (_, true) if e.holding != 0 => keycaps(Chord { mods: e.holding, key: 0 }, t),
+                    (_, true) if e.holding != 0 => keycaps(Chord::new(e.holding, 0), t),
                     (_, true) => caption(text.listening, t.accent),
                     (Some(Action::Keys(c)), false) => keycaps(*c, t),
                     _ => caption(text.press_key, t.text3),
@@ -1289,7 +1294,7 @@ impl MainView {
                 let mut list = div().flex().flex_wrap().gap(px(6.));
                 if other {
                     for (i, vk) in keys::OTHER.into_iter().enumerate() {
-                        let c = Chord { mods: 0, key: vk };
+                        let c = Chord::new(0, vk);
                         list = list.child(div().id(("other", i)).cursor_pointer().child(keycap(keyboard::key_name(vk), t)).on_click(
                             cx.listener(move |this, _, _, cx| {
                                 if let Some(e) = this.editor.as_mut() {
@@ -1306,6 +1311,14 @@ impl MainView {
                     .gap(px(10.))
                     .child(caption(text.key_desc, t.text2))
                     .child(field)
+                    .when(cfg!(windows), |d| {
+                        d.child(button("key-mouse", text.configuration.mouse, Kind::Standard, t).on_click(cx.listener(
+                            move |this, _, _, cx| {
+                                this.open_mouse_picker(crate::mouse_picker::Target::Button(key, b), cx);
+                            },
+                        )))
+                    })
+                    .children(self.render_mouse_picker(crate::mouse_picker::Target::Button(key, b), t, cx))
                     .child(div().flex().child(
                         button("other-keys", text.other_keys, Kind::Subtle, t).px(px(0.)).text_color(t.accent).on_click(cx.listener(
                             |this, _, _, cx| {
@@ -1319,6 +1332,7 @@ impl MainView {
                     .when(other, |d| d.child(list))
                     .into_any_element()
             }
+            Tab::Combinations => self.shortcut_panel(pad, b, t, cx).into_any_element(),
             Tab::Macro => self.macro_editor(key, b, remappable(pad), text, t, cx),
             Tab::Nothing => caption(if normal { text.default_desc } else { text.nothing_desc }, t.text2).into_any_element(),
         };

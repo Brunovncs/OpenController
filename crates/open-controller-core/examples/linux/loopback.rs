@@ -100,7 +100,7 @@ fn check(ok: bool, what: &str) {
 fn main() {
     let mut profiles = Profiles::default();
     profiles.apply(Edit::Bind { button: RIGHT_PADDLE1, action: Some(Action::Xbox(XboxButton::Y)) });
-    profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord { mods: 0, key: VK_F24 })) });
+    profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord::new(0, VK_F24))) });
     let dir = std::env::temp_dir().join("open-controller-loopback");
     let config =
         Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into(), driver: Default::default(), split_joycons: false, mappings: Default::default() };

@@ -54,7 +54,7 @@ pub fn chord(k: &Keystroke) -> Option<Chord> {
         chars.next().is_none().then_some(())?;
         keyboard::vk_for_char(ch)
     })?;
-    Some(Chord { mods: mods(&k.modifiers), key })
+    Some(Chord::new(mods(&k.modifiers), key))
 }
 
 /// Keys the window cannot hear, because Windows acts on them first or the keyboard lacks them.
@@ -76,10 +76,10 @@ mod tests {
 
     #[test]
     fn keys() {
-        assert_eq!(chord(&stroke("f5", false)), Some(Chord { mods: 0, key: 0x74 }));
-        assert_eq!(chord(&stroke("f24", false)), Some(Chord { mods: 0, key: 0x87 }));
-        assert_eq!(chord(&stroke("a", true)), Some(Chord { mods: modifier::CTRL, key: 0x41 }));
-        assert_eq!(chord(&stroke("left", false)), Some(Chord { mods: 0, key: 0x25 }));
+        assert_eq!(chord(&stroke("f5", false)), Some(Chord::new(0, 0x74)));
+        assert_eq!(chord(&stroke("f24", false)), Some(Chord::new(0, 0x87)));
+        assert_eq!(chord(&stroke("a", true)), Some(Chord::new(modifier::CTRL, 0x41)));
+        assert_eq!(chord(&stroke("left", false)), Some(Chord::new(0, 0x25)));
         assert_eq!(chord(&stroke("f25", false)), None);
     }
 }
