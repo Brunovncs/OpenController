@@ -1,8 +1,10 @@
 //! Simplified Chinese interface text. Keep placeholders in the same order as English.
 
-use super::Text;
+use super::{EN, Text};
 
 pub const ZH: Text = Text {
+    configuration: EN.configuration,
+    combinations: EN.combinations,
     controllers: "手柄",
     controllers_one: "1 个手柄",
     controllers_many: "个手柄",
