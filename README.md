@@ -323,8 +323,9 @@ the triggers, as in PlayStation 2 and 3 racing games, its d-pad can move a stick
 pressed, and its gyro aims, with tilting up and down
 taken from its accelerometer since the gyro only turns sideways. Both are experimental and were
 written without a DualShock 3 at hand, so reports from one help. Valve's controllers are taken by Steam while it runs,
-and a Flydigi pad's extra buttons need "Allow third-party apps to take over mappings" in Flydigi
-Space Station; the window says so on their pages. A device SDL has no button layout for is listed
+and on the newer Flydigi pads (Vader 4 Pro and later, Apex 5 and 6, Direwolf 4) the extra buttons
+need "Allow third-party apps to take over mappings" in Flydigi Space Station; the window says so on
+their pages. Older Flydigi pads on their own receiver do not need it. A device SDL has no button layout for is listed
 as such and not passed to games.
 
 Any pad in XInput mode hides its extra buttons from every program, so 8BitDo pads list them only

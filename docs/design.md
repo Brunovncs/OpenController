@@ -114,8 +114,8 @@ lists (`controller_list.h`, `usb_ids.h`, its HIDAPI drivers and built-in Windows
 8BitDo range, and the ids Linux's xpad, hid-sony and hid-nintendo drivers know (facts only, no
 code). The family decides what the extra buttons are called, how the controller is drawn
 and what the window tells the user about it (switch an 8BitDo to D-input, close Steam, allow
-third-party apps in Flydigi's app). Which extra buttons a controller really has is always asked of
-SDL when it connects; the table only names them. Where SDL's driver reports buttons its mapping
+third-party apps in Flydigi's app on its newer pads). Which extra buttons a controller really has
+is always asked of SDL when it connects; the table only names them. Where SDL's driver reports buttons its mapping
 leaves out (the 8BitDo Ultimate 3's L4, R4, PL, PR and Share), the missing mapping fields are
 added to the open gamepad. SDL is told to use its PS3 driver through a "Sixaxis" driver, which is
 what DsHidMini's SXS mode presents, since Windows itself cannot start a DualShock 3.

@@ -307,7 +307,8 @@ pub enum Hint {
     XboxPaddlesHidden,
     /// Steam takes Valve's controllers for itself while it runs.
     SteamInput,
-    /// Flydigi's app must allow other programs to read the extra buttons.
+    /// Flydigi's app must allow other programs to read the extra buttons. Only the newer pads
+    /// (vendor 37d7) ask for this; the older receiver (04b4:2412) gives them to SDL as they are.
     FlydigiThirdParty,
     /// Switch 2 controllers need libusb, which this build of SDL leaves out.
     Switch2Unsupported,
@@ -323,7 +324,7 @@ pub fn hint(vendor: u16, product: u16, family: Family) -> Option<Hint> {
         }
         (_, _, Family::XboxElite) => Some(Hint::XboxPaddlesHidden),
         (_, _, Family::SteamController | Family::SteamDeck) => Some(Hint::SteamInput),
-        (_, _, Family::Flydigi | Family::FlydigiApex) => Some(Hint::FlydigiThirdParty),
+        (0x37D7, _, Family::Flydigi | Family::FlydigiApex) => Some(Hint::FlydigiThirdParty),
         (_, _, Family::Switch2) => Some(Hint::Switch2Unsupported),
         _ => None,
     }
@@ -413,5 +414,7 @@ mod tests {
         assert_eq!(hint(0x2DC8, 0x6012, Family::EightBitDoFour), None);
         assert_eq!(hint(0x045E, 0x0B00, family(0x045E, 0x0B00, PadType::XboxOne)), Some(Hint::XboxPaddlesHidden));
         assert_eq!(hint(0x057E, 0x2069, family(0x057E, 0x2069, PadType::Standard)), Some(Hint::Switch2Unsupported));
+        assert_eq!(hint(0x37D7, 0x2501, Family::FlydigiApex), Some(Hint::FlydigiThirdParty));
+        assert_eq!(hint(0x04B4, 0x2412, Family::Flydigi), None);
     }
 }

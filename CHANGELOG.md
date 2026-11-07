@@ -3,6 +3,11 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+Older Flydigi pads, like the Apex 2 and the Vader 2, no longer ask you to turn on "Allow
+third-party apps to take over mappings" in Space Station. Only the newer ones need it.
+
 ## 0.8.19
 
 The Logitech G29 now has its name and an Xbox layout on Linux and Mac. It is still left to racing
