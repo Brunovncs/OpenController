@@ -5,6 +5,12 @@ plays with OpenController, and whether settings carry over.
 
 ## Unreleased
 
+When the virtual controller driver is missing, a controller's page now says so and takes you to
+the install button. Before, only the home screen did, and the switches on the page did nothing.
+
+Reporting a problem with nothing written under "What goes wrong?" now asks for a line once.
+Pressing Send again sends it as it is.
+
 Older Flydigi pads, like the Apex 2 and the Vader 2, no longer ask you to turn on "Allow
 third-party apps to take over mappings" in Space Station. Only the newer ones need it.
 

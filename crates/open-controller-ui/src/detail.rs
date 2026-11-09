@@ -4,7 +4,7 @@
 //! is and what games see.
 
 use crate::art;
-use crate::home::{links, power, status};
+use crate::home::{banner, links, power, status};
 use crate::keys;
 use crate::report;
 use crate::text_field::{TextField, TextFieldEvent};
@@ -28,7 +28,7 @@ use open_controller_core::keyboard;
 use open_controller_core::models;
 use open_controller_core::profile::{self, Edit, Light, MAX_PROFILES, Output};
 use open_controller_core::rating::Rating;
-use open_controller_core::{PadKey, PadView, Role};
+use open_controller_core::{Driver, PadKey, PadView, Role};
 
 /// Colours offered for the light bar.
 const SWATCHES: [[u8; 3]; 12] = [
@@ -379,10 +379,24 @@ impl MainView {
             Form::Gamepad => (text.unknown_title, text.unknown_body),
         };
 
+        // No virtual controller can be made: said here too, where its owner would otherwise try
+        // every switch of the page to no effect.
+        let snap = &self.model.read(cx).snapshot;
+        let missing = (pad.role == Role::Unavailable && !matches!(snap.vigem, Driver::Ready { .. }))
+            .then(|| crate::requirements::attention(snap, text))
+            .flatten();
+        let blocked = missing.map(|message| {
+            let see = button("requirements", text.see_requirements, Kind::Standard, &t)
+                .on_click(cx.listener(|this, _, _, cx| this.settings(cx)))
+                .into_any_element();
+            banner(message.to_string(), Some(see), &t)
+        });
+
         div()
             .flex()
             .flex_col()
             .child(header)
+            .children(blocked)
             .when(matches!(key, PadKey::Slot(_)) && pad.store.is_some(), |d| d.child(self.native_row(pad, text, cx)))
             .when(unknown && mappable, |d| d.child(self.learn_block(pad, text, cx)))
             .when(unknown && !mappable, |d| {

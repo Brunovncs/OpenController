@@ -93,6 +93,8 @@ pub struct Report {
     pub state: Stage,
     pub copied: bool,
     pub bad_email: bool,
+    /// Asked once to say what goes wrong, on sending a problem with nothing written.
+    pub asked_message: bool,
     /// The system's name, read away from the interface thread when the dialog opens.
     pub system: Option<String>,
     /// The controller as it was when the dialog opened, kept should it disconnect.
@@ -470,6 +472,7 @@ impl MainView {
             state: Stage::Editing,
             copied: false,
             bad_email: false,
+            asked_message: false,
             system: None,
             pad,
             seen: 0,
@@ -537,12 +540,20 @@ impl MainView {
         compose(r, d, &m.snapshot, m.prefs.lang.name())
     }
 
-    fn send_report(&mut self, cx: &mut Context<Self>) {
+    fn send_report(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let report_text = self.report_text(cx);
         let Some(r) = self.report.as_mut() else { return };
         let email = r.email.read(cx).text().trim().to_string();
         r.bad_email = !email.is_empty() && !plausible_email(&email);
         if r.bad_email || r.state == Stage::Sending {
+            cx.notify();
+            return;
+        }
+        // A problem with no word on what it is leaves the maintainer guessing from the details:
+        // asked for once, and sent as it is on the second try.
+        if !r.unknown && !r.asked_message && r.message.read(cx).text().trim().is_empty() {
+            r.asked_message = true;
+            r.message.focus_handle(cx).focus(window, cx);
             cx.notify();
             return;
         }
@@ -682,7 +693,18 @@ impl MainView {
                     .child(body(text.report_intro, t.text2))
                     .when(gone, |d| d.child(body(text.report_gone, t.caution)))
                     .child(field(label(text.report_model, true).into_any_element(), r.model.clone().into_any_element()))
-                    .child(field(label(text.report_message, true).into_any_element(), r.message.clone().into_any_element()))
+                    .child(field(
+                        label(text.report_message, r.unknown).into_any_element(),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.))
+                            .child(r.message.clone())
+                            .when(r.asked_message && r.message.read(cx).text().trim().is_empty(), |d| {
+                                d.child(caption(text.report_message_empty, t.caution))
+                            })
+                            .into_any_element(),
+                    ))
                     .child(field(
                         label(text.report_email, true).into_any_element(),
                         div()
@@ -785,9 +807,9 @@ impl MainView {
                                             &t,
                                         )
                                         .when(sending || waiting, |b| b.opacity(0.6).cursor_default())
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                        .on_click(cx.listener(move |this, _, w, cx| {
                                             if !waiting {
-                                                this.send_report(cx);
+                                                this.send_report(w, cx);
                                             }
                                         })),
                                     ),

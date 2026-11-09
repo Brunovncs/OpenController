@@ -106,7 +106,7 @@ pub fn links(pad: &PadView, text: &Text, t: &Theme) -> Div {
     div().flex().flex_wrap().gap(px(6.)).children(names.map(|n| chip(n, t.text2, t.control)))
 }
 
-fn banner(message: String, action: Option<AnyElement>, t: &Theme) -> Div {
+pub fn banner(message: String, action: Option<AnyElement>, t: &Theme) -> Div {
     div()
         .flex()
         .items_center()
