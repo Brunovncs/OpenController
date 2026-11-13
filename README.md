@@ -279,6 +279,37 @@ already opened it keeps it after it goes back to Xbox, so it would read it twice
 without a serial number shares its settings with every controller of its model, and so does this
 choice. With "Hide original controllers" off, native only removes the Xbox controller.
 
+The Light page can explicitly opt into light-bar control while input stays native. This is off
+by default; a game that also sets the light can compete with it. Custom colours accept a full
+`#RRGGBB` value as well as the colour swatches.
+
+The preview follows both touchpad contacts, including movement without clicking, with
+frame-timed smoothing and a short fading trail in the focused detailed preview. Unfocused
+windows and reduced-motion mode keep direct feedback instead; losing focus clears old trails.
+Both contacts and trails follow the configured LED colour, with the theme accent as a fallback
+when the LED colour is black or off. This only affects drawing, never controller input. On Windows,
+the DualSense microphone indicator shows the actual mute state of the default recording device.
+Its separate, opt-in mic-button switch toggles that device; another binding for the button takes
+priority. Bluetooth may use the PC microphone, since it need not expose a DualSense recording
+device. This reads the endpoint's mute flag and never records audio.
+
+Windows uses one application-drawn title bar with the usual window controls.
+
+### Controller Lab
+
+The controller's Lab page has optional tools, saved with each profile and off by default:
+
+- **Trigger Lab:** independent DualSense/Edge L2 and R2 resistance, vibration and trigger-break
+  effects. Adjust the start/end zones, force and frequency, try them for five seconds, stop
+  them immediately or opt into persistent profile effects. A trial restores the profile after
+  its timeout; disconnect and normal exit clear effects owned by OpenController. Output goes
+  through SDL, including USB/Bluetooth framing and checksums.
+
+Use matching resident/UI binaries (IPC protocol 2). Trials restore the saved profile settings.
+
+Protocol references: [SDL's gamepad effect example](https://github.com/libsdl-org/SDL/blob/main/test/testcontroller.c),
+and [DualSense trigger encoding](https://gist.github.com/Nielk1/6d54cc2c00d2201ccb8c2720ad7538db).
+
 ## Supported controllers
 
 Controllers are read through [SDL 3](https://libsdl.org), which speaks each one's own protocol,
