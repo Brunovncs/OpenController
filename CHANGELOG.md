@@ -3,7 +3,7 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.21
 
 On the DualShock 3, L1 and R1 can now move a stick as hard as they are pressed, one each way, to
 turn the camera like older games did. Pick the stick and the direction under Pressure-sensitive
