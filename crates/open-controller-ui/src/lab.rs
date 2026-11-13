@@ -129,7 +129,7 @@ impl MainView {
         let cfg = pad.profiles.active().lab;
         let tabs = widgets::segmented(
             "lab-tabs",
-            l.tabs.iter().take(5).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
+            l.tabs.iter().take(6).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
             self.lab_tab,
             &t,
             cx,
@@ -284,6 +284,21 @@ impl MainView {
             4 => {
                 let number = self.lab_number("lab-debounce", l.debounce, cfg.debounce_ms, (0, 100), 5, pad, |c, v| c.debounce_ms = v, cx);
                 panel(&t).child(caption(l.debounce_note, t.text2)).child(number).into_any_element()
+            }
+            5 => {
+                let status = &pad.lab_status.dsu;
+                panel(&t)
+                    .child(self.toggle("lab-dsu", (l.dsu_on, ""), cfg.dsu, Edit::Lab(Config { dsu: !cfg.dsu, ..cfg }), key, cx))
+                    .child(caption(l.dsu_note, t.text2))
+                    .when(cfg.dsu, |d| {
+                        d.child(strong(
+                            format!("127.0.0.1:{} · {}: {}", status.port.max(26760), l.clients, status.clients),
+                            if status.running { t.accent } else { t.text2 },
+                        ))
+                        .when(pad.gyro.is_none(), |d| d.child(caption(l.waiting, t.text2)))
+                        .when_some(status.error.clone(), |d, error| d.child(caption(error, t.caution)))
+                    })
+                    .into_any_element()
             }
             _ => self.lab_effects(pad, text, cx),
         };

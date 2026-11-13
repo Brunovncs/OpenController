@@ -316,6 +316,10 @@ The controller's Lab page has optional tools, saved with each profile and off by
   pull can bypass it. The chosen buttons also use their existing keyboard/gamepad assignments.
 - **Button debounce (mapping mode):** require a stable press/release for 0–100 ms before output.
   Timers settle without another controller report. Zero preserves the original latency.
+- **DSU motion:** a single loopback-only UDP server at `127.0.0.1:26760`, implementing Cemuhook
+  protocol 1001 for up to four enabled controllers, subscriptions and their expiry, CRC32,
+  touch, buttons, gyro in degrees/second and acceleration in g. Add a DSU controller in the
+  emulator and enable motion. Binding failures and client counts are shown in the Lab.
 
 Native input stays native. Flick Stick and input remapping require mapping mode.
 
@@ -325,6 +329,8 @@ Use matching resident/UI binaries (IPC protocol 2). Trials restore the saved pro
 
 Protocol references: [SDL's gamepad effect example](https://github.com/libsdl-org/SDL/blob/main/test/testcontroller.c),
 and [DualSense trigger encoding](https://gist.github.com/Nielk1/6d54cc2c00d2201ccb8c2720ad7538db).
+
+The DSU worker does not block the input loop. See the [Cemuhook protocol](https://v1993.github.io/cemuhook-protocol/).
 
 ## Supported controllers
 

@@ -40,7 +40,10 @@ fn attach() -> (SDL_JoystickID, *mut SDL_Joystick) {
 fn attach_one(first: bool) -> (SDL_JoystickID, *mut SDL_Joystick) {
     // SDL copies these when attaching.
     let touchpads = [SDL_VirtualJoystickTouchpadDesc { nfingers: 2, ..Default::default() }];
-    let sensors = [SDL_VirtualJoystickSensorDesc { r#type: SDL_SENSOR_GYRO, rate: 250.0 }];
+    let sensors = [
+        SDL_VirtualJoystickSensorDesc { r#type: SDL_SENSOR_GYRO, rate: 250.0 },
+        SDL_VirtualJoystickSensorDesc { r#type: SDL_SENSOR_ACCEL, rate: 250.0 },
+    ];
     let desc = SDL_VirtualJoystickDesc {
         version: size_of::<SDL_VirtualJoystickDesc>() as u32,
         r#type: SDL_JOYSTICK_TYPE_GAMEPAD.0 as u16,
@@ -180,6 +183,42 @@ fn lab_inputs(engine: &Engine, joy: *mut SDL_Joystick, slot: u32, original: &Pro
     check(start.elapsed() >= Duration::from_millis(70), "button debounce settles on the timer and reaches XInput");
     unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
     wait_for("debounced A release", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
+    cfg = Lab { dsu: true, ..Default::default() };
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles));
+    engine.send(Command::Watch(true));
+    wait_for("DSU server", Duration::from_secs(2), || {
+        let pad = engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE))?;
+        assert!(pad.lab_status.dsu.error.is_none(), "DSU bind failed: {:?}", pad.lab_status.dsu.error);
+        let gyro = [0., 1., 0.];
+        let accel = [0., open_controller_core::ds4::STANDARD_GRAVITY, 0.];
+        unsafe {
+            SDL_SendJoystickVirtualSensorData(joy, SDL_SENSOR_GYRO, 1, gyro.as_ptr(), 3);
+            SDL_SendJoystickVirtualSensorData(joy, SDL_SENSOR_ACCEL, 1, accel.as_ptr(), 3);
+        }
+        (pad.lab_status.dsu.running && pad.gyro.is_some_and(|g| (g[1] - 1.).abs() < 0.001)).then_some(())
+    });
+    let client = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    client.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let mut request = Vec::from(*b"DSUC");
+    request.extend(1001u16.to_le_bytes());
+    request.extend(12u16.to_le_bytes());
+    request.extend([0; 4]);
+    request.extend(123u32.to_le_bytes());
+    request.extend(0x100002u32.to_le_bytes());
+    request.extend([0; 8]);
+    let crc = open_controller_core::dsu::crc32(&request);
+    request[8..12].copy_from_slice(&crc.to_le_bytes());
+    client.send_to(&request, "127.0.0.1:26760").unwrap();
+    let mut bytes = [0; 512];
+    let n = client.recv(&mut bytes).unwrap();
+    assert_eq!(n, 100);
+    assert_eq!(&bytes[..4], b"DSUS");
+    check(
+        (f32::from_le_bytes(bytes[84..88].try_into().unwrap()) - 1.).abs() < 0.01
+            && (f32::from_le_bytes(bytes[92..96].try_into().unwrap()) - 1f32.to_degrees()).abs() < 0.01,
+        "SDL sensors reach a DSU client in g and degrees/second",
+    );
     engine.send(Command::SetProfiles(PROFILE.into(), original.clone()));
     wait_for("original profile restored", Duration::from_secs(1), || {
         engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab == Lab::default())
