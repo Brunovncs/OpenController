@@ -319,7 +319,7 @@ pub fn hint(vendor: u16, product: u16, family: Family) -> Option<Hint> {
         (0x2DC8, 0x310B | 0x3109, _) => Some(Hint::EightBitDoDInput),
         (0x2DC8, 0x3106, _) => Some(Hint::EightBitDoSwitchD),
         (0x2DC8, 0x310A, _) => Some(Hint::EightBitDo2CBluetooth),
-        (0x2DC8, 0x2002 | 0x200F | 0x2003 | 0x2015 | 0x2019 | 0x201B | 0x2025 | 0x2027 | 0x2030 | 0x901B, _) => {
+        (0x2DC8, 0x2000 | 0x2002 | 0x200F | 0x2003 | 0x2015 | 0x2019 | 0x201B | 0x201E | 0x2025 | 0x2027 | 0x2030 | 0x901B, _) => {
             Some(Hint::EightBitDoForXbox)
         }
         (_, _, Family::XboxElite) => Some(Hint::XboxPaddlesHidden),
@@ -416,5 +416,8 @@ mod tests {
         assert_eq!(hint(0x057E, 0x2069, family(0x057E, 0x2069, PadType::Standard)), Some(Hint::Switch2Unsupported));
         assert_eq!(hint(0x37D7, 0x2501, Family::FlydigiApex), Some(Hint::FlydigiThirdParty));
         assert_eq!(hint(0x04B4, 0x2412, Family::Flydigi), None);
+        // Pro 2 Wired for Xbox, both ids: P1 and P2 only copy other buttons.
+        assert_eq!(hint(0x2DC8, 0x2000, Family::EightBitDoPro2), Some(Hint::EightBitDoForXbox));
+        assert_eq!(hint(0x2DC8, 0x201E, Family::EightBitDoPro2), Some(Hint::EightBitDoForXbox));
     }
 }

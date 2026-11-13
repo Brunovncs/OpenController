@@ -322,6 +322,7 @@ pub static MODELS: &[Row] = &[
     (0x2dc8, 0x2002, Family::EightBitDo, "8BitDo Ultimate Wired for Xbox"),
     (0x2dc8, 0x200f, Family::EightBitDo, "8BitDo Ultimate 3-mode for Xbox"),
     (0x2dc8, 0x2000, Family::EightBitDoPro2, "8BitDo Pro 2 Wired for Xbox"),
+    (0x2dc8, 0x201e, Family::EightBitDoPro2, "8BitDo Pro 2 Wired for Xbox"),
     (0x2dc8, 0x2100, Family::EightBitDo, "8BitDo SN30 Pro for Xbox"),
     (0x2dc8, 0x2101, Family::EightBitDo, "8BitDo SN30 Pro for Xbox"),
     (0x2dc8, 0x3019, Family::EightBitDo, "8BitDo 64 (BT)"),

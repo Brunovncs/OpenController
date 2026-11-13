@@ -17,6 +17,9 @@ Before, it only went sideways. They are also on the list of known controllers no
 The Logitech RS50 Base for PlayStation/PC is now known as a wheel, so games made for wheels read
 it as it is, force feedback included. Before, it showed up as a gamepad with no layout.
 
+The 8BitDo Pro 2 Wired for Xbox that reports 2dc8:201e is now known, and both versions of it say
+that P1 and P2 only copy other buttons, set in 8BitDo's app.
+
 Older Flydigi pads, like the Apex 2 and the Vader 2, no longer ask you to turn on "Allow
 third-party apps to take over mappings" in Space Station. Only the newer ones need it.
 
