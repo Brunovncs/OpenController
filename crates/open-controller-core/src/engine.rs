@@ -1195,7 +1195,10 @@ impl Core {
                 let ds4 = self.output_of(&p.model.store) == Output::DualShock4;
                 let gyro = matches!(p.kind, Kind::Slot(s) if !self.is_native(s))
                     && p.model.features.motion
-                    && (ds4 || self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off));
+                    && (ds4
+                        || cfg!(windows)
+                            && self.profile_of(&p.model.store).is_some_and(|pr| pr.lab.flick.enabled && pr.lab.flick.gyro_mouse)
+                        || self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off));
                 (gyro, gyro && ds4)
             };
             let p = self.phys.get_mut(&id).unwrap();
@@ -1676,7 +1679,7 @@ impl Core {
         }
         let mut r = mapping::to_xusb(&state);
         // The gyro adds to the right stick, so the stick still turns and the gyro fine-tunes.
-        if p.aim_out != (0, 0) {
+        if p.aim_out != (0, 0) && !profile.is_some_and(|pr| cfg!(windows) && pr.lab.flick.enabled) {
             r.thumb_rx = (i32::from(r.thumb_rx) + i32::from(p.aim_out.0)).clamp(-32768, 32767) as i16;
             r.thumb_ry = (i32::from(r.thumb_ry) + i32::from(p.aim_out.1)).clamp(-32768, 32767) as i16;
         }
@@ -1910,7 +1913,7 @@ impl Core {
                 }
                 let mouse = p.tools.runtime.update(p.state, cfg, mapped, p.rate, now);
                 p.tools.runtime.active = true;
-                let mouse_on = cfg!(windows) && cfg.touch.mode != crate::lab::TouchMode::Off;
+                let mouse_on = cfg!(windows) && (cfg.touch.mode != crate::lab::TouchMode::Off || mapped && cfg.flick.enabled);
                 if mouse_on || p.tools.mouse_on {
                     self.desktop.send(id, mouse);
                 }
