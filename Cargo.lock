@@ -4308,6 +4308,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "windows 0.62.2",
  "windows-sys 0.61.2",
  "x11rb",
 ]
@@ -4321,6 +4322,7 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "open-controller-core",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "unicode-segmentation",

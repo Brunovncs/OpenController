@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod lab;
 mod zh;
 pub use zh::ZH;
 
@@ -32,6 +33,7 @@ impl Lang {
 }
 
 pub struct Text {
+    pub lab: &'static lab::Text,
     pub controllers: &'static str,
     pub controllers_one: &'static str,
     pub controllers_many: &'static str,
@@ -121,6 +123,15 @@ pub struct Text {
     pub touchpad_click: &'static str,
     pub capture: &'static str,
     pub mic: &'static str,
+    pub native_light: &'static str,
+    pub native_light_hint: &'static str,
+    pub mic_sync: &'static str,
+    pub mic_sync_hint: &'static str,
+    pub mic_muted: &'static str,
+    pub mic_live: &'static str,
+    pub mic_unavailable: &'static str,
+    pub rgb_hex: &'static str,
+    pub rgb_hex_hint: &'static str,
     pub share: &'static str,
     pub extra_n: &'static str,
 
@@ -480,6 +491,7 @@ pub struct Text {
 }
 
 pub const EN: Text = Text {
+    lab: &lab::EN,
     controllers: "Controllers",
     controllers_one: "1 controller",
     controllers_many: "controllers",
@@ -532,7 +544,7 @@ pub const EN: Text = Text {
     as_native: "The controller itself, no Xbox controller",
     keep_native: "Keep native: games see the real controller.",
     native_close_game: "Close the game before switching.",
-    native_profiles_off: "Profiles, gyro and remapping are off while it stays native.",
+    native_profiles_off: "Game input stays native. Optional Controller Lab tools can be enabled separately.",
     native_all_alike: "Applies to every controller like this one.",
     native_not_hidden: "With Hide original controllers off, this only removes its Xbox controller.",
     features: "Also has",
@@ -584,6 +596,15 @@ pub const EN: Text = Text {
     touchpad_click: "Touchpad click",
     capture: "Capture",
     mic: "Mic",
+    native_light: "Control lighting in native mode",
+    native_light_hint: "Keeps native input. Lighting may conflict with a game that also controls it.",
+    mic_sync: "Mic button controls Windows default microphone",
+    mic_sync_hint: "Press to toggle actual mute. Other assignments take priority. Bluetooth may use the PC microphone.",
+    mic_muted: "Windows microphone: muted · active",
+    mic_live: "Windows microphone: unmuted · inactive",
+    mic_unavailable: "Windows microphone: unavailable",
+    rgb_hex: "RGB colour · #RRGGBB",
+    rgb_hex_hint: "Enter six hexadecimal digits to apply.",
     share: "Share",
     extra_n: "Extra {}",
 
@@ -948,6 +969,7 @@ pub const EN: Text = Text {
 };
 
 pub const PT: Text = Text {
+    lab: &lab::PT,
     controllers: "Controles",
     controllers_one: "1 controle",
     controllers_many: "controles",
@@ -1000,7 +1022,7 @@ pub const PT: Text = Text {
     as_native: "O próprio controle, sem controle de Xbox",
     keep_native: "Deixar nativo: os jogos veem o controle de verdade.",
     native_close_game: "Feche o jogo antes de trocar.",
-    native_profiles_off: "Em nativo, perfis, gyro e remapeamento ficam desligados.",
+    native_profiles_off: "A entrada do jogo fica nativa. As ferramentas do Laboratório podem ser ligadas separadamente.",
     native_all_alike: "Vale para todos os controles iguais a este.",
     native_not_hidden: "Com Esconder os controles originais desligado, isso só tira o controle de Xbox dele.",
     features: "Também tem",
@@ -1052,6 +1074,15 @@ pub const PT: Text = Text {
     touchpad_click: "Clique do touchpad",
     capture: "Captura",
     mic: "Microfone",
+    native_light: "Controlar luz no modo nativo",
+    native_light_hint: "Mantém a entrada nativa. A luz pode entrar em conflito com o jogo.",
+    mic_sync: "Botão de microfone controla a entrada padrão do Windows",
+    mic_sync_hint: "Aperte para alternar o mudo real. Outros mapeamentos têm prioridade. Bluetooth pode usar o microfone do PC.",
+    mic_muted: "Microfone do Windows: mudo · ativo",
+    mic_live: "Microfone do Windows: aberto · inativo",
+    mic_unavailable: "Microfone do Windows: indisponível",
+    rgb_hex: "Cor RGB · #RRGGBB",
+    rgb_hex_hint: "Digite seis dígitos hexadecimais para aplicar.",
     share: "Compartilhar",
     extra_n: "Extra {}",
 

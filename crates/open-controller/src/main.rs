@@ -250,6 +250,7 @@ impl Control {
             }
             ToTray::Focused(on) => return self.engine.send(Command::Focused(on)),
             ToTray::Identify(key) => return self.engine.send(Command::Identify(key)),
+            ToTray::TriggerPreview(key, effects) => return self.engine.send(Command::TriggerPreview(key, effects)),
             ToTray::PowerOff(key) => return self.engine.send(Command::PowerOff(key)),
             ToTray::SwapPlayers(a, b) => return self.engine.send(Command::SwapPlayers(a, b)),
             ToTray::Edit { store, edit } => {

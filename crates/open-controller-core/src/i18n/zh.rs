@@ -3,6 +3,7 @@
 use super::Text;
 
 pub const ZH: Text = Text {
+    lab: &super::lab::ZH,
     controllers: "手柄",
     controllers_one: "1 个手柄",
     controllers_many: "个手柄",
@@ -54,7 +55,7 @@ pub const ZH: Text = Text {
     as_native: "原始手柄，不创建 Xbox 手柄",
     keep_native: "保持原生：游戏直接读取真实手柄。",
     native_close_game: "切换前请先关闭游戏。",
-    native_profiles_off: "原生模式下不应用配置方案、陀螺仪瞄准和按键映射。",
+    native_profiles_off: "原生模式保留游戏输入；可单独启用手柄实验室工具。",
     native_all_alike: "此设置适用于所有相同型号的手柄。",
     native_not_hidden: "关闭“隐藏原始手柄”时，此选项仅移除模拟的 Xbox 手柄。",
     features: "支持的功能",
@@ -105,6 +106,15 @@ pub const ZH: Text = Text {
     touchpad_click: "触摸板按下",
     capture: "截图键",
     mic: "麦克风键",
+    native_light: "原生模式下控制灯光",
+    native_light_hint: "保留原始输入。若游戏也控制灯光，双方可能互相覆盖。",
+    mic_sync: "麦克风键控制 Windows 默认麦克风",
+    mic_sync_hint: "按一下切换实际静音；此键的其他映射优先。蓝牙下可能使用电脑麦克风。",
+    mic_muted: "Windows 麦克风：已静音 · active",
+    mic_live: "Windows 麦克风：未静音 · inactive",
+    mic_unavailable: "Windows 麦克风：不可用",
+    rgb_hex: "RGB 颜色 · #RRGGBB",
+    rgb_hex_hint: "输入完整的六位十六进制颜色即可应用。",
     share: "分享键",
     extra_n: "额外按键 {}",
     tab_xbox: "Xbox 按键",
