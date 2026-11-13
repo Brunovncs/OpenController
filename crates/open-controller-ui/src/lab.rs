@@ -11,7 +11,7 @@ use gpui::{
 use open_controller_core::extras::Family;
 use open_controller_core::i18n::Text;
 use open_controller_core::ipc::ToTray;
-use open_controller_core::lab::{Config, EffectMode, TouchMode, TriggerMode};
+use open_controller_core::lab::{Config, EffectMode, LightMode, TouchMode, TriggerMode};
 use open_controller_core::mapping::{axis, button as b};
 use open_controller_core::profile::Edit;
 use open_controller_core::{PadKey, PadView, Role};
@@ -129,7 +129,7 @@ impl MainView {
         let cfg = pad.profiles.active().lab;
         let tabs = widgets::segmented(
             "lab-tabs",
-            l.tabs.iter().take(6).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
+            l.tabs.iter().enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
             self.lab_tab,
             &t,
             cx,
@@ -300,7 +300,44 @@ impl MainView {
                     })
                     .into_any_element()
             }
-            _ => self.lab_effects(pad, text, cx),
+            _ => {
+                let mode = choices(
+                    "lab-light-mode",
+                    &l.light_modes,
+                    &[LightMode::Off, LightMode::Rainbow, LightMode::Breathe, LightMode::Rumble],
+                    cfg.dynamic.mode,
+                    key,
+                    &t,
+                    |c, v| c.dynamic.mode = v,
+                    cx,
+                );
+                let period = self.lab_number(
+                    "lab-light-period",
+                    l.period,
+                    cfg.dynamic.period_ms,
+                    (500, 30000),
+                    500,
+                    pad,
+                    |c, v| c.dynamic.period_ms = v,
+                    cx,
+                );
+                let idle = self.lab_number(
+                    "lab-light-idle",
+                    l.idle,
+                    cfg.dynamic.idle_seconds,
+                    (0, 600),
+                    10,
+                    pad,
+                    |c, v| c.dynamic.idle_seconds = v,
+                    cx,
+                );
+                panel(&t)
+                    .child(caption(l.light_note, t.text2))
+                    .child(mode)
+                    .when(matches!(cfg.dynamic.mode, LightMode::Rainbow | LightMode::Breathe), |d| d.child(period))
+                    .child(idle)
+                    .into_any_element()
+            }
         };
         div()
             .flex()

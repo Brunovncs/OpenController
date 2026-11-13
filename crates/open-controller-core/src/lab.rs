@@ -480,6 +480,36 @@ impl Runtime {
     }
 }
 
+pub fn dynamic_color(cfg: DynamicLight, base: [u8; 3], brightness: u8, elapsed: Duration, idle: Duration, rumble: u8) -> [u8; 3] {
+    let phase = elapsed.as_secs_f32() * 1000. / f32::from(cfg.period_ms.clamp(500, 30000));
+    let mut out = match cfg.mode {
+        LightMode::Off => base,
+        LightMode::Rainbow => {
+            let h = phase.fract() * 6.;
+            let x = (1. - (h % 2. - 1.).abs()) * 255.;
+            let rgb = match h as u8 {
+                0 => [255., x, 0.],
+                1 => [x, 255., 0.],
+                2 => [0., 255., x],
+                3 => [0., x, 255.],
+                4 => [x, 0., 255.],
+                _ => [255., 0., x],
+            };
+            rgb.map(|v| (v * f32::from(brightness.min(100)) / 100.) as u8)
+        }
+        LightMode::Breathe => base.map(|v| (f32::from(v) * (0.15 + 0.85 * (0.5 - (phase * TAU).cos() * 0.5))) as u8),
+        LightMode::Rumble => {
+            let v = f32::from(rumble) / 255.;
+            [f32::from(base[0]) * (1. - v) + 255. * v, f32::from(base[1]) * (1. - v), f32::from(base[2]) * (1. - v)].map(|c| c as u8)
+        }
+    };
+    if cfg.idle_seconds > 0 {
+        let fade = (1. - (idle.as_secs_f32() - f32::from(cfg.idle_seconds)).max(0.) / 5.).clamp(0., 1.);
+        out = out.map(|c| (f32::from(c) * fade) as u8);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,5 +694,12 @@ mod tests {
         let m = r.update(p, Config::default(), true, None, Instant::now());
         assert_eq!(r.output, p);
         assert_eq!((m.dx, m.dy, m.buttons, m.tap), (0., 0., 0, false));
+    }
+    #[test]
+    fn config_bounds_and_idle_fade() {
+        let cfg = Config { debounce_ms: u16::MAX, ..Default::default() }.clean();
+        assert_eq!(cfg.debounce_ms, 100);
+        let light = DynamicLight { idle_seconds: 10, ..Default::default() };
+        assert_eq!(dynamic_color(light, [20, 40, 60], 100, Duration::ZERO, Duration::from_secs(16), 0), [0; 3]);
     }
 }
