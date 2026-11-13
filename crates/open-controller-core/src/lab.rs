@@ -1,7 +1,7 @@
 //! Optional controller tools. All defaults preserve direct gamepad input.
 use crate::mapping::{PadState, button};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TouchMode {
@@ -183,20 +183,177 @@ pub struct Mouse {
 }
 
 #[derive(Default)]
+struct TouchState {
+    finger: Option<usize>,
+    last: Option<(f32, f32)>,
+    velocity: (f32, f32),
+    moved: Option<Instant>,
+    start: Option<Instant>,
+    travel: f32,
+    clicked: bool,
+    click_button: u8,
+    last_scroll: Option<f32>,
+}
+impl TouchState {
+    fn update(&mut self, pad: &PadState, cfg: TouchMouse, now: Instant, dt: f32) -> Mouse {
+        if cfg.mode == TouchMode::Off {
+            *self = Self::default();
+            return Mouse::default();
+        }
+        let mut out = Mouse::default();
+        let selected = self.finger.filter(|&i| pad.touches[i].down).or_else(|| pad.touches.iter().position(|t| t.down));
+        let switched = self.finger.is_some() && selected.is_some() && self.finger != selected;
+        if switched {
+            self.last = None;
+            self.velocity = (0., 0.);
+        }
+        self.finger = selected;
+        let finger = selected.map(|i| pad.touches[i]).unwrap_or_default();
+        let two = pad.touches.iter().all(|t| t.down);
+        let current = finger.down.then_some((f32::from(finger.x) / 65535., f32::from(finger.y) / 65535.));
+        let clicked = pad.pressed(button::TOUCHPAD);
+        if clicked && self.click_button == 0 {
+            self.click_button = if two { 2 } else { 1 };
+            self.clicked = true;
+        }
+        if !clicked {
+            self.click_button = 0;
+        }
+        out.buttons = self.click_button;
+        if two && cfg.scroll {
+            let y = pad.touches.iter().map(|t| f32::from(t.y) / 65535.).sum::<f32>() / 2.;
+            if let Some(before) = self.last_scroll {
+                out.wheel = (before - y) * 1200. * f32::from(cfg.sensitivity) / 100.;
+            }
+            self.last_scroll = Some(y);
+            self.last = current;
+            self.velocity = (0., 0.);
+            self.clicked = true;
+            return out;
+        }
+        self.last_scroll = None;
+        match (self.last, current) {
+            (None, Some(_)) => {
+                self.start = Some(now);
+                self.travel = 0.;
+                self.clicked = clicked || switched;
+                self.velocity = (0., 0.);
+                self.moved = Some(now);
+            }
+            (Some(before), Some(at)) => {
+                let delta = (at.0 - before.0, at.1 - before.1);
+                self.travel += delta.0.hypot(delta.1);
+                let scale = 1900. * f32::from(cfg.sensitivity) / 100.;
+                (out.dx, out.dy) = (delta.0 * scale, delta.1 * scale);
+                if delta.0.hypot(delta.1) > 0.0001 && dt > 0. {
+                    let sample_dt = self.moved.map_or(dt, |at| now.duration_since(at).as_secs_f32().clamp(0.001, 0.05));
+                    self.velocity = ((out.dx / sample_dt).clamp(-12000., 12000.), (out.dy / sample_dt).clamp(-12000., 12000.));
+                    self.moved = Some(now);
+                }
+            }
+            (Some(_), None) => {
+                out.tap = cfg.tap
+                    && !self.clicked
+                    && self.travel < 0.015
+                    && self.start.is_some_and(|t| now.duration_since(t) <= Duration::from_millis(180));
+                if !self.moved.is_some_and(|t| now.duration_since(t) < Duration::from_millis(40)) {
+                    self.velocity = (0., 0.);
+                }
+                self.start = None;
+            }
+            _ => {}
+        }
+        if current.is_none() && cfg.mode == TouchMode::Trackball {
+            let decay = (-dt * 1000. / f32::from(cfg.friction_ms)).exp();
+            let integral = f32::from(cfg.friction_ms) / 1000. * (1. - decay);
+            out.dx += self.velocity.0 * integral;
+            out.dy += self.velocity.1 * integral;
+            self.velocity.0 *= decay;
+            self.velocity.1 *= decay;
+            if self.velocity.0.hypot(self.velocity.1) < 1. {
+                self.velocity = (0., 0.);
+            }
+        }
+        self.last = current;
+        out
+    }
+}
+
+#[derive(Default)]
 pub struct Runtime {
     pub output: PadState,
     pub active: bool,
+    config: Config,
+    last: Option<Instant>,
+    touch: TouchState,
 }
 impl Runtime {
-    pub fn update(&mut self, raw: PadState, _cfg: Config, _mapped: bool, _rate: Option<[f32; 3]>, _now: Instant) -> Mouse {
-        self.output = raw;
-        Mouse::default()
+    pub fn update(&mut self, raw: PadState, cfg: Config, _mapped: bool, _rate: Option<[f32; 3]>, now: Instant) -> Mouse {
+        let cfg = cfg.clean();
+        if self.config.touch != cfg.touch {
+            self.touch = TouchState::default();
+        }
+        self.config = cfg;
+        let dt = self.last.map_or(0.004, |last| now.duration_since(last).as_secs_f32().min(0.05));
+        self.last = Some(now);
+        let output = raw;
+        let mouse = self.touch.update(&raw, cfg.touch, now, dt);
+        self.output = output;
+        mouse
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mapping::Touch;
+
+    #[test]
+    fn touch_mouse_taps_scrolls_and_hands_off_fingers_without_a_jump() {
+        let now = Instant::now();
+        let cfg = TouchMouse { mode: TouchMode::Mouse, ..Default::default() };
+        let mut touch = TouchState::default();
+        let mut p = PadState::default();
+        p.touches[0] = Touch::from_position(true, 0.2, 0.3);
+        touch.update(&p, cfg, now, 0.004);
+        p.touches[0] = Touch::default();
+        assert!(touch.update(&p, cfg, now + Duration::from_millis(70), 0.004).tap);
+        p.touches = [Touch::from_position(true, 0.2, 0.5), Touch::from_position(true, 0.8, 0.5)];
+        touch.update(&p, cfg, now + Duration::from_millis(80), 0.004);
+        p.touches[0].y = 20000;
+        p.touches[1].y = 20000;
+        let scroll = touch.update(&p, cfg, now + Duration::from_millis(90), 0.01);
+        assert!(scroll.wheel > 0.);
+        assert_eq!((scroll.dx, scroll.dy), (0., 0.));
+        p.touches[0] = Touch::default();
+        let handoff = touch.update(&p, cfg, now + Duration::from_millis(100), 0.01);
+        assert_eq!((handoff.dx, handoff.dy), (0., 0.));
+        p.touches[1].x = 60000;
+        assert!(touch.update(&p, cfg, now + Duration::from_millis(110), 0.01).dx > 0.);
+        p.touches[1] = Touch::default();
+        assert!(!touch.update(&p, cfg, now + Duration::from_millis(120), 0.01).tap);
+    }
+
+    #[test]
+    fn trackball_coasts_then_stops_and_retouched_fingers_cancel_inertia() {
+        let now = Instant::now();
+        let cfg = TouchMouse { mode: TouchMode::Trackball, ..Default::default() };
+        let mut touch = TouchState::default();
+        let mut p = PadState::default();
+        p.touches[0] = Touch::from_position(true, 0.2, 0.5);
+        touch.update(&p, cfg, now, 0.004);
+        p.touches[0].x = 20000;
+        touch.update(&p, cfg, now + Duration::from_millis(20), 0.02);
+        p.touches[0] = Touch::default();
+        let first = touch.update(&p, cfg, now + Duration::from_millis(24), 0.004);
+        let later = touch.update(&p, cfg, now + Duration::from_millis(40), 0.004);
+        assert!(first.dx > 0. && later.dx > 0. && later.dx < first.dx);
+        p.touches[0] = Touch::from_position(true, 0.8, 0.5);
+        let again = touch.update(&p, cfg, now + Duration::from_millis(44), 0.004);
+        assert_eq!((again.dx, again.dy), (0., 0.));
+        p.touches[0] = Touch::default();
+        assert_eq!(touch.update(&p, cfg, now + Duration::from_millis(100), 0.004).dx, 0.);
+    }
 
     #[test]
     fn lab_settings_survive_profiles_and_old_profiles_keep_every_tool_off() {

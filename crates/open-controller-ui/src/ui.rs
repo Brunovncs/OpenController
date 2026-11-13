@@ -619,10 +619,16 @@ impl MainView {
 }
 
 /// A newly pressed extra button can select its editor, unless a tool owns the gesture.
-fn followed_extra(section: Section, _touch: open_controller_core::lab::TouchMode, pressed: u64) -> Option<u8> {
+fn followed_extra(section: Section, touch: open_controller_core::lab::TouchMode, mut pressed: u64) -> Option<u8> {
     // Tools have their own live input. A touchpad mouse gesture must not open the mapper.
     if section == Section::Lab {
         return None;
+    }
+    if touch != open_controller_core::lab::TouchMode::Off {
+        use open_controller_core::extras::{TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO, TOUCHPAD};
+        for button in [TOUCHPAD, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO] {
+            pressed &= !(1u64 << button);
+        }
     }
     (pressed != 0).then(|| pressed.trailing_zeros() as u8)
 }
@@ -702,6 +708,12 @@ mod tests {
         use open_controller_core::lab::TouchMode;
         for button in [TOUCHPAD, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO, RIGHT_PADDLE1] {
             assert_eq!(followed_extra(Section::Lab, TouchMode::Off, 1u64 << button), None);
+        }
+        for mode in [TouchMode::Mouse, TouchMode::Trackball] {
+            for button in [TOUCHPAD, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO] {
+                assert_eq!(followed_extra(Section::Buttons, mode, 1u64 << button), None);
+            }
+            assert_eq!(followed_extra(Section::Info, mode, (1u64 << TOUCHPAD) | (1u64 << RIGHT_PADDLE1)), Some(RIGHT_PADDLE1));
         }
         assert_eq!(followed_extra(Section::Info, TouchMode::Off, 1u64 << TOUCHPAD), Some(TOUCHPAD));
     }
