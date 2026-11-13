@@ -9,7 +9,7 @@ use crate::keys;
 use crate::report;
 use crate::text_field::{TextField, TextFieldEvent};
 use crate::theme::{Theme, icon as glyph, radius};
-use crate::ui::{MainView, Section, Tab};
+use crate::ui::{MainView, Screen, Section, Tab};
 use crate::widgets::{
     Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, row, segmented, stage, strong, switch, title,
 };
@@ -173,6 +173,22 @@ pub struct Rename {
     _events: Subscription,
 }
 
+pub struct ColorInput {
+    key: PadKey,
+    color: [u8; 3],
+    field: Entity<TextField>,
+    _events: Subscription,
+}
+
+fn parse_rgb(value: &str) -> Option<[u8; 3]> {
+    let s = value.trim().strip_prefix('#').unwrap_or(value.trim());
+    if s.len() != 6 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let n = u32::from_str_radix(s, 16).ok()?;
+    Some([(n >> 16) as u8, (n >> 8) as u8, n as u8])
+}
+
 fn profile_name(text: &Text, name: &str, i: usize) -> String {
     match (name.is_empty(), i) {
         (false, _) => name.to_string(),
@@ -270,7 +286,7 @@ impl MainView {
         cx.notify();
     }
 
-    pub fn render_device(&mut self, pad: &PadView, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub fn render_device(&mut self, pad: &PadView, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let text = self.model.read(cx).text;
         let key = pad.key;
@@ -332,10 +348,13 @@ impl MainView {
         if assignable && !native(pad) {
             sections.push((Section::Sticks, glyph::STICKS, text.nav_sticks));
         }
-        if pad.features.light_bar && assignable {
+        if pad.features.light_bar && pad.store.is_some() {
             sections.push((Section::Light, glyph::LIGHT, text.nav_light));
         }
         sections.push((Section::Info, glyph::INFO, text.nav_info));
+        if pad.store.is_some() {
+            sections.insert(sections.len() - 1, (Section::Lab, glyph::SETTINGS, text.lab.nav));
+        }
         let current = if sections.iter().any(|s| s.0 == self.section) { self.section } else { Section::Buttons };
         let mut rail = div().flex().flex_col().flex_none().w(px(196.)).gap(px(4.));
         for (i, (s, g, label)) in sections.into_iter().enumerate() {
@@ -360,7 +379,8 @@ impl MainView {
         }
 
         let content = match current {
-            Section::Buttons => self.buttons_section(pad, text, cx),
+            Section::Lab => self.lab_section(pad, text, cx),
+            Section::Buttons => self.buttons_section(pad, text, window, cx),
             Section::Light => self.light_section(pad, text, cx),
             Section::Motion => self.motion_section(pad, text, cx),
             Section::Sticks => self.sticks_section(pad, text, cx),
@@ -672,14 +692,28 @@ impl MainView {
             .into_any_element()
     }
 
-    fn buttons_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
+    fn buttons_section(&mut self, pad: &PadView, text: &'static Text, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
-        let drawing = card(&t).flex().flex_col().flex_none().overflow_hidden().child(
-            stage(&t).flex().justify_center().px(px(20.)).pt(px(28.)).pb(px(20.)).child(match self.learning_pose(pad) {
-                Some(input) => art::controller(&PadView { input, ..pad.clone() }, 1.1, &t),
-                None => art::controller(pad, 1.1, &t),
-            }),
-        );
+        let controller = match self.learning_pose(pad) {
+            Some(input) => art::controller(&PadView { input, ..pad.clone() }, 1.1, &t),
+            None if !window.is_window_active() || cx.reduce_motion() => {
+                self.touch_animation = crate::touch_animation::Animation::default();
+                art::controller(pad, 1.1, &t)
+            }
+            None => {
+                let frame = self.touch_animation.frame(pad.key, pad.input.touches, std::time::Instant::now());
+                if frame.animating {
+                    window.request_animation_frame();
+                }
+                art::controller_with_touches(pad, 1.1, &t, frame)
+            }
+        };
+        let drawing = card(&t)
+            .flex()
+            .flex_col()
+            .flex_none()
+            .overflow_hidden()
+            .child(stage(&t).flex().justify_center().px(px(20.)).pt(px(28.)).pb(px(20.)).child(controller));
         let hint = pad.hint.map(|h| hint_text(text, h)).or_else(|| read_directly(pad).then_some(text.linux_direct_read)).map(|h| {
             div()
                 .flex()
@@ -702,6 +736,9 @@ impl MainView {
                         .flex_1()
                         .min_w(px(320.))
                         .child(self.extras_column(pad, text, &t, cx))
+                        .when(cfg!(windows) && matches!(pad.family, Family::DualSense | Family::DualSenseEdge), |d| {
+                            d.child(self.microphone_row(pad, text, cx))
+                        })
                         .when(remappable(pad), |d| d.child(self.all_buttons_column(pad, text, &t, cx)))
                         .when(pad.features.pressure && remappable(pad), |d| d.child(self.pressure_card(pad, text, cx)))
                         .when(pad.store.is_some() && !kept_native(pad) && !pad.profiles.active().bindings.is_empty(), |d| {
@@ -835,7 +872,31 @@ impl MainView {
         ))
     }
 
-    fn light_section(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
+    fn microphone_row(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
+        let t = self.theme;
+        let status = match pad.microphone_muted {
+            Some(true) => text.mic_muted,
+            Some(false) => text.mic_live,
+            None => text.mic_unavailable,
+        };
+        div()
+            .flex()
+            .flex_col()
+            .mt(px(16.))
+            .gap(px(8.))
+            .child(strong(status, if pad.microphone_muted == Some(true) { t.caution } else { t.text2 }))
+            .child(self.toggle(
+                "mic-sync",
+                (text.mic_sync, text.mic_sync_hint),
+                pad.profiles.mic_control,
+                Edit::MicControl(!pad.profiles.mic_control),
+                pad.key,
+                cx,
+            ))
+            .into_any_element()
+    }
+
+    fn light_section(&mut self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let key = pad.key;
         let p = pad.profiles.active();
@@ -882,6 +943,24 @@ impl MainView {
             Light::Color(c) => c,
             _ => SWATCHES[7],
         };
+        if self.color_input.as_ref().is_none_or(|c| c.key != key) {
+            let field = cx.new(|cx| TextField::new(cx, false, 7).placeholder("#RRGGBB"));
+            let events = cx.subscribe(&field, move |this, field, _: &TextFieldEvent, cx| {
+                if matches!(this.screen, Screen::Device(k, _) if k == key)
+                    && let Some(color) = parse_rgb(&field.read(cx).text())
+                {
+                    this.edit_now(key, Edit::Light(Light::Color(color)), cx);
+                }
+            });
+            self.color_input = Some(ColorInput { key, color: [0; 3], field, _events: events });
+        }
+        let input = self.color_input.as_mut().unwrap();
+        if input.color != current_color || input.field.read(cx).text().is_empty() {
+            input.color = current_color;
+            let value = format!("#{:02X}{:02X}{:02X}", current_color[0], current_color[1], current_color[2]);
+            input.field.update(cx, |f, cx| f.set_text(&value, cx));
+        }
+        let color_field = input.field.clone();
         let mut swatches = div().flex().flex_wrap().gap(px(8.));
         for (i, c) in SWATCHES.into_iter().enumerate() {
             let on = color_on && current_color == c;
@@ -956,6 +1035,17 @@ impl MainView {
                     .flex_1()
                     .min_w(px(320.))
                     .gap(px(4.))
+                    .when(kept_native(pad), |d| {
+                        d.child(self.toggle(
+                            "native-light",
+                            (text.native_light, text.native_light_hint),
+                            pad.profiles.native_light,
+                            Edit::NativeLight(!pad.profiles.native_light),
+                            key,
+                            cx,
+                        ))
+                        .mb(px(12.))
+                    })
                     .child(option(
                         "light-player",
                         text.light_player,
@@ -965,7 +1055,20 @@ impl MainView {
                         cx,
                     ))
                     .child(option("light-color", text.light_color, None, color_on, Light::Color(current_color), cx))
-                    .when(color_on, |d| d.child(div().px(px(16.)).py(px(12.)).child(swatches)))
+                    .when(color_on, |d| {
+                        d.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(10.))
+                                .px(px(16.))
+                                .py(px(12.))
+                                .child(swatches)
+                                .child(caption(text.rgb_hex, t.text2))
+                                .child(color_field)
+                                .child(caption(text.rgb_hex_hint, t.text3)),
+                        )
+                    })
                     .child(option(
                         "light-battery",
                         text.light_battery,
@@ -1447,5 +1550,20 @@ impl MainView {
                     }),
             )
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::parse_rgb;
+
+    #[test]
+    fn rgb_accepts_full_colors_and_rejects_partial_or_non_hex_input() {
+        assert_eq!(parse_rgb("#00aAFF"), Some([0, 170, 255]));
+        assert_eq!(parse_rgb("000000"), Some([0, 0, 0]));
+        assert_eq!(parse_rgb(" FFFFFF "), Some([255; 3]));
+        for s in ["", "#", "#12345", "#1234567", "#GG0000", "汉字"] {
+            assert_eq!(parse_rgb(s), None, "{s}");
+        }
     }
 }
