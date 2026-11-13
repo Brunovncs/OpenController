@@ -1045,6 +1045,7 @@ pub static DRAWINGS: &[(u16, u16, &str)] = &[
     (0x0f0d, 0x01be, "horiOcta"),
     (0x046d, 0xc215, "logitechExtreme3d"),
     (0x046d, 0xc24f, "logitechG29"),
+    (0x046d, 0xc276, "logitechG29"),
     (0x046d, 0xc216, "logitechF310"),
     (0x046d, 0xc218, "logitechF310"),
     (0x046d, 0xc219, "logitechF310"),
