@@ -14,6 +14,9 @@ Pressing Send again sends it as it is.
 GreenAsia pads that show up as PS3 Controller (0e8f:0003) now move the right stick up and down.
 Before, it only went sideways. They are also on the list of known controllers now.
 
+The Logitech RS50 Base for PlayStation/PC is now known as a wheel, so games made for wheels read
+it as it is, force feedback included. Before, it showed up as a gamepad with no layout.
+
 Older Flydigi pads, like the Apex 2 and the Vader 2, no longer ask you to turn on "Allow
 third-party apps to take over mappings" in Space Station. Only the newer ones need it.
 

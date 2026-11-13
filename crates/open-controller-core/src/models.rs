@@ -712,6 +712,8 @@ pub static MODELS: &[Row] = &[
     (0x046d, 0xc215, Family::Other, "Logitech Extreme 3D Pro"),
     // A racing wheel, read through OpenController's own mapping in `gamecontrollerdb.txt`.
     (0x046d, 0xc24f, Family::Other, "Logitech G29 Driving Force"),
+    // A wheel base newer than SDL's list of wheels, added to it in `sdl::WHEELS`.
+    (0x046d, 0xc276, Family::Other, "Logitech RS50 Base for PlayStation/PC"),
     (0x046d, 0xca84, Family::Xbox, "Logitech Cordless Controller for Xbox"),
     (0x046d, 0xca88, Family::Xbox, "Logitech Compact Controller for Xbox"),
     (0x047d, 0x4005, Family::Other, "Gravis Eliminator GamePad Pro"),

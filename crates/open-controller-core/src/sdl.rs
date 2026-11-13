@@ -29,6 +29,10 @@ const RUMBLE_STALL: Duration = Duration::from_secs(5);
 static LEAVING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
 const LEAVE_WAIT: Duration = Duration::from_secs(1);
 
+/// Wheels newer than SDL's own list of them, which it would take for gamepads: Logitech RS50
+/// Base for PlayStation/PC.
+const WHEELS: &CStr = c"0x046d/0xc276";
+
 fn text(p: *const c_char) -> Option<String> {
     (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()).filter(|s| !s.is_empty())
 }
@@ -92,7 +96,7 @@ impl Sdl {
     /// `split_joycons`: each Joy-Con is a controller of its own, held sideways, rather than SDL
     /// joining a left and a right one into one controller.
     pub fn init(split_joycons: bool) -> Result<Sdl, String> {
-        let hints: [(*const c_char, &CStr); 7] = [
+        let hints: [(*const c_char, &CStr); 8] = [
             // There is no window to have focus; controllers must be read while a game has it.
             (SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, c"1"),
             // Full reports from PlayStation controllers on Bluetooth, which carry everything.
@@ -105,6 +109,8 @@ impl Sdl {
             // sixaxis.sys: without that driver Windows cannot start the controller at all.
             (SDL_HINT_JOYSTICK_HIDAPI_PS3_SIXAXIS_DRIVER, c"1"),
             (SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, combine(split_joycons)),
+            // Added to SDL's built-in list, not in its place.
+            (SDL_HINT_JOYSTICK_WHEEL_DEVICES, WHEELS),
         ];
         unsafe {
             for (name, value) in hints {
@@ -889,6 +895,22 @@ mod tests {
     /// The Logitech G29 as SDL's Logitech wheel driver reads it, any firmware: SDL leaves wheels
     /// without a mapping on purpose.
     const G29: &str = "030000006d0400004fc2000000006800";
+
+    #[test]
+    fn wheels_added_to_sdls_list_are_known_models() {
+        let ids: Vec<(u16, u16)> = WHEELS
+            .to_str()
+            .unwrap()
+            .split(',')
+            .map(|p| {
+                let (v, p) = p.split_once('/').unwrap();
+                let hex = |s: &str| u16::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
+                (hex(v), hex(p))
+            })
+            .collect();
+        assert_eq!(ids, [(0x046d, 0xc276)]);
+        assert!(ids.iter().all(|&(v, p)| crate::models::lookup(v, p).is_some()));
+    }
 
     #[test]
     fn the_g29_is_mapped_alike_on_linux_and_macos() {
