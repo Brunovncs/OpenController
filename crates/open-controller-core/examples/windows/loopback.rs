@@ -9,7 +9,8 @@ use windows_sys::Win32::Foundation::FILETIME;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F24};
 use windows_sys::Win32::UI::Input::XboxController::{
-    XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_STATE, XINPUT_VIBRATION, XInputGetState, XInputSetState,
+    XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_STATE, XINPUT_VIBRATION, XInputGetState,
+    XInputSetState,
 };
 
 /// The Xbox set, two back paddles and the touchpad click.
@@ -50,7 +51,7 @@ fn attach_one(first: bool) -> (SDL_JoystickID, *mut SDL_Joystick) {
         naxes: 6,
         nbuttons: BUTTON_MASK.count_ones() as u16,
         ntouchpads: 1,
-        nsensors: 1,
+        nsensors: sensors.len() as u16,
         button_mask: BUTTON_MASK,
         axis_mask: 0x3F,
         name: c"Loopback Controller".as_ptr(),
@@ -90,13 +91,115 @@ fn check(ok: bool, what: &str) {
     }
 }
 
+fn lab_inputs(engine: &Engine, joy: *mut SDL_Joystick, slot: u32, original: &Profiles) {
+    use open_controller_core::lab::{Config as Lab, TriggerInput, TriggerMode};
+    use open_controller_core::mapping::button;
+    let mut profiles = original.clone();
+    for b in 0..64 {
+        profiles.apply(Edit::Bind { button: b, action: None });
+    }
+    let mut cfg = Lab::default();
+    cfg.triggers[0] = TriggerInput { mode: TriggerMode::Hair, soft: 5, ..Default::default() };
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("Hair Trigger profile", Duration::from_secs(1), || {
+        engine
+            .snapshot()
+            .pads
+            .into_iter()
+            .find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.triggers[0].mode == TriggerMode::Hair)
+    });
+    let pull = |percent: i32| {
+        unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFT_TRIGGER.0, (percent * 65535 / 100 - 32768) as i16) };
+    };
+    pull(50);
+    wait_for("hair press", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 255));
+    pull(40);
+    wait_for("hair release by reversal", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 0));
+    pull(45);
+    wait_for("hair rearm before returning to zero", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 255));
+    pull(0);
+    wait_for("hair released", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 0));
+    check(true, "Hair Trigger presses, reverses and rearms through real XInput");
+    cfg.triggers[0] = TriggerInput {
+        mode: TriggerMode::TwoStage,
+        soft_button: button::WEST as u8,
+        full_button: button::SOUTH as u8,
+        ..Default::default()
+    };
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("two-stage profile", Duration::from_secs(1), || {
+        engine
+            .snapshot()
+            .pads
+            .into_iter()
+            .find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.triggers[0].mode == TriggerMode::TwoStage)
+    });
+    pull(50);
+    wait_for("soft-pull X", Duration::from_secs(1), || {
+        xinput(slot).filter(|s| {
+            s.Gamepad.wButtons & XINPUT_GAMEPAD_X != 0 && s.Gamepad.wButtons & XINPUT_GAMEPAD_A == 0 && s.Gamepad.bLeftTrigger == 0
+        })
+    });
+    pull(100);
+    wait_for("full-pull A replaces X", Duration::from_secs(1), || {
+        xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_A != 0 && s.Gamepad.wButtons & XINPUT_GAMEPAD_X == 0)
+    });
+    pull(0);
+    wait_for("both stage actions released", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
+    check(true, "two-stage actions reach XInput independently and release cleanly");
+    cfg.triggers[0].mode = TriggerMode::HipFire;
+    cfg.triggers[0].delay_ms = 100;
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("Hip Fire profile", Duration::from_secs(1), || {
+        engine
+            .snapshot()
+            .pads
+            .into_iter()
+            .find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.triggers[0].mode == TriggerMode::HipFire)
+    });
+    let start = Instant::now();
+    pull(50);
+    wait_for("timed soft action without another report", Duration::from_secs(1), || {
+        xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_X != 0)
+    });
+    check(start.elapsed() >= Duration::from_millis(90), "Hip Fire waits before its soft action without blocking input");
+    pull(0);
+    wait_for("Hip Fire released", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
+    cfg = Lab { debounce_ms: 80, ..Default::default() };
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("debounce profile", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.debounce_ms == 80)
+    });
+    let start = Instant::now();
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, true) };
+    wait_for("stable debounced A", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_A != 0));
+    check(start.elapsed() >= Duration::from_millis(70), "button debounce settles on the timer and reaches XInput");
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+    wait_for("debounced A release", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
+    engine.send(Command::SetProfiles(PROFILE.into(), original.clone()));
+    wait_for("original profile restored", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab == Lab::default())
+    });
+    engine.send(Command::Watch(false));
+}
+
 fn main() {
     let dir = std::env::temp_dir().join("open-controller-loopback");
     let mut profiles = Profiles::default();
     profiles.apply(Edit::Bind { button: RIGHT_PADDLE1, action: Some(Action::Xbox(XboxButton::Y)) });
     profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord { mods: 0, key: VK_F24 })) });
-    let config =
-        Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into(), driver: Default::default(), split_joycons: false, mappings: Default::default() };
+    let config = Config {
+        data_dir: dir,
+        hide: false,
+        profiles: [(PROFILE.to_string(), profiles.clone())].into(),
+        driver: Default::default(),
+        split_joycons: false,
+        mappings: Default::default(),
+    };
     let engine = Engine::start(config, || {});
     wait_for("the engine", Duration::from_secs(10), || engine.snapshot().running.then_some(()));
     if !matches!(engine.snapshot().vigem, open_controller_core::Driver::Ready { .. }) {
@@ -168,7 +271,9 @@ fn main() {
     unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER.0, false) };
     check(s.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER == 0, "the left bumper made into the left trigger pulls it, and is not LB");
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
-    wait_for("everything let go", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0 && s.Gamepad.bLeftTrigger == 0));
+    wait_for("everything let go", Duration::from_millis(500), || {
+        xinput(slot).filter(|s| s.Gamepad.wButtons == 0 && s.Gamepad.bLeftTrigger == 0)
+    });
 
     let pad = engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE));
     check(
@@ -217,7 +322,14 @@ fn main() {
         engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.extras.contains(&TOUCH_LEFT))
     });
     check(pad.features.touchpad && pad.features.motion, "a touchpad and a gyro are seen, and the touchpad's halves listed");
+    engine.send(Command::Watch(true));
     unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 0, true, 0.2, 0.5, 1.0) };
+    wait_for("touch coordinates in the preview", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| {
+            p.store.as_deref() == Some(PROFILE) && p.input.touches[0] == open_controller_core::mapping::Touch::from_position(true, 0.2, 0.5)
+        })
+    });
+    check(true, "touching without clicking reaches the preview with its position");
     button(TOUCHPAD, true);
     wait_for("a click on the left half as X", Duration::from_millis(500), x(true));
     button(TOUCHPAD, false);
@@ -229,6 +341,25 @@ fn main() {
     button(TOUCHPAD, false);
     unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 0, false, 0.8, 0.5, 0.0) };
     check(right_is_not_x, "a click on the left half of the touchpad is a button of its own, the right half another");
+    wait_for("released touch clears the preview", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && !p.input.touches[0].down)
+    });
+    unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 1, true, 0.7, 0.2, 1.0) };
+    wait_for("the second finger independently reaches the preview", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| {
+            p.store.as_deref() == Some(PROFILE)
+                && !p.input.touches[0].down
+                && p.input.touches[1] == open_controller_core::mapping::Touch::from_position(true, 0.7, 0.2)
+        })
+    });
+    unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 1, false, 0.7, 0.2, 0.0) };
+    wait_for("both fingers release", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.input.touches.iter().all(|t| !t.down))
+    });
+    check(true, "both touchpad fingers and their independent releases reach the preview");
+    engine.send(Command::Watch(false));
+
+    lab_inputs(&engine, joy, slot, &profiles);
 
     // A profile for a program: in front, its assignments; away, the chosen profile's again.
     profiles.apply(Edit::Select(0));
@@ -303,7 +434,9 @@ fn main() {
     gyro(0.0, 100);
     check(
         untoggled == 0 && toggled < -20000 && paused == 0 && resumed < -20000 && toggled_off == 0,
-        &format!("a toggle turns the gyro on and off ({untoggled}, {toggled}, {toggled_off}), and the off button stops it while held ({paused})"),
+        &format!(
+            "a toggle turns the gyro on and off ({untoggled}, {toggled}, {toggled_off}), and the off button stops it while held ({paused})"
+        ),
     );
     profiles.apply(Edit::Gyro(Gyro::default()));
 
@@ -324,9 +457,12 @@ fn main() {
     profiles.apply(Edit::Sticks(Sticks { left: Shape { deadzone: 20, ..Shape::default() }, right: Some(own), ..Sticks::default() }));
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 26500) };
-    let tilted = wait_for("the right stick at full tilt", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX == 32767));
+    let tilted =
+        wait_for("the right stick at full tilt", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX == 32767));
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 5000) };
-    let right_small = wait_for("a small right stick", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX > 0 && s.Gamepad.sThumbRX < 10000));
+    let right_small = wait_for("a small right stick", Duration::from_millis(500), || {
+        xinput(slot).filter(|s| s.Gamepad.sThumbRX > 0 && s.Gamepad.sThumbRX < 10000)
+    });
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 0) };
     check(
         tilted.Gamepad.sThumbRX == 32767 && right_small.Gamepad.sThumbRX > 5000,
