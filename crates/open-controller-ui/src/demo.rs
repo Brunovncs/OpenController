@@ -18,6 +18,7 @@ fn input(buttons: &[u32], axes: [i16; axis::COUNT]) -> PadState {
 
 pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor, product): (u16, u16)) -> PadView {
     PadView {
+        microphone_muted: None,
         key,
         name: name.into(),
         brand,

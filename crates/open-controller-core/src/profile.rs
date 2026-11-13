@@ -386,6 +386,10 @@ pub struct Profiles {
     /// Left as it is for games: no Xbox controller is made for it and it is not hidden, so
     /// none of the profiles apply. A version that does not know this field reads it as off.
     pub native: bool,
+    /// Opt-in lighting while game input stays native. Off preserves the original no-output mode.
+    pub native_light: bool,
+    /// The DualSense mic button toggles the Windows default capture endpoint, even in native mode.
+    pub mic_control: bool,
     /// Made an Xbox controller although it is not a gamepad (a flight stick, a throttle, a
     /// wheel), which is otherwise left as it is (see [`Form::left_as_is`]).
     pub xbox: bool,
@@ -437,6 +441,8 @@ pub enum Edit {
     Select(usize),
     /// Keeps the controller native, or makes it an Xbox controller again.
     Native(bool),
+    NativeLight(bool),
+    MicControl(bool),
     /// Makes a controller that is not a gamepad an Xbox controller, or leaves it as it is again.
     Xbox(bool),
     /// Says which model the controller is (see [`Profiles::model`]).
@@ -449,6 +455,8 @@ impl Profiles {
             list: vec![Profile { name: first, ..Profile::default() }],
             active: 0,
             native: false,
+            native_light: false,
+            mic_control: false,
             xbox: false,
             model: None,
             output: Output::Xbox360,
@@ -512,6 +520,8 @@ impl Profiles {
     /// Fields a newer version wrote count as a change, so they are not thrown away with it.
     pub fn is_default(&self) -> bool {
         !self.native
+            && !self.native_light
+            && !self.mic_control
             && !self.xbox
             && self.model.is_none()
             && self.output == Output::Xbox360
@@ -606,6 +616,8 @@ impl Profiles {
             Edit::Select(i) if i < self.list.len() => self.active = i,
             Edit::Select(_) => {}
             Edit::Native(on) => self.native = on,
+            Edit::NativeLight(on) => self.native_light = on,
+            Edit::MicControl(on) => self.mic_control = on,
             Edit::Xbox(on) => (self.xbox, self.native) = (on, false),
             Edit::Model(key) => self.model = key.filter(|k| !k.is_empty() && k.len() <= 40),
         }
@@ -757,6 +769,20 @@ pub fn light_color(light: Light, brightness: u8, player: Option<u8>, battery: Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_lighting_and_mic_control_are_opt_in_and_survive_saving() {
+        let mut p = Profiles::default();
+        assert!(!p.native_light && !p.mic_control);
+        p.apply(Edit::NativeLight(true));
+        assert!(!p.is_default());
+        p.apply(Edit::MicControl(true));
+        p.apply(Edit::Native(true));
+        let loaded: Profiles = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert!(loaded.native && loaded.native_light && loaded.mic_control);
+        p.apply(Edit::MicControl(false));
+        assert!(p.native && p.native_light);
+    }
     use crate::binding::XboxButton;
 
     #[test]
