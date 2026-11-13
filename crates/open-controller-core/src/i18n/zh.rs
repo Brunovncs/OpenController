@@ -3,6 +3,7 @@
 use super::Text;
 
 pub const ZH: Text = Text {
+    lab: &super::lab::ZH,
     controllers: "手柄",
     controllers_one: "1 个手柄",
     controllers_many: "个手柄",
@@ -54,7 +55,7 @@ pub const ZH: Text = Text {
     as_native: "原始手柄，不创建 Xbox 手柄",
     keep_native: "保持原生：游戏直接读取真实手柄。",
     native_close_game: "切换前请先关闭游戏。",
-    native_profiles_off: "原生模式下不应用配置方案、陀螺仪瞄准和按键映射。",
+    native_profiles_off: "原生模式保留游戏输入；可单独启用手柄实验室工具。",
     native_all_alike: "此设置适用于所有相同型号的手柄。",
     native_not_hidden: "关闭“隐藏原始手柄”时，此选项仅移除模拟的 Xbox 手柄。",
     features: "支持的功能",

@@ -9,7 +9,8 @@ use windows_sys::Win32::Foundation::FILETIME;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F24};
 use windows_sys::Win32::UI::Input::XboxController::{
-    XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_STATE, XINPUT_VIBRATION, XInputGetState, XInputSetState,
+    XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_LEFT_SHOULDER, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_STATE, XINPUT_VIBRATION, XInputGetState,
+    XInputSetState,
 };
 
 /// The Xbox set, two back paddles and the touchpad click.
@@ -50,7 +51,7 @@ fn attach_one(first: bool) -> (SDL_JoystickID, *mut SDL_Joystick) {
         naxes: 6,
         nbuttons: BUTTON_MASK.count_ones() as u16,
         ntouchpads: 1,
-        nsensors: 1,
+        nsensors: sensors.len() as u16,
         button_mask: BUTTON_MASK,
         axis_mask: 0x3F,
         name: c"Loopback Controller".as_ptr(),
@@ -95,8 +96,14 @@ fn main() {
     let mut profiles = Profiles::default();
     profiles.apply(Edit::Bind { button: RIGHT_PADDLE1, action: Some(Action::Xbox(XboxButton::Y)) });
     profiles.apply(Edit::Bind { button: LEFT_PADDLE1, action: Some(Action::Keys(Chord { mods: 0, key: VK_F24 })) });
-    let config =
-        Config { data_dir: dir, hide: false, profiles: [(PROFILE.to_string(), profiles.clone())].into(), driver: Default::default(), split_joycons: false, mappings: Default::default() };
+    let config = Config {
+        data_dir: dir,
+        hide: false,
+        profiles: [(PROFILE.to_string(), profiles.clone())].into(),
+        driver: Default::default(),
+        split_joycons: false,
+        mappings: Default::default(),
+    };
     let engine = Engine::start(config, || {});
     wait_for("the engine", Duration::from_secs(10), || engine.snapshot().running.then_some(()));
     if !matches!(engine.snapshot().vigem, open_controller_core::Driver::Ready { .. }) {
@@ -168,7 +175,9 @@ fn main() {
     unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER.0, false) };
     check(s.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER == 0, "the left bumper made into the left trigger pulls it, and is not LB");
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
-    wait_for("everything let go", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0 && s.Gamepad.bLeftTrigger == 0));
+    wait_for("everything let go", Duration::from_millis(500), || {
+        xinput(slot).filter(|s| s.Gamepad.wButtons == 0 && s.Gamepad.bLeftTrigger == 0)
+    });
 
     let pad = engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE));
     check(
@@ -220,8 +229,9 @@ fn main() {
     engine.send(Command::Watch(true));
     unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 0, true, 0.2, 0.5, 1.0) };
     wait_for("touch coordinates in the preview", Duration::from_secs(1), || {
-        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE)
-            && p.input.touches[0] == open_controller_core::mapping::Touch::from_position(true, 0.2, 0.5))
+        engine.snapshot().pads.into_iter().find(|p| {
+            p.store.as_deref() == Some(PROFILE) && p.input.touches[0] == open_controller_core::mapping::Touch::from_position(true, 0.2, 0.5)
+        })
     });
     check(true, "touching without clicking reaches the preview with its position");
     button(TOUCHPAD, true);
@@ -240,9 +250,11 @@ fn main() {
     });
     unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 1, true, 0.7, 0.2, 1.0) };
     wait_for("the second finger independently reaches the preview", Duration::from_secs(1), || {
-        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE)
-            && !p.input.touches[0].down
-            && p.input.touches[1] == open_controller_core::mapping::Touch::from_position(true, 0.7, 0.2))
+        engine.snapshot().pads.into_iter().find(|p| {
+            p.store.as_deref() == Some(PROFILE)
+                && !p.input.touches[0].down
+                && p.input.touches[1] == open_controller_core::mapping::Touch::from_position(true, 0.7, 0.2)
+        })
     });
     unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 1, false, 0.7, 0.2, 0.0) };
     wait_for("both fingers release", Duration::from_secs(1), || {
@@ -324,7 +336,9 @@ fn main() {
     gyro(0.0, 100);
     check(
         untoggled == 0 && toggled < -20000 && paused == 0 && resumed < -20000 && toggled_off == 0,
-        &format!("a toggle turns the gyro on and off ({untoggled}, {toggled}, {toggled_off}), and the off button stops it while held ({paused})"),
+        &format!(
+            "a toggle turns the gyro on and off ({untoggled}, {toggled}, {toggled_off}), and the off button stops it while held ({paused})"
+        ),
     );
     profiles.apply(Edit::Gyro(Gyro::default()));
 
@@ -345,9 +359,12 @@ fn main() {
     profiles.apply(Edit::Sticks(Sticks { left: Shape { deadzone: 20, ..Shape::default() }, right: Some(own), ..Sticks::default() }));
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 26500) };
-    let tilted = wait_for("the right stick at full tilt", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX == 32767));
+    let tilted =
+        wait_for("the right stick at full tilt", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX == 32767));
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 5000) };
-    let right_small = wait_for("a small right stick", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.sThumbRX > 0 && s.Gamepad.sThumbRX < 10000));
+    let right_small = wait_for("a small right stick", Duration::from_millis(500), || {
+        xinput(slot).filter(|s| s.Gamepad.sThumbRX > 0 && s.Gamepad.sThumbRX < 10000)
+    });
     unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_RIGHTX.0, 0) };
     check(
         tilted.Gamepad.sThumbRX == 32767 && right_small.Gamepad.sThumbRX > 5000,

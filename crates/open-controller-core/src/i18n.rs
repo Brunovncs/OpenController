@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod lab;
 mod zh;
 pub use zh::ZH;
 
@@ -32,6 +33,7 @@ impl Lang {
 }
 
 pub struct Text {
+    pub lab: &'static lab::Text,
     pub controllers: &'static str,
     pub controllers_one: &'static str,
     pub controllers_many: &'static str,
@@ -489,6 +491,7 @@ pub struct Text {
 }
 
 pub const EN: Text = Text {
+    lab: &lab::EN,
     controllers: "Controllers",
     controllers_one: "1 controller",
     controllers_many: "controllers",
@@ -541,7 +544,7 @@ pub const EN: Text = Text {
     as_native: "The controller itself, no Xbox controller",
     keep_native: "Keep native: games see the real controller.",
     native_close_game: "Close the game before switching.",
-    native_profiles_off: "Profiles, gyro and remapping are off while it stays native.",
+    native_profiles_off: "Game input stays native. Optional Controller Lab tools can be enabled separately.",
     native_all_alike: "Applies to every controller like this one.",
     native_not_hidden: "With Hide original controllers off, this only removes its Xbox controller.",
     features: "Also has",
@@ -966,6 +969,7 @@ pub const EN: Text = Text {
 };
 
 pub const PT: Text = Text {
+    lab: &lab::PT,
     controllers: "Controles",
     controllers_one: "1 controle",
     controllers_many: "controles",
@@ -1018,7 +1022,7 @@ pub const PT: Text = Text {
     as_native: "O próprio controle, sem controle de Xbox",
     keep_native: "Deixar nativo: os jogos veem o controle de verdade.",
     native_close_game: "Feche o jogo antes de trocar.",
-    native_profiles_off: "Em nativo, perfis, gyro e remapeamento ficam desligados.",
+    native_profiles_off: "A entrada do jogo fica nativa. As ferramentas do Laboratório podem ser ligadas separadamente.",
     native_all_alike: "Vale para todos os controles iguais a este.",
     native_not_hidden: "Com Esconder os controles originais desligado, isso só tira o controle de Xbox dele.",
     features: "Também tem",

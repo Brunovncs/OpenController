@@ -861,6 +861,11 @@ impl Gamepad {
         unsafe { SDL_SetGamepadLED(self.gp, r, g, b) };
     }
 
+    pub fn trigger_effect(&self, effects: [crate::lab::TriggerEffect; 2]) -> Result<(), String> {
+        let data = crate::trigger_effect::report(effects);
+        if unsafe { SDL_SendGamepadEffect(self.gp, data.as_ptr().cast(), data.len() as i32) } { Ok(()) } else { Err(error()) }
+    }
+
     pub fn player(&self) -> Option<u8> {
         u8::try_from(unsafe { SDL_GetGamepadPlayerIndex(self.gp) }).ok()
     }
