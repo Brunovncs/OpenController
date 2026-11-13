@@ -311,6 +311,9 @@ The controller's Lab page has optional tools, saved with each profile and off by
   around its rim continues it, and the gyro can provide fine aim. Counts per full turn, flick
   duration, activation threshold and gyro sensitivity are adjustable. Calibrate counts against
   the game's mouse sensitivity. The virtual right stick is consumed while this is enabled.
+- **Trigger mapping (mapping mode):** Hair Trigger uses short pull/release reversals; two-stage
+  mapping assigns buttons to soft/full pulls; Hip Fire delays the soft action so a quick full
+  pull can bypass it. The chosen buttons also use their existing keyboard/gamepad assignments.
 
 Native input stays native. Flick Stick and input remapping require mapping mode.
 

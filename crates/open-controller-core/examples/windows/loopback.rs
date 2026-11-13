@@ -91,6 +91,90 @@ fn check(ok: bool, what: &str) {
     }
 }
 
+fn lab_inputs(engine: &Engine, joy: *mut SDL_Joystick, slot: u32, original: &Profiles) {
+    use open_controller_core::lab::{Config as Lab, TriggerInput, TriggerMode};
+    use open_controller_core::mapping::button;
+    let mut profiles = original.clone();
+    for b in 0..64 {
+        profiles.apply(Edit::Bind { button: b, action: None });
+    }
+    let mut cfg = Lab::default();
+    cfg.triggers[0] = TriggerInput { mode: TriggerMode::Hair, soft: 5, ..Default::default() };
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("Hair Trigger profile", Duration::from_secs(1), || {
+        engine
+            .snapshot()
+            .pads
+            .into_iter()
+            .find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.triggers[0].mode == TriggerMode::Hair)
+    });
+    let pull = |percent: i32| {
+        unsafe { SDL_SetJoystickVirtualAxis(joy, SDL_GAMEPAD_AXIS_LEFT_TRIGGER.0, (percent * 65535 / 100 - 32768) as i16) };
+    };
+    pull(50);
+    wait_for("hair press", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 255));
+    pull(40);
+    wait_for("hair release by reversal", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 0));
+    pull(45);
+    wait_for("hair rearm before returning to zero", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 255));
+    pull(0);
+    wait_for("hair released", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 0));
+    check(true, "Hair Trigger presses, reverses and rearms through real XInput");
+    cfg.triggers[0] = TriggerInput {
+        mode: TriggerMode::TwoStage,
+        soft_button: button::WEST as u8,
+        full_button: button::SOUTH as u8,
+        ..Default::default()
+    };
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("two-stage profile", Duration::from_secs(1), || {
+        engine
+            .snapshot()
+            .pads
+            .into_iter()
+            .find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.triggers[0].mode == TriggerMode::TwoStage)
+    });
+    pull(50);
+    wait_for("soft-pull X", Duration::from_secs(1), || {
+        xinput(slot).filter(|s| {
+            s.Gamepad.wButtons & XINPUT_GAMEPAD_X != 0 && s.Gamepad.wButtons & XINPUT_GAMEPAD_A == 0 && s.Gamepad.bLeftTrigger == 0
+        })
+    });
+    pull(100);
+    wait_for("full-pull A replaces X", Duration::from_secs(1), || {
+        xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_A != 0 && s.Gamepad.wButtons & XINPUT_GAMEPAD_X == 0)
+    });
+    pull(0);
+    wait_for("both stage actions released", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
+    check(true, "two-stage actions reach XInput independently and release cleanly");
+    cfg.triggers[0].mode = TriggerMode::HipFire;
+    cfg.triggers[0].delay_ms = 100;
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("Hip Fire profile", Duration::from_secs(1), || {
+        engine
+            .snapshot()
+            .pads
+            .into_iter()
+            .find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.triggers[0].mode == TriggerMode::HipFire)
+    });
+    let start = Instant::now();
+    pull(50);
+    wait_for("timed soft action without another report", Duration::from_secs(1), || {
+        xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_X != 0)
+    });
+    check(start.elapsed() >= Duration::from_millis(90), "Hip Fire waits before its soft action without blocking input");
+    pull(0);
+    wait_for("Hip Fire released", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
+    engine.send(Command::SetProfiles(PROFILE.into(), original.clone()));
+    wait_for("original profile restored", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab == Lab::default())
+    });
+    engine.send(Command::Watch(false));
+}
+
 fn main() {
     let dir = std::env::temp_dir().join("open-controller-loopback");
     let mut profiles = Profiles::default();
@@ -262,6 +346,8 @@ fn main() {
     });
     check(true, "both touchpad fingers and their independent releases reach the preview");
     engine.send(Command::Watch(false));
+
+    lab_inputs(&engine, joy, slot, &profiles);
 
     // A profile for a program: in front, its assignments; away, the chosen profile's again.
     profiles.apply(Edit::Select(0));

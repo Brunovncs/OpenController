@@ -184,6 +184,59 @@ pub struct Mouse {
 }
 
 #[derive(Default)]
+struct TriggerState {
+    hair: bool,
+    extreme: f32,
+    soft_since: Option<Instant>,
+}
+impl TriggerState {
+    fn apply(&mut self, state: &mut PadState, side: usize, cfg: TriggerInput, now: Instant) {
+        let a = if side == 0 { axis::LEFT_TRIGGER } else { axis::RIGHT_TRIGGER };
+        let v = f32::from(state.axes[a].max(0)) / 32767. * 100.;
+        match cfg.mode {
+            TriggerMode::Normal => *self = Self::default(),
+            TriggerMode::Hair => {
+                if v < 1. {
+                    self.hair = false;
+                    self.extreme = 0.;
+                } else if self.hair {
+                    self.extreme = self.extreme.max(v);
+                    if v <= self.extreme - f32::from(cfg.hysteresis) {
+                        self.hair = false;
+                        self.extreme = v;
+                    }
+                } else {
+                    self.extreme = self.extreme.min(v);
+                    if v >= f32::from(cfg.soft) && v >= self.extreme + f32::from(cfg.hysteresis) {
+                        self.hair = true;
+                        self.extreme = v;
+                    }
+                }
+                state.axes[a] = if self.hair { 32767 } else { 0 };
+            }
+            TriggerMode::TwoStage | TriggerMode::HipFire => {
+                let soft = v >= f32::from(cfg.soft);
+                let full = v >= f32::from(cfg.full);
+                if soft {
+                    self.soft_since.get_or_insert(now);
+                } else {
+                    self.soft_since = None;
+                }
+                let ready = cfg.mode != TriggerMode::HipFire
+                    || self.soft_since.is_some_and(|t| now.duration_since(t) >= Duration::from_millis(u64::from(cfg.delay_ms)));
+                if soft && ready && !(cfg.exclusive && full) {
+                    state.buttons |= 1u64 << cfg.soft_button;
+                }
+                if full {
+                    state.buttons |= 1u64 << cfg.full_button;
+                }
+                state.axes[a] = 0;
+            }
+        }
+    }
+}
+
+#[derive(Default)]
 struct TouchState {
     finger: Option<usize>,
     last: Option<(f32, f32)>,
@@ -346,6 +399,7 @@ pub struct Runtime {
     pub active: bool,
     config: Config,
     last: Option<Instant>,
+    triggers: [TriggerState; 2],
     touch: TouchState,
     flick: FlickState,
 }
@@ -358,12 +412,18 @@ impl Runtime {
         if self.config.flick != cfg.flick {
             self.flick = FlickState::default();
         }
+        if self.config.triggers != cfg.triggers {
+            self.triggers = Default::default();
+        }
         self.config = cfg;
         let dt = self.last.map_or(0.004, |last| now.duration_since(last).as_secs_f32().min(0.05));
         self.last = Some(now);
         let mut output = raw;
         let mut mouse = self.touch.update(&raw, cfg.touch, now, dt);
         if mapped {
+            for (side, trigger) in self.triggers.iter_mut().enumerate() {
+                trigger.apply(&mut output, side, cfg.triggers[side], now);
+            }
             let flick = if cfg!(windows) { cfg.flick } else { Flick::default() };
             let (dx, dy) = self.flick.update(&raw, flick, rate, dt);
             mouse.dx += dx;
@@ -374,6 +434,7 @@ impl Runtime {
             }
         } else {
             self.flick = FlickState::default();
+            self.triggers = Default::default();
         }
         self.output = output;
         mouse
@@ -433,6 +494,60 @@ mod tests {
     }
 
     #[test]
+    fn two_stage_and_hip_fire_actions_do_not_leave_buttons_held() {
+        let now = Instant::now();
+        let cfg = TriggerInput { mode: TriggerMode::TwoStage, ..Default::default() };
+        let mut t = TriggerState::default();
+        let sample = |value| {
+            let mut p = PadState::default();
+            p.axes[axis::LEFT_TRIGGER] = value;
+            p
+        };
+        let mut soft = sample(17000);
+        t.apply(&mut soft, 0, cfg, now);
+        assert!(soft.pressed(u32::from(cfg.soft_button)));
+        assert!(!soft.pressed(u32::from(cfg.full_button)));
+        assert_eq!(soft.axes[axis::LEFT_TRIGGER], 0);
+        let mut full = sample(32767);
+        t.apply(&mut full, 0, cfg, now);
+        assert!(!full.pressed(u32::from(cfg.soft_button)));
+        assert!(full.pressed(u32::from(cfg.full_button)));
+        let mut released = sample(0);
+        t.apply(&mut released, 0, cfg, now);
+        assert_eq!(released.buttons, 0);
+        let mut hip = TriggerState::default();
+        let cfg = TriggerInput { mode: TriggerMode::HipFire, ..cfg };
+        let mut pending = sample(17000);
+        hip.apply(&mut pending, 0, cfg, now);
+        assert_eq!(pending.buttons, 0);
+        let mut held = sample(17000);
+        hip.apply(&mut held, 0, cfg, now + Duration::from_millis(110));
+        assert!(held.pressed(u32::from(cfg.soft_button)));
+        let mut quick = TriggerState::default();
+        let mut full = sample(32767);
+        quick.apply(&mut full, 0, cfg, now);
+        assert!(full.pressed(u32::from(cfg.full_button)));
+        assert!(!full.pressed(u32::from(cfg.soft_button)));
+    }
+
+    #[test]
+    fn native_mode_keeps_input_even_with_mapping_tools_configured() {
+        let mut r = Runtime::default();
+        let mut p = PadState { buttons: 3, ..Default::default() };
+        p.axes[axis::LEFT_TRIGGER] = 18000;
+        p.axes[axis::RIGHT_X] = 32767;
+        let cfg = Config {
+            flick: Flick { enabled: true, ..Default::default() },
+            debounce_ms: 100,
+            triggers: [TriggerInput { mode: TriggerMode::TwoStage, ..Default::default() }; 2],
+            ..Default::default()
+        };
+        let mouse = r.update(p, cfg, false, Some([1.; 3]), Instant::now());
+        assert_eq!(r.output, p);
+        assert_eq!((mouse.dx, mouse.dy), (0., 0.));
+    }
+
+    #[test]
     fn rapid_flicks_keep_the_unfinished_turn() {
         let mut f = FlickState::default();
         let cfg = Flick { enabled: true, gyro_mouse: false, ..Default::default() };
@@ -468,6 +583,18 @@ mod tests {
         assert_eq!(loaded.active().lab, cfg);
         let old: crate::profile::Profile = serde_json::from_str(r#"{"name":"old"}"#).unwrap();
         assert_eq!(old.lab, Config::default());
+    }
+    #[test]
+    fn hair_releases_and_rearms_without_returning_to_zero() {
+        let mut t = TriggerState::default();
+        let n = Instant::now();
+        let cfg = TriggerInput { mode: TriggerMode::Hair, ..Default::default() };
+        let mut state = PadState::default();
+        for (v, expected) in [(16000, 32767), (15000, 0), (17000, 32767), (0, 0)] {
+            state.axes[axis::LEFT_TRIGGER] = v;
+            t.apply(&mut state, 0, cfg, n);
+            assert_eq!(state.axes[axis::LEFT_TRIGGER], expected);
+        }
     }
     #[test]
     fn flick_wraps_at_back_and_finishes_a_quarter_turn() {
