@@ -1602,10 +1602,14 @@ impl Core {
         let mut state = p.state;
         if let Some(pr) = profile {
             state.buttons &= !binding::taken(&pr.bindings);
+            // The real triggers, before pressure can move them too.
+            let triggers = motion::take_triggers(&mut state, pr.sticks.triggers);
             if p.model.features.pressure {
+                motion::scale_pressure(&mut state, pr.pressure);
                 motion::apply_pressure(&mut state, pr.pressure);
             }
             motion::shape_sticks(&mut state, &pr.sticks);
+            motion::push_axis(&mut state, pr.sticks.triggers, triggers);
             if p.model.features.pressure {
                 motion::apply_pressure_stick(&mut state, pr.pressure);
             }

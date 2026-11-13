@@ -693,6 +693,9 @@ impl MainView {
             cx,
             move |this, v, cx| this.edit_now(key, Edit::Sticks(Sticks { dpad: v, ..s }), cx),
         );
+        let triggers = widgets::segmented("triggers-stick", crate::tuning::axis_choices(text), s.triggers, &t, cx, move |this, v, cx| {
+            this.edit_now(key, Edit::Sticks(Sticks { triggers: v, ..s }), cx)
+        });
         card(&t)
             .flex()
             .flex_col()
@@ -707,6 +710,7 @@ impl MainView {
             .children(centre_note)
             .children(rows)
             .child(setting(text.dpad_stick, text.dpad_stick_desc, &t).child(dpad))
+            .child(setting(text.triggers_stick, text.triggers_stick_desc, &t).child(triggers))
             .into_any_element()
     }
 }

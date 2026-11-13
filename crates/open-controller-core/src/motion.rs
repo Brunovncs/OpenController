@@ -5,7 +5,7 @@
 //! buttons. Pure functions, so they are tested without a controller.
 
 use crate::mapping::{self, PadState, axis, button};
-use crate::profile::{DpadStick, Gyro, GyroMode, Pressure, Shape, Sticks};
+use crate::profile::{DpadStick, Gyro, GyroMode, Pressure, Shape, StickAxis, Sticks};
 use std::f32::consts::PI;
 
 /// How far games see a stick pushed `travel` of the way from its centre (0 to 1 and past it on
@@ -171,6 +171,15 @@ pub fn apply_dpad_stick(s: &mut PadState, which: DpadStick) {
     s.axes[ay] = 0;
 }
 
+/// How hard each button is pressed within the part of the travel that counts (see
+/// [`Pressure::start`]): stretched to the whole of it, so a light touch is nothing and a firm one
+/// is all the way. Before anything reads the pressure.
+pub fn scale_pressure(s: &mut PadState, p: Pressure) {
+    for v in &mut s.pressure {
+        *v = p.counted(*v);
+    }
+}
+
 /// Pressure-sensitive buttons on the triggers: how hard the chosen button is pressed is how far
 /// the trigger goes, as racing games on the PlayStation 2 and 3 used them. The button itself is
 /// let go unless it is kept, so it does not press A at the same time; the same goes for the d-pad
@@ -189,13 +198,24 @@ pub fn apply_pressure(s: &mut PadState, p: Pressure) {
     if p.dpad != DpadStick::Off && !p.keep_buttons {
         s.buttons &= !(1 << button::DPAD_UP | 1 << button::DPAD_DOWN | 1 << button::DPAD_LEFT | 1 << button::DPAD_RIGHT);
     }
+    if p.shoulders != StickAxis::Off && !p.keep_buttons {
+        s.buttons &= !(1 << button::LEFT_SHOULDER | 1 << button::RIGHT_SHOULDER);
+    }
 }
 
 /// The d-pad's pressure as the chosen stick: how hard each direction is pressed is how far the
 /// stick goes that way, kept within its circle. After the sticks are shaped, so a light press is
-/// not lost in the deadzone; where the stick itself is pushed further, it stays as it is.
+/// not lost in the deadzone; where the stick itself is pushed further, it stays as it is. L1 and
+/// R1 the same along one axis (see [`push_axis`]).
 pub fn apply_pressure_stick(s: &mut PadState, p: Pressure) {
-    let (ax, ay) = match p.dpad {
+    let at = |b: u32| mapping::pressure_index(b).map_or(0., |i| f32::from(s.pressure[i]) / 255.);
+    let shoulders = (at(button::LEFT_SHOULDER), at(button::RIGHT_SHOULDER));
+    pressure_dpad(s, p.dpad);
+    push_axis(s, p.shoulders, shoulders);
+}
+
+fn pressure_dpad(s: &mut PadState, which: DpadStick) {
+    let (ax, ay) = match which {
         DpadStick::Off => return,
         DpadStick::Left => (axis::LEFT_X, axis::LEFT_Y),
         DpadStick::Right => (axis::RIGHT_X, axis::RIGHT_Y),
@@ -211,6 +231,34 @@ pub fn apply_pressure_stick(s: &mut PadState, p: Pressure) {
     if mag.min(1.) > stick {
         s.axes[ax] = to_axis(fx);
         s.axes[ay] = to_axis(fy);
+    }
+}
+
+/// The triggers, 0 to 1, when they move a stick instead: let go, so games only see the stick.
+pub fn take_triggers(s: &mut PadState, which: StickAxis) -> (f32, f32) {
+    if which == StickAxis::Off {
+        return (0., 0.);
+    }
+    let pulled = (f32::from(s.axes[axis::LEFT_TRIGGER].max(0)) / 32767., f32::from(s.axes[axis::RIGHT_TRIGGER].max(0)) / 32767.);
+    s.axes[axis::LEFT_TRIGGER] = 0;
+    s.axes[axis::RIGHT_TRIGGER] = 0;
+    pulled
+}
+
+/// A pair pressed 0 to 1 as one stick's axis, the first towards its left or top end and the
+/// second towards the other. After the sticks are shaped, as with the d-pad's pressure; where
+/// the stick itself is pushed further along that axis, it stays as it is.
+pub fn push_axis(s: &mut PadState, which: StickAxis, (back, forth): (f32, f32)) {
+    let ax = match which {
+        StickAxis::Off => return,
+        StickAxis::LeftX => axis::LEFT_X,
+        StickAxis::LeftY => axis::LEFT_Y,
+        StickAxis::RightX => axis::RIGHT_X,
+        StickAxis::RightY => axis::RIGHT_Y,
+    };
+    let v = to_axis(forth - back);
+    if v.unsigned_abs() > s.axes[ax].unsigned_abs() {
+        s.axes[ax] = v;
     }
 }
 
@@ -851,6 +899,61 @@ mod tests {
         let mut s = dpad_pressed(0, 0, 0, 255);
         apply_pressure_stick(&mut s, Pressure::default());
         assert_eq!(s, dpad_pressed(0, 0, 0, 255), "off, nothing changes");
+    }
+
+    #[test]
+    fn only_the_range_set_counts() {
+        let p = Pressure { start: 10, full: 80, ..Pressure::default() };
+        assert_eq!((p.counted(0), p.counted(25), p.counted(204), p.counted(255)), (0, 0, 255, 255));
+        assert!((p.counted(115) as i32 - 128).abs() < 3, "halfway between is half: {}", p.counted(115));
+        assert!((0..=255).all(|v| Pressure::default().counted(v) == v), "the whole travel by default");
+        let mut s = PadState::default();
+        s.pressure[mapping::pressure_index(button::SOUTH).unwrap()] = 210;
+        scale_pressure(&mut s, p);
+        apply_pressure(&mut s, Pressure { right_trigger: Some(button::SOUTH as u8), ..p });
+        assert_eq!(s.axes[axis::RIGHT_TRIGGER], 32767, "pressed past 80 %, the trigger is all the way");
+    }
+
+    #[test]
+    fn l1_and_r1_move_one_axis() {
+        let pressed = |l1: u8, r1: u8| {
+            let mut s = PadState { buttons: bits(&[button::LEFT_SHOULDER, button::RIGHT_SHOULDER, button::SOUTH]), ..PadState::default() };
+            s.pressure[mapping::pressure_index(button::LEFT_SHOULDER).unwrap()] = l1;
+            s.pressure[mapping::pressure_index(button::RIGHT_SHOULDER).unwrap()] = r1;
+            s
+        };
+        let p = Pressure { shoulders: StickAxis::RightX, ..Pressure::default() };
+        let mut s = pressed(255, 0);
+        apply_pressure(&mut s, p);
+        apply_pressure_stick(&mut s, p);
+        assert_eq!((s.axes[axis::RIGHT_X], s.axes[axis::RIGHT_Y]), (-32767, 0), "L1 turns left");
+        assert_eq!(s.buttons, bits(&[button::SOUTH]), "and no longer presses LB");
+        let mut s = pressed(0, 128);
+        apply_pressure_stick(&mut s, Pressure { shoulders: StickAxis::LeftY, ..p });
+        assert!((s.axes[axis::LEFT_Y] - 16448).abs() < 2, "R1 half pressed is half way down: {}", s.axes[axis::LEFT_Y]);
+        let mut s = pressed(64, 0);
+        s.axes[axis::RIGHT_X] = 30000;
+        apply_pressure(&mut s, Pressure { keep_buttons: true, ..p });
+        apply_pressure_stick(&mut s, p);
+        assert_eq!(s.axes[axis::RIGHT_X], 30000, "the stick pushed further wins");
+        assert!(s.pressed(button::LEFT_SHOULDER), "kept, L1 still presses LB");
+        let mut s = pressed(255, 255);
+        apply_pressure_stick(&mut s, p);
+        assert_eq!(s.axes[axis::RIGHT_X], 0, "both at once cancel out");
+    }
+
+    #[test]
+    fn the_triggers_move_one_axis_instead() {
+        let mut s = PadState { axes: [0, 0, 0, 0, 32767, 8192], ..PadState::default() };
+        let pulled = take_triggers(&mut s, StickAxis::LeftX);
+        assert_eq!((s.axes[axis::LEFT_TRIGGER], s.axes[axis::RIGHT_TRIGGER]), (0, 0), "games no longer get them");
+        push_axis(&mut s, StickAxis::LeftX, pulled);
+        assert!((s.axes[axis::LEFT_X] + 24575).abs() < 2, "LT all the way less RT a quarter: {}", s.axes[axis::LEFT_X]);
+        let held = PadState { axes: [0, 0, 0, 0, 32767, 8192], ..PadState::default() };
+        let mut s = held;
+        assert_eq!(take_triggers(&mut s, StickAxis::Off), (0., 0.));
+        push_axis(&mut s, StickAxis::Off, (1., 0.));
+        assert_eq!(s, held, "off, nothing changes");
     }
 
     const G: f32 = crate::ds4::STANDARD_GRAVITY;

@@ -4,6 +4,7 @@
 
 use crate::binding::{self, Action, Bindings};
 use crate::device::Form;
+use crate::mapping::button;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
@@ -165,6 +166,8 @@ pub struct Sticks {
     pub centre: [[i16; 2]; 2],
     /// A stick that presses the d-pad instead of moving, for games played with the d-pad.
     pub dpad: DpadStick,
+    /// The triggers as one stick's axis instead, LT one way and RT the other.
+    pub triggers: StickAxis,
 }
 
 impl Sticks {
@@ -192,6 +195,42 @@ pub enum DpadStick {
     Off,
     Left,
     Right,
+}
+
+/// One axis of a stick that a pair of buttons or triggers moves, the first of the pair towards
+/// its left or top end and the second towards its right or bottom one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub enum StickAxis {
+    #[default]
+    Off,
+    LeftX,
+    LeftY,
+    RightX,
+    RightY,
+}
+
+impl StickAxis {
+    /// The stick it moves.
+    pub fn stick(self) -> DpadStick {
+        match self {
+            StickAxis::Off => DpadStick::Off,
+            StickAxis::LeftX | StickAxis::LeftY => DpadStick::Left,
+            StickAxis::RightX | StickAxis::RightY => DpadStick::Right,
+        }
+    }
+}
+
+/// A value a newer version wrote reads as off, as with [`DpadStick`].
+impl<'de> Deserialize<'de> for StickAxis {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match serde_json::Value::deserialize(d)?.as_str() {
+            Some("LeftX") => StickAxis::LeftX,
+            Some("LeftY") => StickAxis::LeftY,
+            Some("RightX") => StickAxis::RightX,
+            Some("RightY") => StickAxis::RightY,
+            _ => StickAxis::Off,
+        })
+    }
 }
 
 /// A value a newer version wrote (or one edited by hand) reads as the default, not as a broken
@@ -233,7 +272,7 @@ impl<'de> Deserialize<'de> for DpadStick {
 /// Pressure-sensitive buttons on the triggers (DualShock 3): how hard the chosen button is
 /// pressed moves the trigger, as in racing games on the PlayStation 2 and 3. Buttons are SDL
 /// button indices among `mapping::PRESSURE`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Pressure {
     pub left_trigger: Option<u8>,
@@ -243,6 +282,39 @@ pub struct Pressure {
     /// The stick the d-pad moves, as far as each direction is pressed hard. Never the one that
     /// stands in for the d-pad (`Sticks::dpad`).
     pub dpad: DpadStick,
+    /// L1 and R1 as one stick's axis, as older games turned the camera with them. Then neither
+    /// moves a trigger.
+    pub shoulders: StickAxis,
+    /// The part of the travel that counts, in percent: a press lighter than `start` is none, one
+    /// from `full` on is all the way, and the rest is stretched between.
+    pub start: u8,
+    pub full: u8,
+}
+
+impl Pressure {
+    pub const MAX_START: u8 = 40;
+    pub const MIN_FULL: u8 = 50;
+
+    /// A press, 0 to 255, as it counts within `start` and `full`.
+    pub fn counted(self, v: u8) -> u8 {
+        let lo = u32::from(self.start) * 255 / 100;
+        let hi = (u32::from(self.full) * 255 / 100).max(lo + 1);
+        (u32::from(v).saturating_sub(lo) * 255 / (hi - lo)).min(255) as u8
+    }
+}
+
+impl Default for Pressure {
+    fn default() -> Self {
+        Pressure {
+            left_trigger: None,
+            right_trigger: None,
+            keep_buttons: false,
+            dpad: DpadStick::Off,
+            shoulders: StickAxis::Off,
+            start: 0,
+            full: 100,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -474,18 +546,22 @@ impl Profiles {
             Edit::Brightness(b) => self.active_mut().brightness = b.clamp(10, 100),
             Edit::LowBatteryFlash(on) => self.active_mut().low_battery_flash = on,
             Edit::Gyro(g) => self.active_mut().gyro = clean_gyro(g),
-            // A stick cannot both press the d-pad and be moved by it: the one just chosen wins.
+            // A stick cannot both press the d-pad and be moved by the d-pad, the triggers or L1
+            // and R1: the one just chosen wins.
             Edit::Sticks(s) => {
                 let p = self.active_mut();
+                let triggers_moved = s.triggers != p.sticks.triggers;
                 p.sticks = clean_sticks(s);
-                if p.pressure.dpad == p.sticks.dpad {
-                    p.pressure.dpad = DpadStick::Off;
+                if triggers_moved && p.sticks.triggers.stick() == p.sticks.dpad {
+                    p.sticks.dpad = DpadStick::Off;
                 }
+                free_dpad_stick(p);
             }
             Edit::Pressure(pressure) => {
                 let p = self.active_mut();
-                p.pressure = clean_pressure(pressure);
-                if p.sticks.dpad == p.pressure.dpad {
+                p.pressure = settle_pressure(p.pressure, clean_pressure(pressure));
+                let d = p.sticks.dpad;
+                if d == p.pressure.dpad || d == p.pressure.shoulders.stick() {
                     p.sticks.dpad = DpadStick::Off;
                 }
             }
@@ -547,10 +623,8 @@ impl Profiles {
             p.brightness = p.brightness.clamp(10, 100);
             p.gyro = clean_gyro(p.gyro);
             p.sticks = clean_sticks(p.sticks);
-            p.pressure = clean_pressure(p.pressure);
-            if p.pressure.dpad == p.sticks.dpad {
-                p.pressure.dpad = DpadStick::Off;
-            }
+            p.pressure = settle_pressure(Pressure::default(), clean_pressure(p.pressure));
+            free_dpad_stick(p);
             p.programs =
                 std::mem::take(&mut p.programs).iter().map(|x| program_name(x)).filter(|x| !x.is_empty()).take(MAX_PROGRAMS).collect();
             // Buttons are bits of a u64: a larger number from a damaged file would overflow.
@@ -612,13 +686,49 @@ fn clean_shape(s: Shape) -> Shape {
 
 fn clean_sticks(s: Sticks) -> Sticks {
     let m = Sticks::MAX_CENTRE;
-    Sticks { left: clean_shape(s.left), right: s.right.map(clean_shape), centre: s.centre.map(|c| c.map(|v| v.clamp(-m, m))), dpad: s.dpad }
+    Sticks { left: clean_shape(s.left), right: s.right.map(clean_shape), centre: s.centre.map(|c| c.map(|v| v.clamp(-m, m))), ..s }
+}
+
+/// Nothing else moves the stick that stands in for the d-pad.
+fn free_dpad_stick(p: &mut Profile) {
+    let d = p.sticks.dpad;
+    if d == DpadStick::Off {
+        return;
+    }
+    if p.sticks.triggers.stick() == d {
+        p.sticks.triggers = StickAxis::Off;
+    }
+    if p.pressure.dpad == d {
+        p.pressure.dpad = DpadStick::Off;
+    }
+    if p.pressure.shoulders.stick() == d {
+        p.pressure.shoulders = StickAxis::Off;
+    }
+}
+
+/// L1 and R1 either move a stick or a trigger: whichever was just chosen.
+fn settle_pressure(was: Pressure, p: Pressure) -> Pressure {
+    let shoulder = |b: Option<u8>| b.is_some_and(|b| matches!(u32::from(b), button::LEFT_SHOULDER | button::RIGHT_SHOULDER));
+    if p.shoulders == StickAxis::Off || !(shoulder(p.left_trigger) || shoulder(p.right_trigger)) {
+        p
+    } else if p.shoulders != was.shoulders {
+        let free = |b: Option<u8>| b.filter(|_| !shoulder(b));
+        Pressure { left_trigger: free(p.left_trigger), right_trigger: free(p.right_trigger), ..p }
+    } else {
+        Pressure { shoulders: StickAxis::Off, ..p }
+    }
 }
 
 /// Only buttons that sense pressure can move a trigger.
 fn clean_pressure(p: Pressure) -> Pressure {
     let valid = |b: Option<u8>| b.filter(|&b| crate::mapping::pressure_index(u32::from(b)).is_some());
-    Pressure { left_trigger: valid(p.left_trigger), right_trigger: valid(p.right_trigger), ..p }
+    Pressure {
+        left_trigger: valid(p.left_trigger),
+        right_trigger: valid(p.right_trigger),
+        start: p.start.min(Pressure::MAX_START),
+        full: p.full.clamp(Pressure::MIN_FULL, 100),
+        ..p
+    }
 }
 
 /// The colour a light bar shows for `light`, with the player's colours SDL and the consoles use.
@@ -782,12 +892,13 @@ mod tests {
             right: Some(Shape { full_tilt: 200, curve: 1, ..wild }),
             centre: [[30000, -100], [0, i16::MIN]],
             dpad: DpadStick::Left,
+            triggers: StickAxis::RightY,
         }));
         let s = p.active().sticks;
         assert_eq!(s.left, Shape { deadzone: 40, anti_deadzone: 15, full_tilt: 50, curve: 400 });
         assert_eq!(s.right, Some(Shape { deadzone: 40, anti_deadzone: 15, full_tilt: 100, curve: 25 }));
         assert_eq!(s.centre, [[Sticks::MAX_CENTRE, -100], [0, -Sticks::MAX_CENTRE]]);
-        assert_eq!(s.dpad, DpadStick::Left);
+        assert_eq!((s.dpad, s.triggers), (DpadStick::Left, StickAxis::RightY));
     }
 
     #[test]
@@ -824,6 +935,7 @@ mod tests {
             right: Some(Shape { curve: 200, ..Shape::default() }),
             centre: [[1200, -800], [0, 0]],
             dpad: DpadStick::Left,
+            triggers: StickAxis::RightX,
         };
         let text = serde_json::to_string(&new).unwrap();
         let before: Before = serde_json::from_str(&text).unwrap();
@@ -862,6 +974,44 @@ mod tests {
             serde_json::from_str::<Profiles>(newer).unwrap().list[0].pressure,
             Pressure { keep_buttons: true, ..Pressure::default() }
         );
+    }
+
+    #[test]
+    fn l1_and_r1_move_a_stick_or_a_trigger() {
+        let mut p = Profiles::default();
+        let l1 = Some(button::LEFT_SHOULDER as u8);
+        p.apply(Edit::Pressure(Pressure { left_trigger: l1, right_trigger: Some(0), ..Pressure::default() }));
+        p.apply(Edit::Pressure(Pressure { shoulders: StickAxis::RightX, ..p.active().pressure }));
+        let pr = p.active().pressure;
+        assert_eq!((pr.left_trigger, pr.right_trigger, pr.shoulders), (None, Some(0), StickAxis::RightX), "the stick took L1");
+        p.apply(Edit::Pressure(Pressure { right_trigger: Some(button::RIGHT_SHOULDER as u8), ..pr }));
+        let pr = p.active().pressure;
+        assert_eq!((pr.right_trigger, pr.shoulders), (Some(button::RIGHT_SHOULDER as u8), StickAxis::Off), "and RT took R1 back");
+        let file = r#"{"list": [{"pressure": {"left_trigger": 9, "shoulders": "LeftY", "start": 90, "full": 10}}]}"#;
+        let pr = serde_json::from_str::<Profiles>(file).unwrap().sanitised().list[0].pressure;
+        assert_eq!((pr.left_trigger, pr.shoulders, pr.start, pr.full), (None, StickAxis::LeftY, 40, 50));
+        let old = r#"{"list": [{"pressure": {"left_trigger": 0}}]}"#;
+        assert_eq!(serde_json::from_str::<Profiles>(old).unwrap().list[0].pressure.full, 100, "older files count the whole travel");
+    }
+
+    #[test]
+    fn the_dpad_stick_is_moved_by_nothing_else() {
+        let mut p = Profiles::default();
+        let sticks = |p: &Profiles| p.active().sticks;
+        p.apply(Edit::Sticks(Sticks { dpad: DpadStick::Right, ..Sticks::default() }));
+        p.apply(Edit::Sticks(Sticks { triggers: StickAxis::RightY, ..sticks(&p) }));
+        assert_eq!((sticks(&p).dpad, sticks(&p).triggers), (DpadStick::Off, StickAxis::RightY), "the triggers took it");
+        p.apply(Edit::Sticks(Sticks { dpad: DpadStick::Right, ..sticks(&p) }));
+        assert_eq!((sticks(&p).dpad, sticks(&p).triggers), (DpadStick::Right, StickAxis::Off), "and the d-pad took it back");
+        p.apply(Edit::Sticks(Sticks { triggers: StickAxis::LeftX, ..sticks(&p) }));
+        assert_eq!((sticks(&p).dpad, sticks(&p).triggers), (DpadStick::Right, StickAxis::LeftX), "the other stick is free");
+        p.apply(Edit::Pressure(Pressure { shoulders: StickAxis::RightX, ..Pressure::default() }));
+        assert_eq!((sticks(&p).dpad, p.active().pressure.shoulders), (DpadStick::Off, StickAxis::RightX));
+        p.apply(Edit::Sticks(Sticks { dpad: DpadStick::Right, ..sticks(&p) }));
+        assert_eq!(p.active().pressure.shoulders, StickAxis::Off);
+        let file = r#"{"list": [{"sticks": {"dpad": "Left", "triggers": "LeftX"}, "pressure": {"shoulders": "LeftY"}}]}"#;
+        let pr = &serde_json::from_str::<Profiles>(file).unwrap().sanitised().list[0];
+        assert_eq!((pr.sticks.dpad, pr.sticks.triggers, pr.pressure.shoulders), (DpadStick::Left, StickAxis::Off, StickAxis::Off));
     }
 
     #[test]

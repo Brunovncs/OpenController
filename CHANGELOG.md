@@ -3,6 +3,20 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+On the DualShock 3, L1 and R1 can now move a stick as hard as they are pressed, one each way, to
+turn the camera like older games did. Pick the stick and the direction under Pressure-sensitive
+buttons. Thanks to eVenent for the idea.
+
+Pressure-sensitive buttons also have a range now. Counts from sets how light a press is ignored,
+and All the way at how hard is already the full press, so you don't have to squeeze.
+
+On any controller, the triggers can move a stick instead, LT one way and RT the other. It is
+under Sticks, as Triggers as a stick.
+
+Settings carry over.
+
 ## 0.8.20
 
 The window is now also in Simplified Chinese, picked in Settings under Language. Thanks to

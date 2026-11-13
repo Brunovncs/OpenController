@@ -14,7 +14,7 @@ use open_controller_core::binding::Bindings;
 use open_controller_core::i18n::Text;
 use open_controller_core::mapping::{self, button};
 use open_controller_core::platform;
-use open_controller_core::profile::{Acceleration, DpadStick, Edit, Gyro, GyroMode, Output, Pressure};
+use open_controller_core::profile::{Acceleration, DpadStick, Edit, Gyro, GyroMode, Output, Pressure, StickAxis};
 use open_controller_core::{PadKey, PadView};
 
 /// A row of choices that edits the controller's profile.
@@ -32,6 +32,17 @@ fn segmented<T: Copy + PartialEq + 'static>(
 
 fn setting(label: &'static str, t: &Theme, control: Div) -> Div {
     div().flex().flex_col().gap(px(8.)).child(strong(label, t.text)).child(control)
+}
+
+/// The axes a pair can move, each stick's across and up and down.
+pub fn axis_choices(text: &Text) -> Vec<(StickAxis, SharedString)> {
+    vec![
+        (StickAxis::Off, text.off.into()),
+        (StickAxis::LeftX, format!("{} ↔", text.stick_left).into()),
+        (StickAxis::LeftY, format!("{} ↕", text.stick_left).into()),
+        (StickAxis::RightX, format!("{} ↔", text.stick_right).into()),
+        (StickAxis::RightY, format!("{} ↕", text.stick_right).into()),
+    ]
 }
 
 /// A pressure-sensitive button's name, as printed on a PlayStation controller.
@@ -349,7 +360,8 @@ impl MainView {
             .child(setting(text.gyro_anti_deadzone, &t, ad).child(caption(text.gyro_anti_deadzone_desc, t.text2)))
     }
 
-    /// Pressure-sensitive buttons on the triggers, with how hard each is pressed right now.
+    /// Pressure-sensitive buttons on the triggers and the sticks, with how hard each is pressed
+    /// right now.
     pub fn pressure_card(&self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let key = pad.key;
@@ -374,14 +386,43 @@ impl MainView {
             key,
             cx,
         );
-        let used = p.left_trigger.is_some() || p.right_trigger.is_some() || p.dpad != DpadStick::Off;
+        let shoulders = segmented(
+            "pressure-shoulders",
+            axis_choices(text),
+            p.shoulders,
+            &t,
+            move |v| Edit::Pressure(Pressure { shoulders: v, ..p }),
+            key,
+            cx,
+        );
+        let percent = |v: u8| -> SharedString { format!("{v} %").into() };
+        let start = segmented(
+            "pressure-start",
+            [0u8, 5, 10, 15, 20].into_iter().map(|v| (v, percent(v))).collect(),
+            p.start,
+            &t,
+            move |v| Edit::Pressure(Pressure { start: v, ..p }),
+            key,
+            cx,
+        );
+        let full = segmented(
+            "pressure-full",
+            [100u8, 90, 80, 70, 60].into_iter().map(|v| (v, percent(v))).collect(),
+            p.full,
+            &t,
+            move |v| Edit::Pressure(Pressure { full: v, ..p }),
+            key,
+            cx,
+        );
+        let used = p.left_trigger.is_some() || p.right_trigger.is_some() || p.dpad != DpadStick::Off || p.shoulders != StickAxis::Off;
         let keep = used.then(|| {
             let edit = Edit::Pressure(Pressure { keep_buttons: !p.keep_buttons, ..p });
             self.toggle("pressure-keep", (text.pressure_keep, text.pressure_keep_desc), p.keep_buttons, edit, key, cx)
         });
         let mut meters = div().flex().flex_wrap().gap(px(8.));
         for (i, &b) in mapping::PRESSURE.iter().enumerate() {
-            let level = f32::from(pad.input.pressure[i]) / 255.;
+            // As it counts, so the range set below shows on it.
+            let level = f32::from(p.counted(pad.input.pressure[i])) / 255.;
             meters = meters.child(
                 div()
                     .flex()
@@ -412,6 +453,9 @@ impl MainView {
             .child(setting(text.pressure_lt, &t, lt))
             .child(setting(text.pressure_rt, &t, rt))
             .child(setting(text.pressure_dpad, &t, dpad).child(caption(text.pressure_dpad_desc, t.text2)))
+            .child(setting(text.pressure_shoulders, &t, shoulders).child(caption(text.pressure_shoulders_desc, t.text2)))
+            .child(setting(text.pressure_start, &t, start).child(caption(text.pressure_start_desc, t.text2)))
+            .child(setting(text.pressure_full, &t, full).child(caption(text.pressure_full_desc, t.text2)))
             .children(keep)
             .into_any_element()
     }
