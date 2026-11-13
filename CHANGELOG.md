@@ -3,7 +3,10 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.8.20
+
+The window is now also in Simplified Chinese, picked in Settings under Language. Thanks to
+slkass for the translation.
 
 When the virtual controller driver is missing, a controller's page now says so and takes you to
 the install button. Before, only the home screen did, and the switches on the page did nothing.
@@ -26,6 +29,8 @@ too every time you hold it.
 
 Older Flydigi pads, like the Apex 2 and the Vader 2, no longer ask you to turn on "Allow
 third-party apps to take over mappings" in Space Station. Only the newer ones need it.
+
+Settings carry over.
 
 ## 0.8.19
 
