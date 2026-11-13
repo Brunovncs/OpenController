@@ -159,6 +159,9 @@ impl Sdl {
                 SDL_EVENT_GAMEPAD_ADDED => Event::GamepadAdded(ev.gdevice.which.0),
                 SDL_EVENT_GAMEPAD_REMOVED => Event::GamepadRemoved(ev.gdevice.which.0),
                 SDL_EVENT_GAMEPAD_UPDATE_COMPLETE => Event::GamepadUpdated(ev.gdevice.which.0),
+                SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN | SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION | SDL_EVENT_GAMEPAD_TOUCHPAD_UP => {
+                    Event::GamepadUpdated(ev.gtouchpad.which.0)
+                }
                 SDL_EVENT_JOYSTICK_BATTERY_UPDATED => Event::Battery(ev.jbattery.which.0),
                 SDL_EVENT_JOYSTICK_ADDED => Event::JoystickAdded(ev.jdevice.which.0),
                 SDL_EVENT_JOYSTICK_REMOVED => Event::JoystickRemoved(ev.jdevice.which.0),
@@ -751,7 +754,7 @@ impl Gamepad {
                 b |= 1 << i;
             }
         }
-        b |= self.touch_buttons(b & 1 << button::TOUCHPAD != 0);
+        b |= self.touch_buttons(b & 1 << button::TOUCHPAD != 0, out);
         if self.wii_dpad {
             let js = unsafe { SDL_GetGamepadJoystick(self.gp) };
             for i in button::DPAD_UP..=button::DPAD_RIGHT {
@@ -775,8 +778,9 @@ impl Gamepad {
     }
 
     /// The touchpad's halves and two-finger touch, as the bits OpenController gives them.
-    fn touch_buttons(&self, clicked: bool) -> u64 {
+    fn touch_buttons(&self, clicked: bool, out: &mut PadState) -> u64 {
         unsafe {
+            out.touches = Default::default();
             if SDL_GetNumGamepadTouchpads(self.gp) == 0 {
                 return 0;
             }
@@ -785,6 +789,9 @@ impl Gamepad {
             for (i, f) in fingers.iter_mut().enumerate().take(n as usize) {
                 let mut p = 0f32;
                 SDL_GetGamepadTouchpadFinger(self.gp, 0, i as i32, &mut f.down, &mut f.x, &mut f.y, &mut p);
+                if let Some(touch) = out.touches.get_mut(i) {
+                    *touch = crate::mapping::Touch::from_position(f.down, f.x, f.y);
+                }
             }
             let (left, right, two) = touch_buttons(clicked, &fingers[..n as usize]);
             u64::from(left) << TOUCH_LEFT | u64::from(right) << TOUCH_RIGHT | u64::from(two) << TOUCH_TWO
@@ -852,6 +859,11 @@ impl Gamepad {
     /// Colours the light bar; once set, the player number no longer changes it.
     pub fn set_led(&self, [r, g, b]: [u8; 3]) {
         unsafe { SDL_SetGamepadLED(self.gp, r, g, b) };
+    }
+
+    pub fn trigger_effect(&self, effects: [crate::lab::TriggerEffect; 2]) -> Result<(), String> {
+        let data = crate::trigger_effect::report(effects);
+        if unsafe { SDL_SendGamepadEffect(self.gp, data.as_ptr().cast(), data.len() as i32) } { Ok(()) } else { Err(error()) }
     }
 
     pub fn player(&self) -> Option<u8> {

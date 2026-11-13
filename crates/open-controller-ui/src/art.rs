@@ -834,13 +834,55 @@ fn icon(name: &str, x: f32, y: f32, r: f32) -> Option<(Ops, Option<f32>)> {
     })
 }
 
+fn pad_light_supported(look: Look) -> bool {
+    matches!(look, Look::DualSense | Look::DualSenseEdge | Look::DualShock4)
+}
+
+fn touch_position((left, top, right, bottom): (f32, f32, f32, f32), (x, y): (f32, f32)) -> (f32, f32) {
+    (left + (right - left) * x, top + (bottom - top) * y)
+}
+
 /// The drawing of a controller in its current state, `scale` times the size of a 320-wide one.
 pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
+    controller_with_touches(pad, scale, t, crate::touch_animation::Frame::immediate(pad.input.touches))
+}
+
+pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: crate::touch_animation::Frame) -> AnyElement {
     let look = look(pad);
     let glyphs = glyphs(pad, look);
     let state: PadState = pad.input;
+    let mic_muted = pad.microphone_muted == Some(true);
+    let light = match pad.power {
+        open_controller_core::device::Power::Battery(v) | open_controller_core::device::Power::Charging(v) => v,
+        _ => None,
+    };
+    let light = pad.lab_status.led.unwrap_or_else(|| {
+        open_controller_core::profile::light_color(pad.profile().light, pad.profile().brightness, crate::home::player(&pad.role), light)
+    });
+    let light_owned = pad.role != open_controller_core::Role::KeptNative || pad.profiles.native_light;
+    let light_ink: Hsla = rgb(u32::from(light[0]) << 16 | u32::from(light[1]) << 8 | u32::from(light[2])).into();
     let k = scale * UNIT;
     let ink = ink(t);
+    // Match the configured LED hue, while keeping feedback visible at low brightness or off.
+    let touch_light = open_controller_core::profile::light_color(
+        pad.profile().light,
+        100,
+        crate::home::player(&pad.role),
+        match pad.power {
+            open_controller_core::device::Power::Battery(v) | open_controller_core::device::Power::Charging(v) => v,
+            _ => None,
+        },
+    );
+    let touch_light = if pad.profile().lab.dynamic.mode != open_controller_core::lab::LightMode::Off {
+        pad.lab_status.led.unwrap_or(touch_light)
+    } else {
+        touch_light
+    };
+    let touch_ink: Hsla = if touch_light == [0; 3] {
+        ink.lit
+    } else {
+        rgb(u32::from(touch_light[0]) << 16 | u32::from(touch_light[1]) << 8 | u32::from(touch_light[2])).into()
+    };
     let g = pad_for(look);
     let (turn, gripped) = grip_turn(g, &state);
 
@@ -873,7 +915,11 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
             pen.fill(&g.body, linear_gradient(180., linear_color_stop(ink.body_top, 0.), linear_color_stop(ink.body_bottom, 1.)));
             pen.stroke(&g.body, 1., ink.edge);
             for (style, ops) in &g.panels {
-                panel(&mut pen, style, ops, k, &ink);
+                if style == "light" && light_owned && pad_light_supported(look) {
+                    pen.shape(ops, light_ink.opacity(0.75), light_ink);
+                } else {
+                    panel(&mut pen, style, ops, k, &ink);
+                }
             }
             for &[x, y, r] in &g.dots {
                 pen.fill(&circle(x, y, r), ink.soft);
@@ -881,6 +927,27 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
             if let Some(tp) = &g.touchpad {
                 let b = Some(button::TOUCHPAD);
                 pen.shape(tp, lit_or(b, ink.part), lit_or(b, ink.edge));
+                let (left, top, right, bottom) = extent(tp);
+                // Keep both contacts inside the inset rectangle of the curved touch surface.
+                let inset = 11.;
+                let surface = (left + inset, top + inset, right - inset, bottom - inset);
+                for (i, touch) in touches.fingers.iter().enumerate() {
+                    let color = touch_ink;
+                    for segment in touch.trail.windows(2) {
+                        let (x0, y0) = touch_position(surface, segment[0].0);
+                        let (x1, y1) = touch_position(surface, segment[1].0);
+                        let fade = segment[0].1;
+                        let path = line(x0, y0, x1, y1);
+                        pen.stroke(&path, (4.5 * k).max(1.), color.opacity(fade * 0.18));
+                        pen.stroke(&path, ((0.7 + 1.6 * fade) * k).max(0.6), color.opacity(fade * 0.8));
+                        pen.fill(&circle(x1, y1, 0.35 + fade * 0.8), color.opacity(fade * 0.65));
+                    }
+                    let Some(head) = touch.head else { continue };
+                    let (x, y) = touch_position(surface, head);
+                    pen.fill(&circle(x, y, 8.), color.opacity(0.18));
+                    pen.stroke(&circle(x, y, if i == 0 { 5. } else { 6.5 }), (1.3 * k).max(1.), color);
+                    pen.fill(&circle(x, y, 2.2), color);
+                }
             }
 
             // Levers set into the body, filled from the back, with their handle where it is.
@@ -935,8 +1002,9 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
                     }
                 }
                 for b in g.buttons.iter().filter(|b| b.grip == on_grip) {
-                    let fill = lit_or(b.input, ink.part);
-                    let edge = lit_or(b.input, ink.edge);
+                    let muted = b.input == Some(button::MISC1) && mic_muted;
+                    let fill = if muted { rgb(0xffa928).into() } else { lit_or(b.input, ink.part) };
+                    let edge = if muted { rgb(0xffc76a).into() } else { lit_or(b.input, ink.edge) };
                     let (ops, centre) = match &b.shape {
                         &Shape::Circle(x, y, r) => {
                             let (x, y) = turned.at(x, y);
