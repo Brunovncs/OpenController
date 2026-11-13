@@ -9,7 +9,7 @@
 
 use crate::device::{Form, PadType, Power, SdlConnection};
 use crate::extras::{Features, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO};
-use crate::mapping::{self, PadState, RAW_AXES, RAW_HATS, RawInput, axis, button};
+use crate::mapping::{self, PadState, RAW_AXES, RAW_HATS, RawInput, button};
 use crate::motion::{Finger, touch_buttons};
 use crate::report::{Facts, model_path};
 use sdl3_sys::everything::*;
@@ -761,8 +761,8 @@ impl Gamepad {
             }
         }
         out.buttons = b;
-        for i in 0..axis::COUNT {
-            out.axes[i] = unsafe { SDL_GetGamepadAxis(self.gp, SDL_GamepadAxis(i as i32)) };
+        for (i, a) in out.axes.iter_mut().enumerate() {
+            *a = unsafe { SDL_GetGamepadAxis(self.gp, SDL_GamepadAxis(i as i32)) };
         }
         if self.pressure {
             let js = unsafe { SDL_GetGamepadJoystick(self.gp) };
@@ -868,6 +868,7 @@ impl Drop for Gamepad {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mapping::axis;
 
     #[test]
     fn indices_match_sdl() {
