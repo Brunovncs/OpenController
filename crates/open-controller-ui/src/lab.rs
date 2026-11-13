@@ -129,7 +129,7 @@ impl MainView {
         let cfg = pad.profiles.active().lab;
         let tabs = widgets::segmented(
             "lab-tabs",
-            l.tabs.iter().take(4).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
+            l.tabs.iter().take(5).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
             self.lab_tab,
             &t,
             cx,
@@ -280,6 +280,10 @@ impl MainView {
                     rows = rows.child(self.lab_trigger_input(pad, side, text, cx));
                 }
                 div().flex().flex_col().gap(px(12.)).child(caption(l.input_note, t.text2)).child(rows).into_any_element()
+            }
+            4 => {
+                let number = self.lab_number("lab-debounce", l.debounce, cfg.debounce_ms, (0, 100), 5, pad, |c, v| c.debounce_ms = v, cx);
+                panel(&t).child(caption(l.debounce_note, t.text2)).child(number).into_any_element()
             }
             _ => self.lab_effects(pad, text, cx),
         };

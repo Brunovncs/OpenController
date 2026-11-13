@@ -314,6 +314,8 @@ The controller's Lab page has optional tools, saved with each profile and off by
 - **Trigger mapping (mapping mode):** Hair Trigger uses short pull/release reversals; two-stage
   mapping assigns buttons to soft/full pulls; Hip Fire delays the soft action so a quick full
   pull can bypass it. The chosen buttons also use their existing keyboard/gamepad assignments.
+- **Button debounce (mapping mode):** require a stable press/release for 0–100 ms before output.
+  Timers settle without another controller report. Zero preserves the original latency.
 
 Native input stays native. Flick Stick and input remapping require mapping mode.
 
