@@ -14,6 +14,7 @@ pub mod ds4;
 pub mod extras;
 pub mod i18n;
 pub mod mapping;
+mod microphone;
 pub mod models;
 pub mod motion;
 pub mod profile;
