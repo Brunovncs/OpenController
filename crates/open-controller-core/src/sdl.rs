@@ -938,22 +938,27 @@ mod tests {
         assert!(linux.iter().all(|l| l.contains(layout)), "{linux:?}");
     }
 
-    /// Its line is a Windows one: SDL leaves out the other systems' lines as it reads them.
+    /// Lines for one firmware, told apart by its name's CRC (the GUID's third and fourth bytes).
+    /// They are Windows ones: SDL leaves out the other systems' lines as it reads them. One test,
+    /// as SDL's mapping list is not safe to fill from two threads at once.
     #[cfg(windows)]
     #[test]
-    fn only_the_microntek_firmware_of_0079_0006_is_mapped() {
-        let mapped = |guid: &str| unsafe {
+    fn lines_for_one_firmware_by_its_name() {
+        let mapping = |guid: &str| unsafe {
             let io = SDL_IOFromConstMem(MAPPINGS.as_ptr().cast(), MAPPINGS.len());
             SDL_AddGamepadMappingsFromIO(io, true);
             let guid = std::ffi::CString::new(guid).unwrap();
             let m = SDL_GetGamepadMappingForGUID(SDL_StringToGUID(guid.as_ptr()));
-            let found = !m.is_null();
+            let s = (!m.is_null()).then(|| std::ffi::CStr::from_ptr(m).to_string_lossy().into_owned());
             SDL_free(m.cast());
-            found
+            s
         };
-        // The GUID of a report from one, its name's CRC in the third and fourth bytes.
-        assert!(mapped("0300be79790000000600000000000000"));
-        assert!(!mapped("03000000790000000600000000000000"));
-        assert!(!mapped("03001234790000000600000000000000"));
+        // Only the Microntek firmware of 0079:0006, from a report.
+        assert!(mapping("0300be79790000000600000000000000").is_some());
+        assert!(mapping("03000000790000000600000000000000").is_none());
+        assert!(mapping("03001234790000000600000000000000").is_none());
+        // "GreenAsia Inc. USB Joystick", four axes, from a report; other 0e8f:0003 keep SDL's line.
+        assert!(mapping("03005f2d8f0e00000300000000000000").is_some_and(|m| m.contains("rightx:a2,righty:a3,")));
+        assert!(mapping("030000008f0e00000300000000000000").is_some_and(|m| m.contains("righty:a5,")));
     }
 }

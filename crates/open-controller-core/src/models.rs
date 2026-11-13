@@ -77,6 +77,7 @@ pub static MODELS: &[Row] = &[
     (0x0e6f, 0x0128, Family::DualShock3, "Rock Candy PS3"),
     (0x0e6f, 0x0214, Family::DualShock3, "afterglow ps3"),
     (0x0e6f, 0x1314, Family::DualShock3, "PDP Afterglow Wireless PS3 controller"),
+    (0x0e8f, 0x0003, Family::Ps2Adapter, "GreenAsia USB Joystick (PS3-style pads, PS2 adapters)"),
     (0x0e8f, 0x0008, Family::DualShock3, "Green Asia"),
     (0x0e8f, 0x3075, Family::Ps2Adapter, "GreenAsia PS1 adapter"),
     (0x0f0d, 0x0009, Family::DualShock3, "HORI BDA GP1"),

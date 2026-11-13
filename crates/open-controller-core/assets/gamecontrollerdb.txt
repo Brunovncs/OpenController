@@ -882,6 +882,10 @@ xinput,XInput Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,
 # (KTS and others), in the layout every 0079:0006 line SDL has ever had agrees on; with four axes,
 # the right stick can only be a2 and a3.
 03000000790000000600000000000000,Microntek USB Joystick,crc:79be,a:b2,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,leftstick:b10,lefttrigger:b6,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:b7,rightx:a2,righty:a3,start:b9,x:b3,y:b0,platform:Windows,
+# GreenAsia 0e8f:0003 pads that call themselves "GreenAsia Inc. USB Joystick" have four axes, but
+# SDL_GameControllerDB puts their right stick's vertical on a5, so it never moves. This is that
+# line with the right stick on a2 and a3, where SDL's own Linux line for the same pad has it.
+030000008f0e00000300000000000000,PS3 Controller,crc:2d5f,a:b2,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,leftshoulder:b4,leftstick:b10,lefttrigger:b6,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b11,righttrigger:b7,rightx:a2,righty:a3,start:b9,x:b3,y:b0,platform:Windows,
 # Logitech Extreme 3D Pro, a flight stick SDL has no mapping for, the same through DirectInput and
 # evdev: the stick and its twist as the sticks, the throttle as the right trigger, full when pushed
 # forward, the trigger and the thumb button as A and B, the four on the head as X, Y and the
