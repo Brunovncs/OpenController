@@ -20,6 +20,10 @@ it as it is, force feedback included. Before, it showed up as a gamepad with no 
 The 8BitDo Pro 2 Wired for Xbox that reports 2dc8:201e is now known, and both versions of it say
 that P1 and P2 only copy other buttons, set in 8BitDo's app.
 
+Aiming with the gyro while holding a button now starts on an extra button you have not assigned
+anything to. If the button you pick does have an assignment, the Motion page says the game gets it
+too every time you hold it.
+
 Older Flydigi pads, like the Apex 2 and the Vader 2, no longer ask you to turn on "Allow
 third-party apps to take over mappings" in Space Station. Only the newer ones need it.
 

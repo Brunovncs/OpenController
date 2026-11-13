@@ -10,6 +10,7 @@ use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled,
     div, px,
 };
+use open_controller_core::binding::Bindings;
 use open_controller_core::i18n::Text;
 use open_controller_core::mapping::{self, button};
 use open_controller_core::platform;
@@ -50,6 +51,13 @@ fn pressure_name(text: &Text, b: u32) -> SharedString {
     .into()
 }
 
+/// The button "holding a button" starts on: the first extra button with nothing assigned, as
+/// games would get an assigned one's assignment every time it holds the gyro on, or the left
+/// bumper.
+fn first_hold(extras: &[u8], bindings: &Bindings) -> u8 {
+    extras.iter().copied().find(|b| !bindings.contains_key(b)).unwrap_or(button::LEFT_SHOULDER as u8)
+}
+
 /// What a controller is shown to games as, where there is a choice: an Xbox 360 controller, or
 /// a DualShock 4 that carries the motion sensors too.
 pub fn can_choose_output(pad: &PadView) -> bool {
@@ -87,8 +95,8 @@ impl MainView {
             _ => None,
         };
         let mode_of = move |m: GyroMode| Edit::Gyro(Gyro { mode: m, ..g });
-        // The modes; "holding a button" starts on the first extra button, or the left bumper.
-        let first_hold = pad.extras.first().copied().unwrap_or(button::LEFT_SHOULDER as u8);
+        let bindings = &pad.profiles.active().bindings;
+        let first_hold = first_hold(&pad.extras, bindings);
         let modes = segmented(
             "gyro-mode",
             vec![(0u8, text.gyro_off.into()), (1, text.gyro_always.into()), (2, text.gyro_aiming.into()), (3, text.gyro_holding.into())],
@@ -126,6 +134,11 @@ impl MainView {
         pauses.extend(holds.iter().filter(|(b, _)| Some(*b) != holding).map(|(b, name)| (Some(*b), name.clone())));
         let hold_picker =
             holding.map(|h| segmented("gyro-hold", holds, h, &t, move |b| Edit::Gyro(Gyro { mode: GyroMode::Holding(b), ..g }), key, cx));
+        let hold_note = if holding.is_some_and(|h| bindings.contains_key(&h)) {
+            caption(text.gyro_button_assigned, t.caution)
+        } else {
+            caption(text.gyro_button_note, t.text2)
+        };
         let press = holding.map(|_| {
             segmented(
                 "gyro-press",
@@ -208,7 +221,7 @@ impl MainView {
             .child(caption(text.gyro_desc, t.text2))
             .children(note)
             .child(setting(text.gyro_mode, &t, modes))
-            .when_some(hold_picker, |d, p| d.child(setting(text.gyro_button, &t, p).child(caption(text.gyro_button_note, t.text2))))
+            .when_some(hold_picker, |d, p| d.child(setting(text.gyro_button, &t, p).child(hold_note)))
             .when_some(press, |d, p| d.child(setting(text.gyro_press, &t, p)))
             .children(tilt)
             .children(to_games)
@@ -401,5 +414,23 @@ impl MainView {
             .child(setting(text.pressure_dpad, &t, dpad).child(caption(text.pressure_dpad_desc, t.text2)))
             .children(keep)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use open_controller_core::binding::{Action, XboxButton};
+    use open_controller_core::extras::{MISC1, TOUCHPAD};
+
+    #[test]
+    fn the_gyro_starts_on_an_extra_button_with_nothing_assigned() {
+        let mut b = Bindings::new();
+        assert_eq!(first_hold(&[MISC1, TOUCHPAD], &b), MISC1);
+        b.insert(MISC1, Action::Xbox(XboxButton::X));
+        assert_eq!(first_hold(&[MISC1, TOUCHPAD], &b), TOUCHPAD);
+        b.insert(TOUCHPAD, Action::Xbox(XboxButton::Y));
+        assert_eq!(first_hold(&[MISC1, TOUCHPAD], &b), button::LEFT_SHOULDER as u8);
+        assert_eq!(first_hold(&[], &Bindings::new()), button::LEFT_SHOULDER as u8);
     }
 }
