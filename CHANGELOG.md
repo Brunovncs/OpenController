@@ -3,6 +3,14 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+The ShanWan pad that calls itself Twin USB Joystick, id 2563:0555, now works as a controller.
+Before, it showed up as not mapped.
+
+On Windows, controller names no longer start with "(Standard system devices)" or the same words in
+the system's language.
+
 ## 0.8.21
 
 On the DualShock 3, L1 and R1 can now move a stick as hard as they are pressed, one each way, to

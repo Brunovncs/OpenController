@@ -37,6 +37,16 @@ fn text(p: *const c_char) -> Option<String> {
     (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()).filter(|s| !s.is_empty())
 }
 
+/// A controller's name without the maker Windows puts in place of a missing one, "(Standard
+/// system devices)" in the system's language, which SDL writes before the product's name:
+/// "(Dispositivos padrão do sistema) Twin USB Joystick" is a "Twin USB Joystick".
+fn display_name(name: String) -> String {
+    match name.strip_prefix('(').and_then(|n| n.split_once(") ")) {
+        Some((_, product)) if !product.trim().is_empty() => product.trim().to_string(),
+        _ => name,
+    }
+}
+
 /// A string of HIDAPI's wide characters, read up to its end; empty when there is none.
 ///
 /// # Safety
@@ -219,7 +229,7 @@ impl Sdl {
         let id = SDL_JoystickID(id);
         unsafe {
             (
-                text(SDL_GetJoystickNameForID(id)).unwrap_or_else(|| "Unknown controller".into()),
+                text(SDL_GetJoystickNameForID(id)).map(display_name).unwrap_or_else(|| "Unknown controller".into()),
                 SDL_GetJoystickVendorForID(id),
                 SDL_GetJoystickProductForID(id),
             )
@@ -594,7 +604,7 @@ unsafe fn wii_dpad_as_buttons(gp: *mut SDL_Gamepad) -> bool {
 
 impl Gamepad {
     pub fn name(&self) -> String {
-        text(unsafe { SDL_GetGamepadName(self.gp) }).unwrap_or_else(|| "Controller".into())
+        text(unsafe { SDL_GetGamepadName(self.gp) }).map(display_name).unwrap_or_else(|| "Controller".into())
     }
 
     pub fn vendor(&self) -> u16 {
@@ -871,6 +881,15 @@ mod tests {
     use crate::mapping::axis;
 
     #[test]
+    fn names_without_the_placeholder_maker() {
+        assert_eq!(display_name("(Dispositivos padrão do sistema) Twin USB Joystick".into()), "Twin USB Joystick");
+        assert_eq!(display_name("(Standard system devices) USB Gamepad".into()), "USB Gamepad");
+        assert_eq!(display_name("Twin USB Joystick".into()), "Twin USB Joystick");
+        assert_eq!(display_name("(Only parentheses)".into()), "(Only parentheses)");
+        assert_eq!(display_name("(Standard system devices) ".into()), "(Standard system devices) ");
+    }
+
+    #[test]
     fn indices_match_sdl() {
         assert_eq!(button::SOUTH as i32, SDL_GAMEPAD_BUTTON_SOUTH.0);
         assert_eq!(button::GUIDE as i32, SDL_GAMEPAD_BUTTON_GUIDE.0);
@@ -983,5 +1002,7 @@ mod tests {
         // "GreenAsia Inc. USB Joystick", four axes, from a report; other 0e8f:0003 keep SDL's line.
         assert!(mapping("03005f2d8f0e00000300000000000000").is_some_and(|m| m.contains("rightx:a2,righty:a3,")));
         assert!(mapping("030000008f0e00000300000000000000").is_some_and(|m| m.contains("righty:a5,")));
+        // The 2563:0555 Twin USB Joystick as a Windows report saw it, its name's crc in the GUID.
+        assert!(mapping("0300aa28632500005505000000000000").is_some_and(|m| m.contains("a:b2,b:b1,")));
     }
 }

@@ -121,6 +121,7 @@ pub static MODELS: &[Row] = &[
     (0x20d6, 0x576d, Family::DualShock3, "Power A PS3"),
     (0x20d6, 0xca6d, Family::DualShock3, "BDA Pro Ex"),
     (0x2563, 0x0523, Family::DualShock3, "Redragon Saturn G807 or ShanWan PS3 style pad"),
+    (0x2563, 0x0555, Family::Ps2Adapter, "Twin USB Joystick (ShanWan PC pad)"),
     (0x2563, 0x0575, Family::DualShock3, "ShanWan USB WirelessGamepad (Redragon Harrow G808, Retro-bit)"),
     (0x25f0, 0x83c3, Family::DualShock3, "gioteck vx2"),
     (0x25f0, 0xc121, Family::DualShock3, "Unnamed"),
@@ -1242,6 +1243,7 @@ mod tests {
         assert_eq!(lookup(0x054C, 0x0DF2).map(|r| r.2), Some(Family::DualSenseEdge));
         assert_eq!(lookup(0x054C, 0x0268).map(|r| r.2), Some(Family::DualShock3));
         assert_eq!(lookup(0x0815, 0x0005).map(|r| r.2), Some(Family::Ps2Adapter));
+        assert_eq!(lookup(0x2563, 0x0555).map(|r| r.2), Some(Family::Ps2Adapter));
         assert_eq!(drawing(0x046d, 0xc215), Some("logitechExtreme3d"));
         assert!(MODELS.iter().all(|r| !r.3.is_empty() && r.3.len() < 80));
     }
