@@ -915,6 +915,8 @@ mod tests {
     /// The Logitech G29 as SDL's Logitech wheel driver reads it, any firmware: SDL leaves wheels
     /// without a mapping on purpose.
     const G29: &str = "030000006d0400004fc2000000006800";
+    /// The Logitech G29 through the kernel's driver on Linux, any firmware.
+    const G29_EVDEV: &str = "030000006d0400004fc2000000000000";
 
     #[test]
     fn wheels_added_to_sdls_list_are_known_models() {
@@ -948,6 +950,11 @@ mod tests {
         }
         // The clutch and the shifter are left out.
         assert!(!b.contains(":a1,") && !b.contains(":b12,"), "{b}");
+        // The kernel's driver numbers the axes and buttons the same way.
+        let evdev: Vec<&str> = MAPPINGS.lines().filter(|l| l.starts_with(G29_EVDEV)).collect();
+        assert_eq!(evdev.len(), 1);
+        assert!(evdev[0].ends_with("platform:Linux,"));
+        assert_eq!(body(evdev[0]), Some(b));
     }
 
     #[test]
@@ -971,7 +978,8 @@ mod tests {
         assert!(lines.iter().all(|l| guid(l)), "{:?}", lines.iter().find(|l| !guid(l)));
         let linux: Vec<&str> = lines.iter().filter(|l| !l.ends_with("platform:Windows,") && !l.starts_with(G29)).copied().collect();
         assert!(linux.iter().all(|l| l.ends_with("platform:Linux,")), "{linux:?}");
-        let linux: Vec<&str> = linux.into_iter().filter(|l| !EXTREME_3D.iter().any(|g| l.starts_with(g))).collect();
+        let linux: Vec<&str> =
+            linux.into_iter().filter(|l| !EXTREME_3D.iter().any(|g| l.starts_with(g)) && !l.starts_with(G29_EVDEV)).collect();
         let ids: Vec<&str> = linux.iter().filter_map(|l| l.split(',').next()).collect();
         assert_eq!(ids, LINUX_LINES);
         // The Xbox layout hid-playstation's buttons and axes come in.

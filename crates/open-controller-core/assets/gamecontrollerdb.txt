@@ -902,3 +902,9 @@ xinput,XInput Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,
 # and the dial's press become extra buttons; the dial's turn, the clutch and the shifter stay out.
 030000006d0400004fc2000000006800,Logitech G29,a:b0,b:b2,x:b1,y:b3,rightshoulder:b4,leftshoulder:b5,back:b8,start:b9,rightstick:b10,leftstick:b11,guide:b24,misc2:b6,misc3:b7,misc4:b19,misc5:b20,misc6:b23,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,righttrigger:a2~,lefttrigger:a3~,platform:Linux,
 030000006d0400004fc2000000006800,Logitech G29,a:b0,b:b2,x:b1,y:b3,rightshoulder:b4,leftshoulder:b5,back:b8,start:b9,rightstick:b10,leftstick:b11,guide:b24,misc2:b6,misc3:b7,misc4:b19,misc5:b20,misc6:b23,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,righttrigger:a2~,lefttrigger:a3~,platform:Mac OS X,
+# The G29 through the kernel's own driver, as SDL reads it on Linux when it cannot open the wheel's
+# hidraw node (Ubuntu and others without a udev rule for it). The same buttons in the same order,
+# as SDL's line for this GUID had in 2.26, and the same axes: the descriptor puts the wheel, the
+# throttle, the brake and the clutch on X, Z, Rz and Y, so evdev counts them a0, a2, a3, a1, the
+# order SDL's driver copies. Version 0 so any firmware gets it.
+030000006d0400004fc2000000000000,Logitech G29,a:b0,b:b2,x:b1,y:b3,rightshoulder:b4,leftshoulder:b5,back:b8,start:b9,rightstick:b10,leftstick:b11,guide:b24,misc2:b6,misc3:b7,misc4:b19,misc5:b20,misc6:b23,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,leftx:a0,righttrigger:a2~,lefttrigger:a3~,platform:Linux,

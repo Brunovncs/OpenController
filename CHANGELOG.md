@@ -8,6 +8,9 @@ plays with OpenController, and whether settings carry over.
 The ShanWan pad that calls itself Twin USB Joystick, id 2563:0555, now works as a controller.
 Before, it showed up as not mapped.
 
+The Logitech G29 now also has its Xbox layout on Linux systems that read it through the kernel's
+own driver, like Ubuntu. Before, it showed up there as not mapped.
+
 On Windows, controller names no longer start with "(Standard system devices)" or the same words in
 the system's language.
 

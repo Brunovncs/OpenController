@@ -1020,7 +1020,11 @@
     "https://github.com/libsdl-org/SDL/blob/release-3.4.x/src/joystick/hidapi/SDL_hidapi_lg4ff.c",
     "https://github.com/libsdl-org/SDL/commit/33a68f575f484723aa326f8a2d96f2b8a084da4a",
     "https://github.com/sonik-br/lgff_wheel_adapter/blob/main/pico_lgff_wheel_adapter/reports.h",
-    "A user's report from OpenController 0.8.18 on Linux (November 2026): 046d:c24f, SDL's HIDAPI driver, 4 axes, 25 buttons, 1 hat"
+    "A user's report from OpenController 0.8.18 on Linux (November 2026): 046d:c24f, SDL's HIDAPI driver, 4 axes, 25 buttons, 1 hat",
+    "A user's report from OpenController 0.8.21 on Linux 7.0 (November 2026): 046d:c24f through the kernel's driver, GUID 0300f04c6d0400004fc2000011010000, 4 axes, 25 buttons, 1 hat, pedals at rest at the top of their range",
+    "https://github.com/libsdl-org/SDL/blob/release-2.26.0/src/joystick/SDL_gamecontrollerdb.h",
+    "https://www.overtake.gg/threads/anyone-muck-around-with-their-own-usb-hid-and-get-the-clutch-to-work.189256/",
+    "https://list.winehq.org/hyperkitty/list/wine-gitlab@list.winehq.org/thread/5KS3E2UQKUAYNFE3ZHVYWPSGGOLXP56Z/"
    ]
   },
   {
