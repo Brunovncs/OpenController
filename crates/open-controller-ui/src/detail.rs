@@ -11,7 +11,8 @@ use crate::text_field::{TextField, TextFieldEvent};
 use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::{MainView, Screen, Section, Tab};
 use crate::widgets::{
-    Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, row, segmented, stage, strong, switch, title,
+    Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, labelled, row, segmented, stage, strong, switch,
+    title,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -175,7 +176,8 @@ pub struct Rename {
 
 pub struct ColorInput {
     key: PadKey,
-    color: [u8; 3],
+    /// The colour last written into the field, so a field emptied to type a new one stays empty.
+    color: Option<[u8; 3]>,
     field: Entity<TextField>,
     _events: Subscription,
 }
@@ -352,8 +354,8 @@ impl MainView {
             sections.push((Section::Light, glyph::LIGHT, text.nav_light));
         }
         sections.push((Section::Info, glyph::INFO, text.nav_info));
-        if pad.store.is_some() {
-            sections.insert(sections.len() - 1, (Section::Lab, glyph::SETTINGS, text.lab.nav));
+        if pad.store.is_some() && !crate::lab::tabs(pad).is_empty() {
+            sections.insert(sections.len() - 1, (Section::Lab, glyph::BOLT, text.lab.nav));
         }
         let current = if sections.iter().any(|s| s.0 == self.section) { self.section } else { Section::Buttons };
         let mut rail = div().flex().flex_col().flex_none().w(px(196.)).gap(px(4.));
@@ -478,7 +480,6 @@ impl MainView {
         let edit = if left_as_is { Edit::Xbox(on) } else { Edit::Native(!on) };
         let notes = [
             left_as_is.then_some(text.native_left_as_is),
-            on.then_some(text.native_profiles_off),
             Some(text.native_close_game),
             pad.store.as_deref().is_some_and(|s| s.starts_with("model:")).then_some(text.native_all_alike),
             (!hiding).then_some(text.native_not_hidden),
@@ -490,16 +491,7 @@ impl MainView {
             .when(on, |d| d.border_color(t.accent))
             .hover(move |s| s.bg(t.layer_hover))
             .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, edit.clone(), cx)))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w(px(0.))
-                    .gap(px(2.))
-                    .child(body(text.keep_native, t.text))
-                    .child(caption(notes.into_iter().flatten().collect::<Vec<_>>().join(" "), t.text2)),
-            )
+            .child(labelled(body(text.keep_native, t.text), notes.into_iter().flatten().collect::<Vec<_>>().join(" "), &t).flex_1())
             .child(crate::widgets::switch(on, text.on, text.off, &t))
             .into_any_element()
     }
@@ -594,7 +586,7 @@ impl MainView {
                     .gap(px(12.))
                     .px(px(6.))
                     .pb(px(4.))
-                    .child(caption(text.profiles_hint, t.text3).flex_1().min_w(px(0.)))
+                    .child(labelled(caption(text.profile, t.text3), text.profiles_hint, &t).flex_1())
                     .when(count < MAX_PROFILES, |d| {
                         d.child(button("new-profile", text.new_profile, Kind::Standard, &t).on_click(cx.listener(move |this, _, _, cx| {
                             this.editor = None;
@@ -676,7 +668,11 @@ impl MainView {
                     .items_center()
                     .justify_between()
                     .gap(px(12.))
-                    .child(strong(format!("{} · {}", text.programs_title, profile_label(text, pad, i)), t.text))
+                    .child(labelled(
+                        strong(format!("{} · {}", text.programs_title, profile_label(text, pad, i)), t.text),
+                        text.programs_hint,
+                        &t,
+                    ))
                     .child(button("add-program", text.add_program, Kind::Subtle, &t).text_color(t.accent).on_click(cx.listener(
                         |this, _, _, cx| {
                             if this.picker.take().is_none() {
@@ -686,7 +682,6 @@ impl MainView {
                         },
                     ))),
             )
-            .child(caption(text.programs_hint, t.text3))
             .when(!programs.is_empty(), |d| d.child(chips))
             .children(picker)
             .into_any_element()
@@ -801,7 +796,8 @@ impl MainView {
     }
 
     fn extras_column(&self, pad: &PadView, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> Div {
-        let col = div().flex().flex_col().child(title(text.extra_buttons, t.text).pb(px(4.)));
+        let tip = if pad.extras.is_empty() || kept_native(pad) { "" } else { text.extras_hint };
+        let col = div().flex().flex_col().child(labelled(title(text.extra_buttons, t.text), tip, t).pb(px(12.)));
         if pad.extras.is_empty() || kept_native(pad) {
             let direct = matches!(pad.role, Role::Native { .. } | Role::KeptNative | Role::Unmapped);
             let message = if direct { text.no_extras_native } else { text.no_extras };
@@ -811,7 +807,7 @@ impl MainView {
         for &b in &pad.extras {
             g = g.child(self.button_row(pad, b, printed_name(pad, b), place_name(text, pad, b), t, cx));
         }
-        col.child(caption(text.extras_hint, t.text2).pb(px(12.))).child(g)
+        col.child(g)
     }
 
     /// The buttons every gamepad has, folded away until asked for: most people never change them.
@@ -829,7 +825,7 @@ impl MainView {
             .py(px(6.))
             .cursor_pointer()
             .child(icon(if open { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT }, 12., t.text2))
-            .child(title(text.all_buttons, t.text))
+            .child(labelled(title(text.all_buttons, t.text), text.all_buttons_hint, t))
             .when(count > 0, |d| d.child(chip(count.to_string(), t.accent, t.accent_soft)))
             .hover(move |s| s.opacity(0.85))
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -851,7 +847,7 @@ impl MainView {
         for (i, &b) in binding::NORMAL.iter().enumerate() {
             g = g.child(self.button_row(pad, b, Some(normal_label(pad, b)), text.normal_buttons[i].to_string(), &tt, cx));
         }
-        col.child(caption(text.all_buttons_hint, t.text2).pb(px(12.))).child(g)
+        col.child(g.mt(px(12.)))
     }
 
     /// Clears every assignment of the profile in use, after a second click.
@@ -879,20 +875,15 @@ impl MainView {
             Some(false) => text.mic_live,
             None => text.mic_unavailable,
         };
+        let on = pad.profiles.mic_control;
         div()
             .flex()
             .flex_col()
             .mt(px(16.))
             .gap(px(8.))
-            .child(strong(status, if pad.microphone_muted == Some(true) { t.caution } else { t.text2 }))
-            .child(self.toggle(
-                "mic-sync",
-                (text.mic_sync, text.mic_sync_hint),
-                pad.profiles.mic_control,
-                Edit::MicControl(!pad.profiles.mic_control),
-                pad.key,
-                cx,
-            ))
+            .child(self.toggle("mic-sync", (text.mic_sync, text.mic_sync_hint), on, Edit::MicControl(!on), pad.key, cx))
+            // Only while the button controls it: otherwise the microphone is none of its business.
+            .when(on, |d| d.child(caption(status, if pad.microphone_muted == Some(true) { t.caution } else { t.text2 }).px(px(16.))))
             .into_any_element()
     }
 
@@ -952,11 +943,11 @@ impl MainView {
                     this.edit_now(key, Edit::Light(Light::Color(color)), cx);
                 }
             });
-            self.color_input = Some(ColorInput { key, color: [0; 3], field, _events: events });
+            self.color_input = Some(ColorInput { key, color: None, field, _events: events });
         }
         let input = self.color_input.as_mut().unwrap();
-        if input.color != current_color || input.field.read(cx).text().is_empty() {
-            input.color = current_color;
+        if input.color != Some(current_color) {
+            input.color = Some(current_color);
             let value = format!("#{:02X}{:02X}{:02X}", current_color[0], current_color[1], current_color[2]);
             input.field.update(cx, |f, cx| f.set_text(&value, cx));
         }
@@ -1003,30 +994,16 @@ impl MainView {
             .items_start()
             .gap(px(20.))
             .child(
-                card(&t)
-                    .flex()
-                    .flex_col()
-                    .flex_none()
-                    .items_center()
-                    .gap(px(16.))
-                    .w(px(220.))
-                    .p(px(24.))
-                    .child(
+                card(&t).flex().flex_col().flex_none().items_center().gap(px(16.)).w(px(220.)).p(px(24.)).child(
+                    div().size(px(112.)).rounded_full().p(px(16.)).bg(if lit { rgb_of(preview).opacity(0.18) } else { t.control }).child(
                         div()
-                            .size(px(112.))
+                            .size_full()
                             .rounded_full()
-                            .p(px(16.))
-                            .bg(if lit { rgb_of(preview).opacity(0.18) } else { t.control })
-                            .child(
-                                div()
-                                    .size_full()
-                                    .rounded_full()
-                                    .bg(if lit { rgb_of(preview) } else { t.art_well })
-                                    .border_1()
-                                    .border_color(t.stroke_strong),
-                            ),
-                    )
-                    .child(caption(text.light_desc, t.text2).text_center()),
+                            .bg(if lit { rgb_of(preview) } else { t.art_well })
+                            .border_1()
+                            .border_color(t.stroke_strong),
+                    ),
+                ),
             )
             .child(
                 div()
@@ -1046,14 +1023,7 @@ impl MainView {
                         ))
                         .mb(px(12.))
                     })
-                    .child(option(
-                        "light-player",
-                        text.light_player,
-                        Some(text.light_player_desc),
-                        p.light == Light::Player,
-                        Light::Player,
-                        cx,
-                    ))
+                    .child(option("light-player", text.light_player, None, p.light == Light::Player, Light::Player, cx))
                     .child(option("light-color", text.light_color, None, color_on, Light::Color(current_color), cx))
                     .when(color_on, |d| {
                         d.child(
@@ -1065,8 +1035,7 @@ impl MainView {
                                 .py(px(12.))
                                 .child(swatches)
                                 .child(caption(text.rgb_hex, t.text2))
-                                .child(color_field)
-                                .child(caption(text.rgb_hex_hint, t.text3)),
+                                .child(div().w(px(140.)).child(color_field)),
                         )
                     })
                     .child(option(
@@ -1077,7 +1046,7 @@ impl MainView {
                         Light::Battery,
                         cx,
                     ))
-                    .child(option("light-off", text.light_off, Some(text.light_off_desc), p.light == Light::Off, Light::Off, cx))
+                    .child(option("light-off", text.light_off, None, p.light == Light::Off, Light::Off, cx))
                     .when(dims, |d| {
                         d.child(
                             div()
@@ -1098,15 +1067,7 @@ impl MainView {
                             .cursor_pointer()
                             .hover(move |s| s.bg(t.layer_hover))
                             .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, Edit::LowBatteryFlash(!on), cx)))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .flex_1()
-                                    .gap(px(2.))
-                                    .child(body(text.low_battery_flash, t.text))
-                                    .child(caption(text.low_battery_flash_desc, t.text2)),
-                            )
+                            .child(labelled(body(text.low_battery_flash, t.text), text.low_battery_flash_desc, &t).flex_1())
                             .child(crate::widgets::switch(on, text.on, text.off, &t))
                     }),
             )
@@ -1173,10 +1134,13 @@ impl MainView {
                     .flex_col()
                     .items_start()
                     .gap(px(6.))
-                    .child(segmented("model", choices, picked, &t, cx, move |this, m: Option<&'static str>, cx| {
-                        this.edit_now(key, Edit::Model(m.map(String::from)), cx)
-                    }))
-                    .child(caption(text.model_alias_hint, t.text2))
+                    .child(labelled(
+                        segmented("model", choices, picked, &t, cx, move |this, m: Option<&'static str>, cx| {
+                            this.edit_now(key, Edit::Model(m.map(String::from)), cx)
+                        }),
+                        text.model_alias_hint,
+                        &t,
+                    ))
                     .into_any_element()
             }
             _ => body(pad.name.clone(), t.text).into_any_element(),
@@ -1187,15 +1151,18 @@ impl MainView {
                 .flex_col()
                 .items_start()
                 .gap(px(6.))
-                .child(segmented(
-                    "output",
-                    vec![(Output::Xbox360, text.output_xbox.into()), (Output::DualShock4, text.output_ds4.into())],
-                    pad.profiles.output,
+                .child(labelled(
+                    segmented(
+                        "output",
+                        vec![(Output::Xbox360, text.output_xbox.into()), (Output::DualShock4, text.output_ds4.into())],
+                        pad.profiles.output,
+                        &t,
+                        cx,
+                        move |this, o, cx| this.edit_now(key, Edit::Output(o), cx),
+                    ),
+                    text.output_desc,
                     &t,
-                    cx,
-                    move |this, o, cx| this.edit_now(key, Edit::Output(o), cx),
                 ))
-                .child(caption(text.output_desc, t.text2))
                 .into_any_element()
         });
         card(&t)
@@ -1250,14 +1217,7 @@ impl MainView {
             })
             .child(line(
                 text.info_rating,
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_start()
-                    .gap(px(6.))
-                    .child(report::rating_chip(text, pad, &t))
-                    .child(caption(report::rating_hint(text, rating), t.text2))
-                    .into_any_element(),
+                labelled(div().flex().child(report::rating_chip(text, pad, &t)), report::rating_hint(text, rating), &t).into_any_element(),
             ))
             .child(
                 div().flex().justify_end().px(px(16.)).py(px(12.)).child(
@@ -1347,16 +1307,7 @@ impl MainView {
                     .id("xbox-several")
                     .cursor_pointer()
                     .hover(move |s| s.bg(t.layer_hover))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .gap(px(2.))
-                            .child(body(text.xbox_several, t.text))
-                            .child(caption(text.xbox_several_desc, t.text2)),
-                    )
+                    .child(labelled(body(text.xbox_several, t.text), text.xbox_several_desc, t).flex_1())
                     .child(switch(several, text.on, text.off, t))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let Some(e) = this.editor.as_mut() else { return };
@@ -1370,7 +1321,7 @@ impl MainView {
                         }
                         cx.notify();
                     }));
-                div().flex().flex_col().gap(px(10.)).child(caption(text.xbox_desc, t.text2)).child(grid).child(toggle).into_any_element()
+                div().flex().flex_col().gap(px(10.)).child(grid).child(toggle).into_any_element()
             }
             Tab::Key => {
                 let shown = match (&current, e.recording) {
@@ -1421,7 +1372,6 @@ impl MainView {
                     .flex()
                     .flex_col()
                     .gap(px(10.))
-                    .child(caption(text.key_desc, t.text2))
                     .child(field)
                     .child(div().flex().child(
                         button("other-keys", text.other_keys, Kind::Subtle, t).px(px(0.)).text_color(t.accent).on_click(cx.listener(
@@ -1437,7 +1387,7 @@ impl MainView {
                     .into_any_element()
             }
             Tab::Macro => self.macro_editor(key, b, remappable(pad), text, t, cx),
-            Tab::Nothing => caption(if normal { text.default_desc } else { text.nothing_desc }, t.text2).into_any_element(),
+            Tab::Nothing => div().into_any_element(),
         };
 
         card(t).flex().flex_col().gap(px(14.)).p(px(16.)).child(div().flex().child(tabs)).child(content).into_any_element()
@@ -1503,7 +1453,6 @@ impl MainView {
             .flex()
             .flex_col()
             .gap(px(10.))
-            .child(caption(if xbox { text.macro_desc_xbox } else { text.macro_desc }, t.text2))
             .child(if empty {
                 let hint = if xbox { text.macro_empty_xbox } else { text.macro_empty };
                 caption(if recording { text.listening } else { hint }, if recording { t.accent } else { t.text3 })

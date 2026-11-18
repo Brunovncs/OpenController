@@ -1,10 +1,9 @@
 //! The settings: the options there are, what OpenController needs from the system (see
 //! [`crate::requirements`]), and what is running.
 
-use crate::requirements;
 use crate::theme::icon as glyph;
 use crate::ui::MainView;
-use crate::widgets::{Kind, body, button, caption, chip, display, group, icon_button, info_tip, row, section, segmented, switch};
+use crate::widgets::{Kind, body, button, caption, chip, display, group, icon_button, info_tip, labelled, row, section, segmented, switch};
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, Window, div, px};
 use open_controller_core::i18n::{self, Lang, Text, fill};
@@ -71,11 +70,7 @@ impl MainView {
         div()
             .flex()
             .flex_col()
-            .child(
-                row(&t)
-                    .child(div().flex().flex_col().flex_1().gap(px(2.)).child(label).child(caption(text.virtual_driver_hint, t.text2)))
-                    .child(choice),
-            )
+            .child(row(&t).child(div().flex_1().child(label)).child(choice))
             .child(caption(text.driver_switch_warning, t.text2).pt(px(10.)))
             .when_some(note, |d, n| d.child(caption(n, t.caution).pt(px(4.))))
     }
@@ -95,18 +90,18 @@ impl MainView {
                     .cursor_pointer()
                     .hover(move |s| s.bg(t.layer_hover))
                     .on_click(cx.listener(move |this, _, _, cx| this.send(req(!on), cx)))
-                    .child(div().flex().flex_col().flex_1().gap(px(2.)).child(body(label, t.text)).child(caption(hint, t.text2)))
+                    .child(labelled(body(label, t.text), hint, &t).flex_1())
                     .child(switch(on, text.on, text.off, &t))
             };
-        let (hide_hint, start_label, start_hint) = if cfg!(windows) {
-            (text.hide_originals_hint, text.start_with_windows, text.start_with_windows_hint)
+        let (hide_hint, start_label) = if cfg!(windows) {
+            (text.hide_originals_hint, text.start_with_windows)
         } else {
-            (text.hide_originals_hint_linux, text.start_with_system, text.start_with_system_hint)
+            (text.hide_originals_hint_linux, text.start_with_system)
         };
         // Where no controller is made, none is hidden either.
         let options = group()
             .when(VIRTUAL_PADS, |g| g.child(toggle("hide", text.hide_originals, hide_hint, prefs.hide_originals, ToTray::SetHiding, cx)))
-            .child(toggle("autostart", start_label, start_hint, prefs.autostart, ToTray::SetAutostart, cx))
+            .child(toggle("autostart", start_label, "", prefs.autostart, ToTray::SetAutostart, cx))
             .child(toggle("updates", text.check_updates, text.check_updates_hint, prefs.check_updates, ToTray::SetCheckUpdates, cx))
             .child(row(&t).child(div().flex_1().child(body(text.language, t.text))).child(segmented(
                 "language",
@@ -146,7 +141,6 @@ impl MainView {
             .child(section(text.options, &t).pt(px(16.)))
             .child(options)
             .child(section(text.requirements, &t))
-            .child(caption(requirements::hint(text), t.text2).pb(px(12.)))
             .child(self.render_requirements(cx))
             .when(DRIVER_CHOICE, |d| d.child(section(text.advanced, &t)).child(self.advanced(&snap, prefs.virtual_driver, text, cx)))
             .child(section(text.about, &t))

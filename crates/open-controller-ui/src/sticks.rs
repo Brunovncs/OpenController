@@ -5,7 +5,7 @@
 use crate::text_field::{TextField, TextFieldEvent};
 use crate::theme::{Theme, radius};
 use crate::ui::MainView;
-use crate::widgets::{self, Kind, button, caption, card, strong};
+use crate::widgets::{self, Kind, button, caption, card, labelled, strong};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, AppContext, Bounds, Context, Div, Entity, Focusable, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder,
@@ -266,12 +266,9 @@ fn other_choice(id: &'static str, label: impl Into<SharedString>, on: bool, t: &
         .child(caption(label.into(), if on { t.text } else { t.text2 }))
 }
 
-fn setting(label: &'static str, desc: &'static str, t: &Theme) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .child(div().flex().flex_col().gap(px(2.)).child(strong(label, t.text)).child(caption(desc, t.text2)))
+/// A setting's name, with what it does behind an info mark.
+fn setting(label: &'static str, tip: &'static str, t: &Theme) -> Div {
+    div().flex().flex_col().gap(px(8.)).child(labelled(strong(label, t.text), tip, t))
 }
 
 /// A circle as a path of short lines.
@@ -702,7 +699,6 @@ impl MainView {
             .gap(px(20.))
             .p(px(20.))
             .max_w(px(760.))
-            .child(caption(text.sticks_desc, t.text2))
             .child(same)
             .children(which)
             .child(preview)

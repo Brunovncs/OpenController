@@ -4,7 +4,7 @@
 use super::{Card, Need};
 use crate::theme::icon as glyph;
 use crate::ui::{Install, MainView};
-use crate::widgets::{Kind, body, button, caption, card, group, icon, title};
+use crate::widgets::{Kind, body, button, caption, card, group, icon, labelled, title};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
 use open_controller_core::drivers;
 pub use open_controller_core::drivers::{Component, Outcome};
@@ -12,10 +12,6 @@ use open_controller_core::i18n::{Text, fill};
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::{Driver, Snapshot};
 use std::path::Path;
-
-pub fn hint(text: &Text) -> &'static str {
-    text.requirements_hint
-}
 
 /// What Programs and Features says is installed.
 pub fn installed() -> Vec<(Component, Option<String>)> {
@@ -128,17 +124,7 @@ impl MainView {
             .flex_col()
             .gap(px(4.))
             .p(px(4.))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .px(px(12.))
-                    .pt(px(12.))
-                    .pb(px(8.))
-                    .child(title(heading, t.text))
-                    .child(caption(desc, t.text2)),
-            )
+            .child(div().flex().flex_col().gap(px(4.)).px(px(12.)).pt(px(12.)).pb(px(8.)).child(labelled(title(heading, t.text), desc, &t)))
             .children(cards.map(|c| c.border_0()))
     }
 

@@ -39,18 +39,31 @@ pub fn icon(name: &'static str, size: f32, color: Hsla) -> Div {
 }
 
 /// An info mark that explains more when the pointer rests on it.
-pub fn info_tip(id: impl Into<ElementId>, tip: &'static str, t: &Theme) -> Stateful<Div> {
-    with_tip(icon(crate::theme::icon::INFO, 16., t.text2).id(id), tip, t)
+pub fn info_tip(id: impl Into<ElementId>, tip: impl Into<SharedString>, t: &Theme) -> Stateful<Div> {
+    with_tip(icon(crate::theme::icon::INFO, 14., t.text3).id(id), tip, t)
 }
 
 /// Explains more when the pointer rests on `el`.
-pub fn with_tip(el: Stateful<Div>, tip: &'static str, t: &Theme) -> Stateful<Div> {
+pub fn with_tip(el: Stateful<Div>, tip: impl Into<SharedString>, t: &Theme) -> Stateful<Div> {
     let t = *t;
-    el.tooltip(move |_, cx| cx.new(|_| Tip { text: tip, theme: t }).into())
+    let tip = tip.into();
+    el.tooltip(move |_, cx| cx.new(|_| Tip { text: tip.clone(), theme: t }).into())
+}
+
+/// A label with an info mark after it, when there is more to say; an empty `tip` leaves it out.
+pub fn labelled(label: Div, tip: impl Into<SharedString>, t: &Theme) -> Div {
+    let tip: SharedString = tip.into();
+    div()
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .min_w(px(0.))
+        .child(label)
+        .when(!tip.is_empty(), |d| d.child(info_tip(ElementId::Name(tip.clone()), tip, t)))
 }
 
 struct Tip {
-    text: &'static str,
+    text: SharedString,
     theme: Theme,
 }
 
@@ -63,7 +76,7 @@ impl Render for Tip {
             .max_w(px(320.))
             .px(px(12.))
             .py(px(8.))
-            .child(caption(self.text, self.theme.text))
+            .child(caption(self.text.clone(), self.theme.text))
     }
 }
 

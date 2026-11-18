@@ -16,10 +16,6 @@ pub enum Component {
     Rule,
 }
 
-pub fn hint(text: &Text) -> &'static str {
-    text.requirements_hint_linux
-}
-
 pub fn installed() -> Vec<(Component, Option<String>)> {
     let state = match setup::rule_state() {
         RuleState::Missing => None,

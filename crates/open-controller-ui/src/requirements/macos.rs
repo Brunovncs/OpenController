@@ -19,10 +19,6 @@ pub enum Outcome {
     Opened,
 }
 
-pub fn hint(text: &Text) -> &'static str {
-    text.requirements_hint_mac
-}
-
 pub fn installed() -> Vec<(Component, Option<String>)> {
     vec![(Component::Accessibility, accessibility::granted().then(String::new))]
 }

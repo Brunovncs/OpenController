@@ -4,7 +4,7 @@
 use crate::detail::{place_name, printed_name};
 use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::MainView;
-use crate::widgets::{self, body, caption, card, icon, row, strong, switch};
+use crate::widgets::{self, body, caption, card, icon, labelled, row, strong, switch};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled,
@@ -30,8 +30,9 @@ fn segmented<T: Copy + PartialEq + 'static>(
     widgets::segmented(id, choices, picked, t, cx, move |this, v, cx| this.edit_now(key, on_pick(v), cx))
 }
 
-fn setting(label: &'static str, t: &Theme, control: Div) -> Div {
-    div().flex().flex_col().gap(px(8.)).child(strong(label, t.text)).child(control)
+/// A setting's name, with more about it behind an info mark when `tip` is not empty, and its control.
+fn setting(label: &'static str, tip: &'static str, t: &Theme, control: Div) -> Div {
+    div().flex().flex_col().gap(px(8.)).child(labelled(strong(label, t.text), tip, t)).child(control)
 }
 
 /// The axes a pair can move, each stick's across and up and down.
@@ -76,7 +77,7 @@ pub fn can_choose_output(pad: &PadView) -> bool {
 }
 
 impl MainView {
-    /// A setting that is on or off, with its name and what it does.
+    /// A setting that is on or off, with its name and, behind an info mark, what it does.
     pub(crate) fn toggle(
         &self,
         id: &'static str,
@@ -93,7 +94,7 @@ impl MainView {
             .cursor_pointer()
             .hover(move |s| s.bg(t.layer_hover))
             .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, edit.clone(), cx)))
-            .child(div().flex().flex_col().flex_1().min_w(px(0.)).gap(px(2.)).child(body(label, t.text)).child(caption(desc, t.text2)))
+            .child(labelled(body(label, t.text), desc, &t).flex_1())
             .child(switch(on, text.on, text.off, &t))
     }
 
@@ -145,11 +146,7 @@ impl MainView {
         pauses.extend(holds.iter().filter(|(b, _)| Some(*b) != holding).map(|(b, name)| (Some(*b), name.clone())));
         let hold_picker =
             holding.map(|h| segmented("gyro-hold", holds, h, &t, move |b| Edit::Gyro(Gyro { mode: GyroMode::Holding(b), ..g }), key, cx));
-        let hold_note = if holding.is_some_and(|h| bindings.contains_key(&h)) {
-            caption(text.gyro_button_assigned, t.caution)
-        } else {
-            caption(text.gyro_button_note, t.text2)
-        };
+        let hold_note = holding.is_some_and(|h| bindings.contains_key(&h)).then(|| caption(text.gyro_button_assigned, t.caution));
         let press = holding.map(|_| {
             segmented(
                 "gyro-press",
@@ -229,18 +226,17 @@ impl MainView {
             .gap(px(20.))
             .p(px(20.))
             .max_w(px(760.))
-            .child(caption(text.gyro_desc, t.text2))
             .children(note)
-            .child(setting(text.gyro_mode, &t, modes))
-            .when_some(hold_picker, |d, p| d.child(setting(text.gyro_button, &t, p).child(hold_note)))
-            .when_some(press, |d, p| d.child(setting(text.gyro_press, &t, p)))
+            .child(setting(text.gyro_mode, text.gyro_desc, &t, modes))
+            .when_some(hold_picker, |d, p| d.child(setting(text.gyro_button, text.gyro_button_note, &t, p).children(hold_note)))
+            .when_some(press, |d, p| d.child(setting(text.gyro_press, "", &t, p)))
             .children(tilt)
             .children(to_games)
             .when(on, |d| {
-                d.child(setting(text.gyro_sensitivity, &t, sens))
-                    .when(aim_shown, |d| d.child(setting(text.gyro_aim_sensitivity, &t, aim_sens)))
+                d.child(setting(text.gyro_sensitivity, "", &t, sens))
+                    .when(aim_shown, |d| d.child(setting(text.gyro_aim_sensitivity, "", &t, aim_sens)))
                     .child(
-                        setting(text.gyro_vertical, &t, vertical).child(
+                        setting(text.gyro_vertical, "", &t, vertical).child(
                             row(&t)
                                 .id("gyro-invert")
                                 .cursor_pointer()
@@ -252,7 +248,7 @@ impl MainView {
                                 .child(switch(invert, text.on, text.off, &t)),
                         ),
                     )
-                    .when(pause_shown, |d| d.child(setting(text.gyro_pause, &t, pause).child(caption(text.gyro_pause_desc, t.text2))))
+                    .when(pause_shown, |d| d.child(setting(text.gyro_pause, text.gyro_pause_desc, &t, pause)))
                     .child(advanced)
                     .when(open, |d| d.child(self.gyro_advanced_settings(g, key, text, cx)))
             })
@@ -312,6 +308,7 @@ impl MainView {
                 .border_color(t.stroke)
                 .child(setting(
                     text.gyro_fast,
+                    "",
                     &t,
                     preset(
                         "gyro-fast",
@@ -323,11 +320,13 @@ impl MainView {
                 ))
                 .child(setting(
                     text.gyro_from,
+                    "",
                     &t,
                     preset("gyro-from", &[0, 20, 40, 60, 90], a.from, speed, |a, v| Acceleration { from: v, ..a }),
                 ))
                 .child(setting(
                     text.gyro_to,
+                    "",
                     &t,
                     preset("gyro-to", &[120, 160, 180, 240, 300], a.to, speed, |a, v| Acceleration { to: v, ..a }),
                 ))
@@ -354,10 +353,10 @@ impl MainView {
             .flex()
             .flex_col()
             .gap(px(20.))
-            .child(setting(text.gyro_acceleration, &t, accel).child(caption(text.gyro_acceleration_desc, t.text2)))
+            .child(setting(text.gyro_acceleration, text.gyro_acceleration_desc, &t, accel))
             .when_some(custom_rows, |d, r| d.child(r))
-            .child(setting(text.gyro_tightening, &t, tightening).child(caption(text.gyro_tightening_desc, t.text2)))
-            .child(setting(text.gyro_anti_deadzone, &t, ad).child(caption(text.gyro_anti_deadzone_desc, t.text2)))
+            .child(setting(text.gyro_tightening, text.gyro_tightening_desc, &t, tightening))
+            .child(setting(text.gyro_anti_deadzone, text.gyro_anti_deadzone_desc, &t, ad))
     }
 
     /// Pressure-sensitive buttons on the triggers and the sticks, with how hard each is pressed
@@ -446,16 +445,14 @@ impl MainView {
             .gap(px(20.))
             .p(px(20.))
             .mt(px(20.))
-            .child(
-                div().flex().flex_col().gap(px(6.)).child(strong(text.pressure_title, t.text)).child(caption(text.pressure_desc, t.text2)),
-            )
+            .child(labelled(strong(text.pressure_title, t.text), text.pressure_desc, &t))
             .child(meters)
-            .child(setting(text.pressure_lt, &t, lt))
-            .child(setting(text.pressure_rt, &t, rt))
-            .child(setting(text.pressure_dpad, &t, dpad).child(caption(text.pressure_dpad_desc, t.text2)))
-            .child(setting(text.pressure_shoulders, &t, shoulders).child(caption(text.pressure_shoulders_desc, t.text2)))
-            .child(setting(text.pressure_start, &t, start).child(caption(text.pressure_start_desc, t.text2)))
-            .child(setting(text.pressure_full, &t, full).child(caption(text.pressure_full_desc, t.text2)))
+            .child(setting(text.pressure_lt, "", &t, lt))
+            .child(setting(text.pressure_rt, "", &t, rt))
+            .child(setting(text.pressure_dpad, text.pressure_dpad_desc, &t, dpad))
+            .child(setting(text.pressure_shoulders, text.pressure_shoulders_desc, &t, shoulders))
+            .child(setting(text.pressure_start, text.pressure_start_desc, &t, start))
+            .child(setting(text.pressure_full, text.pressure_full_desc, &t, full))
             .children(keep)
             .into_any_element()
     }

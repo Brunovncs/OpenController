@@ -2,7 +2,7 @@
 use crate::text_field::{TextField, TextFieldEvent};
 use crate::theme::Theme;
 use crate::ui::{MainView, Screen, Section};
-use crate::widgets::{self, Kind, button, caption, card, strong};
+use crate::widgets::{self, Kind, button, caption, card, labelled, strong};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, AppContext, Context, Div, Entity, IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled,
@@ -28,6 +28,29 @@ fn field(label: &'static str, control: Div, t: &Theme) -> Div {
 }
 fn panel(t: &Theme) -> Div {
     card(t).p(px(16.)).flex().flex_col().gap(px(14.))
+}
+/// A tool's name, with how it works behind an info mark.
+fn heading(label: &'static str, tip: &'static str, t: &Theme) -> Div {
+    labelled(strong(label, t.text), tip, t)
+}
+
+/// The Lab's tabs that work with this controller as it is set up: trigger effects need a
+/// DualSense, mouse output Windows, the mapping tools a controller that is not kept native.
+pub fn tabs(pad: &PadView) -> Vec<u8> {
+    let native = matches!(pad.role, Role::KeptNative | Role::Native { .. });
+    let f = pad.features;
+    [
+        (0, matches!(pad.family, Family::DualSense | Family::DualSenseEdge)),
+        (1, cfg!(windows) && f.touchpad),
+        (2, cfg!(windows) && !native),
+        (3, !native),
+        (4, !native),
+        (5, f.motion),
+        (6, f.light_bar),
+    ]
+    .into_iter()
+    .filter_map(|(i, shown)| shown.then_some(i))
+    .collect()
 }
 #[allow(clippy::too_many_arguments)]
 fn choices<T: Copy + PartialEq + 'static>(
@@ -127,9 +150,15 @@ impl MainView {
         let l = text.lab;
         let key = pad.key;
         let cfg = pad.profiles.active().lab;
+        let shown = tabs(pad);
+        if !shown.contains(&self.lab_tab)
+            && let Some(&first) = shown.first()
+        {
+            self.lab_tab = first;
+        }
         let tabs = widgets::segmented(
             "lab-tabs",
-            l.tabs.iter().enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
+            shown.iter().map(|&i| (i, l.tabs[usize::from(i)].into())).collect(),
             self.lab_tab,
             &t,
             cx,
@@ -138,13 +167,9 @@ impl MainView {
                 cx.notify();
             },
         );
-        let native = matches!(pad.role, Role::KeptNative | Role::Native { .. });
         let content = match self.lab_tab {
             0 => self.lab_effects(pad, text, cx),
             1 => {
-                if !cfg!(windows) {
-                    return panel(&t).child(caption(l.windows, t.text2)).into_any_element();
-                }
                 let mode = choices(
                     "lab-touch-mode",
                     &l.touch_modes,
@@ -176,7 +201,7 @@ impl MainView {
                     cx,
                 );
                 panel(&t)
-                    .child(caption(l.touch_note, t.text2))
+                    .child(heading(l.tabs[1], l.touch_note, &t))
                     .child(mode)
                     .child(sens)
                     .when(cfg.touch.mode == TouchMode::Trackball, |d| d.child(friction))
@@ -202,9 +227,6 @@ impl MainView {
                     .into_any_element()
             }
             2 => {
-                if !cfg!(windows) {
-                    return panel(&t).child(caption(l.windows, t.text2)).into_any_element();
-                }
                 let counts = self.lab_number(
                     "lab-flick-counts",
                     l.counts,
@@ -246,7 +268,7 @@ impl MainView {
                     cx,
                 );
                 panel(&t)
-                    .child(caption(l.flick_note, t.text2))
+                    .child(heading(l.tabs[2], l.flick_note, &t))
                     .child(self.toggle(
                         "lab-flick-on",
                         (l.flick_on, ""),
@@ -279,17 +301,16 @@ impl MainView {
                 for side in 0..2 {
                     rows = rows.child(self.lab_trigger_input(pad, side, text, cx));
                 }
-                div().flex().flex_col().gap(px(12.)).child(caption(l.input_note, t.text2)).child(rows).into_any_element()
+                div().flex().flex_col().gap(px(12.)).child(heading(l.tabs[3], l.input_note, &t)).child(rows).into_any_element()
             }
             4 => {
                 let number = self.lab_number("lab-debounce", l.debounce, cfg.debounce_ms, (0, 100), 5, pad, |c, v| c.debounce_ms = v, cx);
-                panel(&t).child(caption(l.debounce_note, t.text2)).child(number).into_any_element()
+                panel(&t).child(heading(l.tabs[4], l.debounce_note, &t)).child(number).into_any_element()
             }
             5 => {
                 let status = &pad.lab_status.dsu;
                 panel(&t)
-                    .child(self.toggle("lab-dsu", (l.dsu_on, ""), cfg.dsu, Edit::Lab(Config { dsu: !cfg.dsu, ..cfg }), key, cx))
-                    .child(caption(l.dsu_note, t.text2))
+                    .child(self.toggle("lab-dsu", (l.dsu_on, l.dsu_note), cfg.dsu, Edit::Lab(Config { dsu: !cfg.dsu, ..cfg }), key, cx))
                     .when(cfg.dsu, |d| {
                         d.child(strong(
                             format!("127.0.0.1:{} · {}: {}", status.port.max(26760), l.clients, status.clients),
@@ -332,22 +353,14 @@ impl MainView {
                     cx,
                 );
                 panel(&t)
-                    .child(caption(l.light_note, t.text2))
+                    .child(heading(l.tabs[6], l.light_note, &t))
                     .child(mode)
                     .when(matches!(cfg.dynamic.mode, LightMode::Rainbow | LightMode::Breathe), |d| d.child(period))
                     .child(idle)
                     .into_any_element()
             }
         };
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(16.))
-            .child(caption(l.intro, t.text2))
-            .when(native, |d| d.child(caption(l.native, t.caution)))
-            .child(tabs)
-            .child(content)
-            .into_any_element()
+        div().flex().flex_col().gap(px(16.)).child(div().flex().child(tabs)).child(content).into_any_element()
     }
 
     fn lab_effects(&mut self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
@@ -355,9 +368,6 @@ impl MainView {
         let l = text.lab;
         let cfg = pad.profiles.active().lab;
         let key = pad.key;
-        if !matches!(pad.family, Family::DualSense | Family::DualSenseEdge) {
-            return panel(&t).child(caption(l.unsupported, t.text2)).into_any_element();
-        }
         let mut cards = div().flex().flex_wrap().gap(px(12.));
         const IDS: [[&str; 5]; 2] = [
             ["lab-l-effect", "lab-l-start", "lab-l-end", "lab-l-force", "lab-l-freq"],
@@ -431,7 +441,6 @@ impl MainView {
             .flex()
             .flex_col()
             .gap(px(12.))
-            .child(caption(l.effect_note, t.text2))
             .child(
                 div()
                     .flex()
@@ -441,16 +450,19 @@ impl MainView {
                         button("lab-try", l.test, Kind::Primary, &t)
                             .on_click(cx.listener(move |this, _, _, cx| this.send(ToTray::TriggerPreview(key, Some(cfg.adaptive)), cx))),
                     )
-                    .child(button("lab-stop", l.stop, Kind::Standard, &t).on_click(cx.listener(move |this, _, _, cx| {
-                        this.lab_edit(key, |c| c.adaptive_enabled = false, cx);
-                        this.send(ToTray::TriggerPreview(key, None), cx);
-                    }))),
+                    // Only while effects are on, from the test or the profile.
+                    .when(pad.lab_status.testing || cfg.adaptive_enabled, |d| {
+                        d.child(button("lab-stop", l.stop, Kind::Standard, &t).on_click(cx.listener(move |this, _, _, cx| {
+                            this.lab_edit(key, |c| c.adaptive_enabled = false, cx);
+                            this.send(ToTray::TriggerPreview(key, None), cx);
+                        })))
+                    }),
             )
             .when(pad.lab_status.testing, |d| d.child(caption(l.testing, t.accent)))
             .when_some(pad.lab_status.trigger_error.clone(), |d, error| d.child(caption(error, t.caution)))
             .child(self.toggle(
                 "lab-effect-persist",
-                (l.persist, ""),
+                (l.persist, l.persist_hint),
                 cfg.adaptive_enabled,
                 Edit::Lab(Config { adaptive_enabled: !cfg.adaptive_enabled, ..cfg }),
                 key,

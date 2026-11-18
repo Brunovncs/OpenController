@@ -14,7 +14,7 @@ use open_controller_core::i18n::Text;
 #[cfg_attr(target_os = "macos", path = "requirements/macos.rs")]
 mod sys;
 
-pub use sys::{Component, Outcome, attention, hint, install, installed};
+pub use sys::{Component, Outcome, attention, install, installed};
 
 #[derive(Clone, Copy)]
 #[cfg_attr(not(windows), allow(dead_code))]

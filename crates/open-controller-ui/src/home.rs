@@ -5,7 +5,9 @@ use crate::Connection;
 use crate::art;
 use crate::theme::{Theme, icon as glyph, layout, radius};
 use crate::ui::MainView;
-use crate::widgets::{Kind, battery, body, button, caption, chip, display, icon, icon_label_button, player_mark, title, with_tip};
+use crate::widgets::{
+    Kind, battery, body, button, caption, chip, display, icon, icon_label_button, info_tip, player_mark, title, with_tip,
+};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, AppContext, Context, Div, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled,
@@ -363,7 +365,7 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(16.))
-                    .pb(if swap_hint { px(4.) } else { px(20.) })
+                    .pb(px(20.))
                     .child(
                         div()
                             .flex()
@@ -372,11 +374,11 @@ impl MainView {
                             .flex_1()
                             .min_w(px(0.))
                             .child(display(text.controllers, t.text))
-                            .child(caption(count, t.text3).pb(px(6.))),
+                            .child(caption(count, t.text3).pb(px(6.)))
+                            .when(swap_hint, |d| d.child(info_tip("swap-tip", text.swap_hint, &t).mb(px(7.)))),
                     )
                     .children(connect),
             )
-            .when(swap_hint, |d| d.child(caption(text.swap_hint, t.text3).pb(px(16.))))
             .children(banner)
             .when(snap.pads.is_empty(), |d| d.child(self.empty_state(text)))
             .when(!snap.pads.is_empty(), |d| d.child(grid))
