@@ -183,6 +183,43 @@ pub struct Mouse {
     pub tap: bool,
 }
 
+struct Debounce {
+    stable: u64,
+    pending: u64,
+    since: [Option<Instant>; 64],
+}
+impl Default for Debounce {
+    fn default() -> Self {
+        Self { stable: 0, pending: 0, since: [None; 64] }
+    }
+}
+impl Debounce {
+    fn update(&mut self, raw: u64, ms: u16, now: Instant) -> u64 {
+        if ms == 0 {
+            self.stable = raw;
+            self.pending = raw;
+            self.since.fill(None);
+            return raw;
+        }
+        for bit in 0..64 {
+            let mask = 1u64 << bit;
+            if (raw ^ self.stable) & mask == 0 {
+                self.since[bit] = None;
+                continue;
+            }
+            if (raw ^ self.pending) & mask != 0 || self.since[bit].is_none() {
+                self.pending = (self.pending & !mask) | (raw & mask);
+                self.since[bit] = Some(now);
+            }
+            if self.since[bit].is_some_and(|t| now.duration_since(t) >= Duration::from_millis(u64::from(ms))) {
+                self.stable = (self.stable & !mask) | (raw & mask);
+                self.since[bit] = None;
+            }
+        }
+        self.stable
+    }
+}
+
 #[derive(Default)]
 struct TriggerState {
     hair: bool,
@@ -399,6 +436,7 @@ pub struct Runtime {
     pub active: bool,
     config: Config,
     last: Option<Instant>,
+    debounce: Debounce,
     triggers: [TriggerState; 2],
     touch: TouchState,
     flick: FlickState,
@@ -419,6 +457,7 @@ impl Runtime {
         let dt = self.last.map_or(0.004, |last| now.duration_since(last).as_secs_f32().min(0.05));
         self.last = Some(now);
         let mut output = raw;
+        output.buttons = self.debounce.update(raw.buttons, if mapped { cfg.debounce_ms } else { 0 }, now);
         let mut mouse = self.touch.update(&raw, cfg.touch, now, dt);
         if mapped {
             for (side, trigger) in self.triggers.iter_mut().enumerate() {
@@ -583,6 +622,17 @@ mod tests {
         assert_eq!(loaded.active().lab, cfg);
         let old: crate::profile::Profile = serde_json::from_str(r#"{"name":"old"}"#).unwrap();
         assert_eq!(old.lab, Config::default());
+    }
+    #[test]
+    fn debounce_settles_without_another_hid_report() {
+        let mut d = Debounce::default();
+        let n = Instant::now();
+        assert_eq!(d.update(1, 20, n), 0);
+        assert_eq!(d.update(0, 20, n + Duration::from_millis(5)), 0);
+        assert_eq!(d.update(1, 20, n + Duration::from_millis(10)), 0);
+        assert_eq!(d.update(1, 20, n + Duration::from_millis(31)), 1);
+        assert_eq!(d.update(0, 20, n + Duration::from_millis(32)), 1);
+        assert_eq!(d.update(0, 20, n + Duration::from_millis(53)), 0);
     }
     #[test]
     fn hair_releases_and_rearms_without_returning_to_zero() {

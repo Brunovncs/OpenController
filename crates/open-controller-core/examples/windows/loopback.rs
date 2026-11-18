@@ -168,6 +168,18 @@ fn lab_inputs(engine: &Engine, joy: *mut SDL_Joystick, slot: u32, original: &Pro
     check(start.elapsed() >= Duration::from_millis(90), "Hip Fire waits before its soft action without blocking input");
     pull(0);
     wait_for("Hip Fire released", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
+    cfg = Lab { debounce_ms: 80, ..Default::default() };
+    profiles.apply(Edit::Lab(cfg));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    wait_for("debounce profile", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab.debounce_ms == 80)
+    });
+    let start = Instant::now();
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, true) };
+    wait_for("stable debounced A", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_A != 0));
+    check(start.elapsed() >= Duration::from_millis(70), "button debounce settles on the timer and reaches XInput");
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+    wait_for("debounced A release", Duration::from_secs(1), || xinput(slot).filter(|s| s.Gamepad.wButtons == 0));
     engine.send(Command::SetProfiles(PROFILE.into(), original.clone()));
     wait_for("original profile restored", Duration::from_secs(1), || {
         engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.profile().lab == Lab::default())
