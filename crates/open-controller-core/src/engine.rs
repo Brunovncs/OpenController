@@ -442,6 +442,7 @@ struct Tools {
     trial: Option<(Instant, [crate::lab::TriggerEffect; 2])>,
     last_effect: Option<([crate::lab::TriggerEffect; 2], Instant)>,
     error: Option<String>,
+    activity: Instant,
     motion_accel: Option<[f32; 3]>,
     motion_us: u64,
     touches: [bool; 2],
@@ -461,12 +462,13 @@ impl Tools {
         };
         (effects, expired)
     }
-    fn new(_now: Instant) -> Self {
+    fn new(now: Instant) -> Self {
         Self {
             runtime: Default::default(),
             trial: None,
             last_effect: None,
             error: None,
+            activity: now,
             motion_accel: None,
             motion_us: 0,
             touches: [false; 2],
@@ -592,6 +594,7 @@ struct Core {
     dsu_seen: crate::dsu::Status,
     dsu_slots: [Option<String>; 4],
     dsu_at: Instant,
+    lights_at: Instant,
     microphone: crate::microphone::Monitor,
     microphone_seen: Option<bool>,
     bus: Option<Arc<Bus>>,
@@ -696,6 +699,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         dsu_seen: Default::default(),
         dsu_slots: Default::default(),
         dsu_at: Instant::now(),
+        lights_at: Instant::now(),
         microphone: crate::microphone::Monitor::start(),
         microphone_seen: None,
         bus: None,
@@ -1781,6 +1785,10 @@ impl Core {
     /// battery's or none, blinking once a second when the battery is nearly empty. Only a change
     /// is sent.
     fn update_lights(&mut self, now: Instant) {
+        if now.duration_since(self.lights_at) < Duration::from_millis(25) {
+            return;
+        }
+        self.lights_at = now;
         // Half a second on, half off.
         let blink_off = now.duration_since(self.started).as_millis() % 1000 >= 500;
         for p in self.phys.values_mut() {
@@ -1810,11 +1818,28 @@ impl Core {
             let color = if pr.low_battery_flash && low && blink_off {
                 [0, 0, 0]
             } else {
-                profile::light_color(pr.light, pr.brightness, player, battery)
+                let base = profile::light_color(pr.light, pr.brightness, player, battery);
+                if pr.light == crate::profile::Light::Off {
+                    base
+                } else {
+                    let rumble = match p.kind {
+                        Kind::Slot(s) => self.targets.get(&s).map_or(0, |t| t.rumble.0.max(t.rumble.1)),
+                        _ => 0,
+                    };
+                    crate::lab::dynamic_color(
+                        pr.lab.dynamic,
+                        base,
+                        pr.brightness,
+                        now.duration_since(self.started),
+                        now.duration_since(p.tools.activity),
+                        rumble,
+                    )
+                }
             };
             if p.led != Some(color) {
                 p.pad.set_led(color);
                 p.led = Some(color);
+                self.input_changed = true;
             }
         }
     }
@@ -1944,6 +1969,13 @@ impl Core {
                     self.desktop.send(id, mouse);
                 }
                 p.tools.mouse_on = mouse_on;
+                if p.state.buttons != 0
+                    || p.state.touches.iter().any(|t| t.down)
+                    || p.state.axes.iter().any(|v| i32::from(*v).abs() > 6000)
+                    || p.rate.is_some_and(|rate| rate.iter().any(|v| v.abs() > 0.01))
+                {
+                    p.tools.activity = now;
+                }
             } else {
                 if p.tools.mouse_on {
                     self.desktop.send(id, Default::default());

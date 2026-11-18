@@ -856,8 +856,9 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
         open_controller_core::device::Power::Battery(v) | open_controller_core::device::Power::Charging(v) => v,
         _ => None,
     };
-    let light =
-        open_controller_core::profile::light_color(pad.profile().light, pad.profile().brightness, crate::home::player(&pad.role), light);
+    let light = pad.lab_status.led.unwrap_or_else(|| {
+        open_controller_core::profile::light_color(pad.profile().light, pad.profile().brightness, crate::home::player(&pad.role), light)
+    });
     let light_owned = pad.role != open_controller_core::Role::KeptNative || pad.profiles.native_light;
     let light_ink: Hsla = rgb(u32::from(light[0]) << 16 | u32::from(light[1]) << 8 | u32::from(light[2])).into();
     let k = scale * UNIT;
@@ -872,6 +873,11 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
             _ => None,
         },
     );
+    let touch_light = if pad.profile().lab.dynamic.mode != open_controller_core::lab::LightMode::Off {
+        pad.lab_status.led.unwrap_or(touch_light)
+    } else {
+        touch_light
+    };
     let touch_ink: Hsla = if touch_light == [0; 3] {
         ink.lit
     } else {
