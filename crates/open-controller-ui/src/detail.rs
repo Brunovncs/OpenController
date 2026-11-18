@@ -352,6 +352,9 @@ impl MainView {
             sections.push((Section::Light, glyph::LIGHT, text.nav_light));
         }
         sections.push((Section::Info, glyph::INFO, text.nav_info));
+        if pad.store.is_some() {
+            sections.insert(sections.len() - 1, (Section::Lab, glyph::SETTINGS, text.lab.nav));
+        }
         let current = if sections.iter().any(|s| s.0 == self.section) { self.section } else { Section::Buttons };
         let mut rail = div().flex().flex_col().flex_none().w(px(196.)).gap(px(4.));
         for (i, (s, g, label)) in sections.into_iter().enumerate() {
@@ -376,6 +379,7 @@ impl MainView {
         }
 
         let content = match current {
+            Section::Lab => self.lab_section(pad, text, cx),
             Section::Buttons => self.buttons_section(pad, text, window, cx),
             Section::Light => self.light_section(pad, text, cx),
             Section::Motion => self.motion_section(pad, text, cx),

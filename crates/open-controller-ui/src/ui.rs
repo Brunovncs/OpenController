@@ -41,6 +41,7 @@ pub enum Screen {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Section {
+    Lab,
     Buttons,
     Motion,
     Sticks,
@@ -159,6 +160,8 @@ pub struct MainView {
     pub moving: bool,
     pub color_input: Option<crate::detail::ColorInput>,
     pub touch_animation: crate::touch_animation::Animation,
+    pub lab_tab: u8,
+    pub lab_numbers: HashMap<&'static str, crate::lab::Number>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -217,6 +220,8 @@ impl MainView {
             moving: false,
             color_input: None,
             touch_animation: crate::touch_animation::Animation::default(),
+            lab_tab: 0,
+            lab_numbers: HashMap::new(),
             _subscriptions: vec![observe, theme_change, activation],
         };
         view.read_installed(cx);
@@ -275,6 +280,8 @@ impl MainView {
     }
 
     fn reset_page(&mut self) {
+        self.lab_tab = 0;
+        self.lab_numbers.clear();
         self.editor = None;
         self.confirm_reset = false;
         self.profile_menu = false;
@@ -455,8 +462,11 @@ impl MainView {
         let pressed = held & !self.held;
         self.held = held;
         let listening = self.editor.as_ref().is_some_and(|e| e.recording);
-        if pressed != 0 && !listening && self.renaming.is_none() && self.measuring.is_none() {
-            let button = pressed.trailing_zeros() as u8;
+        if let Some(button) = followed_extra(self.section, pad.profile().lab.touch.mode, pressed)
+            && !listening
+            && self.renaming.is_none()
+            && self.measuring.is_none()
+        {
             self.section = Section::Buttons;
             if self.editor.as_ref().is_none_or(|e| e.button != button) {
                 self.edit(pad, button, cx);
@@ -608,8 +618,16 @@ impl MainView {
     }
 }
 
-/// The extra buttons held on a controller, as bits. A button past the 64 bits, which a resident
-/// process of another version could send, is left out.
+/// A newly pressed extra button can select its editor, unless a tool owns the gesture.
+fn followed_extra(section: Section, _touch: open_controller_core::lab::TouchMode, pressed: u64) -> Option<u8> {
+    // Tools have their own live input. A touchpad mouse gesture must not open the mapper.
+    if section == Section::Lab {
+        return None;
+    }
+    (pressed != 0).then(|| pressed.trailing_zeros() as u8)
+}
+
+/// The extra buttons held on a controller, excluding indexes outside its 64-bit state.
 fn extras_held(pad: &PadView) -> u64 {
     let mask = pad.extras.iter().fold(0u64, |m, &b| m | 1u64.checked_shl(u32::from(b)).unwrap_or(0));
     pad.input.buttons & mask
@@ -677,6 +695,16 @@ mod tests {
     use super::*;
     use open_controller_core::binding::{Chord, XboxButton};
     use std::time::Duration;
+
+    #[test]
+    fn lab_and_touch_mouse_do_not_automatically_open_the_button_mapper() {
+        use open_controller_core::extras::{RIGHT_PADDLE1, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO, TOUCHPAD};
+        use open_controller_core::lab::TouchMode;
+        for button in [TOUCHPAD, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO, RIGHT_PADDLE1] {
+            assert_eq!(followed_extra(Section::Lab, TouchMode::Off, 1u64 << button), None);
+        }
+        assert_eq!(followed_extra(Section::Info, TouchMode::Off, 1u64 << TOUCHPAD), Some(TOUCHPAD));
+    }
 
     fn editor() -> Editor {
         Editor {

@@ -11,8 +11,10 @@ pub mod crash;
 pub mod device;
 pub mod ds3;
 pub mod ds4;
+pub mod dsu;
 pub mod extras;
 pub mod i18n;
+pub mod lab;
 pub mod mapping;
 mod microphone;
 pub mod models;
@@ -21,6 +23,7 @@ pub mod profile;
 pub mod rating;
 pub mod report;
 pub mod roster;
+pub mod trigger_effect;
 
 mod engine;
 pub mod handheld;

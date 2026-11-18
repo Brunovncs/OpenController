@@ -295,6 +295,21 @@ device. This reads the endpoint's mute flag and never records audio.
 
 Windows uses one application-drawn title bar with the usual window controls.
 
+### Controller Lab
+
+The controller's Lab page has optional tools, saved with each profile and off by default:
+
+- **Trigger Lab:** independent DualSense/Edge L2 and R2 resistance, vibration and trigger-break
+  effects. Adjust the start/end zones, force and frequency, try them for five seconds, stop
+  them immediately or opt into persistent profile effects. A trial restores the profile after
+  its timeout; disconnect and normal exit clear effects owned by OpenController. Output goes
+  through SDL, including USB/Bluetooth framing and checksums.
+
+Use matching resident/UI binaries (IPC protocol 2). Trials restore the saved profile settings.
+
+Protocol references: [SDL's gamepad effect example](https://github.com/libsdl-org/SDL/blob/main/test/testcontroller.c),
+and [DualSense trigger encoding](https://gist.github.com/Nielk1/6d54cc2c00d2201ccb8c2720ad7538db).
+
 ## Supported controllers
 
 Controllers are read through [SDL 3](https://libsdl.org), which speaks each one's own protocol,

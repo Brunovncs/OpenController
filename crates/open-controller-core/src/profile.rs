@@ -333,6 +333,8 @@ pub struct Profile {
     pub gyro: Gyro,
     pub sticks: Sticks,
     pub pressure: Pressure,
+    #[serde(deserialize_with = "lenient")]
+    pub lab: crate::lab::Config,
     /// Executable names (`game.exe`, lowercase) that make this the profile in use while one of
     /// them is the program in front.
     pub programs: Vec<String>,
@@ -352,6 +354,7 @@ impl Default for Profile {
             gyro: Gyro::default(),
             sticks: Sticks::default(),
             pressure: Pressure::default(),
+            lab: crate::lab::Config::default(),
             programs: Vec::new(),
             extra: Map::new(),
         }
@@ -413,6 +416,7 @@ impl Default for Profiles {
 /// A change to a controller's profiles, as the window asks for it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Edit {
+    Lab(crate::lab::Config),
     /// Assigns an extra button in the profile in use, or clears it.
     Bind {
         button: u8,
@@ -532,6 +536,7 @@ impl Profiles {
 
     pub fn apply(&mut self, edit: Edit) {
         match edit {
+            Edit::Lab(lab) => self.active_mut().lab = lab.clean(),
             // The same limit `sanitised` keeps: buttons are bits of a u64.
             Edit::Bind { button: 64.., .. } => {}
             Edit::Bind { button, action } => {
@@ -636,6 +641,7 @@ impl Profiles {
             p.gyro = clean_gyro(p.gyro);
             p.sticks = clean_sticks(p.sticks);
             p.pressure = settle_pressure(Pressure::default(), clean_pressure(p.pressure));
+            p.lab = p.lab.clean();
             free_dpad_stick(p);
             p.programs =
                 std::mem::take(&mut p.programs).iter().map(|x| program_name(x)).filter(|x| !x.is_empty()).take(MAX_PROGRAMS).collect();

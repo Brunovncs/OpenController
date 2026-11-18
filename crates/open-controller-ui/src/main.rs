@@ -11,6 +11,7 @@ mod frame;
 mod home;
 mod icons;
 mod keys;
+mod lab;
 mod learn;
 mod programs;
 mod report;

@@ -18,7 +18,7 @@ pub use pipe::{Pipe, Reader, is_disconnect, remove_socket};
 
 /// The version of these messages. Raised whenever either side would misread the other's, so a
 /// window from one release meeting a resident process from another can tell.
-pub const PROTO: u32 = 1;
+pub const PROTO: u32 = 2;
 
 /// What the resident process tells the window.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -56,6 +56,7 @@ pub(crate) fn parse<T: serde::de::DeserializeOwned>(line: &[u8], skipped: &mut u
 /// What the window asks of the resident process.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ToTray {
+    TriggerPreview(PadKey, Option<[crate::lab::TriggerEffect; 2]>),
     SetHiding(bool),
     SetAutostart(bool),
     SetCheckUpdates(bool),

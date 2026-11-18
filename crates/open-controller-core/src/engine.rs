@@ -133,6 +133,7 @@ pub enum PadKey {
 }
 
 pub enum Command {
+    TriggerPreview(PadKey, Option<[crate::lab::TriggerEffect; 2]>),
     SetHiding(bool),
     /// Rumble a controller briefly, to tell which one is which.
     Identify(PadKey),
@@ -185,6 +186,8 @@ pub enum Role {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PadView {
+    #[serde(default)]
+    pub lab_status: crate::lab::Status,
     /// Actual mute flag of Windows' default input endpoint, not a latched button press.
     #[serde(default)]
     pub microphone_muted: Option<bool>,
@@ -396,6 +399,7 @@ struct Model {
 
 /// A connected device, as SDL sees it.
 struct Phys {
+    tools: Tools,
     pad: Gamepad,
     model: Model,
     link: Link,
@@ -431,6 +435,30 @@ struct Phys {
     sixaxis: Option<Sixaxis>,
     tilt: TiltRate,
     tilt_at: Option<Instant>,
+}
+
+struct Tools {
+    runtime: crate::lab::Runtime,
+    trial: Option<(Instant, [crate::lab::TriggerEffect; 2])>,
+    last_effect: Option<([crate::lab::TriggerEffect; 2], Instant)>,
+    error: Option<String>,
+}
+impl Tools {
+    fn wanted(&mut self, cfg: crate::lab::Config, owned: bool, now: Instant) -> ([crate::lab::TriggerEffect; 2], bool) {
+        let expired = self.trial.is_some_and(|(until, _)| now >= until);
+        if expired || !owned {
+            self.trial = None;
+        }
+        let effects = if owned {
+            self.trial.map(|(_, e)| e).unwrap_or(if cfg.adaptive_enabled { cfg.adaptive } else { Default::default() })
+        } else {
+            Default::default()
+        };
+        (effects, expired)
+    }
+    fn new(_now: Instant) -> Self {
+        Self { runtime: Default::default(), trial: None, last_effect: None, error: None }
+    }
 }
 
 impl Phys {
@@ -719,6 +747,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         core.handheld_buttons();
         core.poll_sixaxis(now);
         core.forward(now);
+        core.update_tools(now);
         core.macro_buttons();
         core.feedback(now);
         core.housekeeping(now);
@@ -826,6 +855,15 @@ impl Core {
 
     fn command(&mut self, c: Command, now: Instant) {
         match c {
+            Command::TriggerPreview(key, effects) => {
+                if let Some(id) = self.device_for(key)
+                    && let Some(p) = self.phys.get_mut(&id)
+                    && matches!(p.model.family, Family::DualSense | Family::DualSenseEdge)
+                {
+                    p.tools.trial = effects.map(|e| (now + Duration::from_secs(5), e.map(crate::lab::TriggerEffect::clean)));
+                    self.changed = true;
+                }
+            }
             Command::SetHiding(on) => {
                 self.hiding = on;
                 if on {
@@ -1356,6 +1394,7 @@ impl Core {
             model.store = format!("handheld:{}", m.name);
         }
         let mut p = Phys {
+            tools: Tools::new(Instant::now()),
             model,
             link,
             identity,
@@ -1381,6 +1420,7 @@ impl Core {
             pad,
         };
         p.pad.read(&mut p.state);
+        p.tools.runtime.output = p.state;
         let xbox = matches!(p.pad.pad_type(), device::PadType::Xbox360 | device::PadType::XboxOne);
         p.kind = if devnode::is_virtual(&p.path) {
             Kind::Own
@@ -1525,6 +1565,9 @@ impl Core {
             self.gone_halves.push((p.pad.pad_type() == device::PadType::JoyConRight, p.path.clone(), now));
         }
         self.updated.retain(|&d| d != id);
+        if p.tools.last_effect.is_some() {
+            let _ = p.pad.trigger_effect(Default::default());
+        }
         self.macro_held.remove(&id);
         if let Kind::Slot(s) = p.kind {
             self.roster.detach(id, now);
@@ -1611,7 +1654,7 @@ impl Core {
     fn report_of(&self, dev: DeviceId) -> XusbReport {
         let Some(p) = self.phys.get(&dev) else { return XusbReport::default() };
         let profile = self.profile_of(&p.model.store);
-        let mut state = p.state;
+        let mut state = p.tools.runtime.output;
         if let Some(pr) = profile {
             state.buttons &= !binding::taken(&pr.bindings);
             // The real triggers, before pressure can move them too.
@@ -1634,7 +1677,7 @@ impl Core {
             r.thumb_ry = (i32::from(r.thumb_ry) + i32::from(p.aim_out.1)).clamp(-32768, 32767) as i16;
         }
         if let Some(pr) = profile {
-            binding::overlay(&pr.bindings, p.state.buttons, &mut r);
+            binding::overlay(&pr.bindings, p.tools.runtime.output.buttons, &mut r);
         }
         if let Some(b) = self.macro_held.get(&dev) {
             b.press(&mut r);
@@ -1795,22 +1838,6 @@ impl Core {
             let aim_before = p.aim_out;
             let (rate_before, accel_before) = (p.rate, p.accel);
             p.pad.read(&mut p.state);
-            let mic_owner = match p.kind {
-                Kind::Slot(s) => self.roster.get(s).and_then(|s| s.source) == Some(id),
-                Kind::Native => true,
-                _ => false,
-            };
-            if mic_owner
-                && matches!(p.model.family, Family::DualSense | Family::DualSenseEdge)
-                && self.profiles.get(&p.model.store).is_some_and(|x| x.mic_control)
-                && !self
-                    .profiles
-                    .get(&p.model.store)
-                    .is_some_and(|x| x.for_program(&self.foreground).bindings.contains_key(&(crate::mapping::button::MISC1 as u8)))
-                && crate::microphone::pressed(before.buttons, p.state.buttons)
-            {
-                self.microphone.toggle();
-            }
             if p.model.family == Family::Handheld && p.kind == Kind::Native {
                 p.state.buttons |= self.handheld_held;
             }
@@ -1846,9 +1873,6 @@ impl Core {
             }
             let (kind, state) = (p.kind, p.state);
             // Any button can type keys, not only the extra ones.
-            if kind == Kind::Native && before.buttons != state.buttons {
-                self.type_keys(Owner::Device(id), id, before.buttons, state.buttons);
-            }
             if let Kind::Slot(s) = kind {
                 // Stick noise on the idle connection of a controller connected twice must not
                 // pull the slot over to it.
@@ -1858,14 +1882,78 @@ impl Core {
                 }
                 if self.roster.get(s).and_then(|x| x.source) == Some(id) && !self.is_native(s) {
                     self.resend(s);
-                    if before.buttons != state.buttons || !self.held.is_empty() {
-                        self.type_keys(Owner::Slot(s), id, before.buttons, state.buttons);
-                    }
                 }
             }
         }
         self.updated = updated;
         self.updated.clear();
+    }
+
+    fn update_tools(&mut self, now: Instant) {
+        let ids: Vec<DeviceId> = self.phys.keys().copied().collect();
+        for id in ids {
+            let (owned, mapped) = match self.phys[&id].kind {
+                Kind::Slot(s) => (self.roster.get(s).and_then(|slot| slot.source) == Some(id), !self.is_native(s)),
+                Kind::Native => (true, false),
+                _ => (false, false),
+            };
+            let cfg = self.profile_of(&self.phys[&id].model.store).map(|p| p.lab).unwrap_or_default();
+            let p = self.phys.get_mut(&id).unwrap();
+            let before = p.tools.runtime.output;
+            if owned {
+                if !p.tools.runtime.active {
+                    p.tools.runtime = Default::default();
+                }
+                let _mouse = p.tools.runtime.update(p.state, cfg, mapped, p.rate, now);
+                p.tools.runtime.active = true;
+            } else {
+                p.tools.runtime.active = false;
+                p.tools.trial = None;
+            }
+            let (effects, expired) = p.tools.wanted(cfg, owned, now);
+            self.changed |= expired;
+            if matches!(p.model.family, Family::DualSense | Family::DualSenseEdge) {
+                let active = effects.iter().any(|e| e.mode != crate::lab::EffectMode::Off && e.strength > 0);
+                let due = match p.tools.last_effect {
+                    None => active || p.tools.trial.is_some(),
+                    Some((last, at)) => {
+                        last != effects || (active || p.tools.error.is_some()) && now.duration_since(at) >= Duration::from_secs(1)
+                    }
+                };
+                if due {
+                    let error = p.pad.trigger_effect(effects).err();
+                    self.changed |= error != p.tools.error;
+                    p.tools.error = error;
+                    p.tools.last_effect = Some((effects, now));
+                }
+            }
+            let after = p.tools.runtime.output;
+            let kind = p.kind;
+            let mic_press = owned
+                && crate::microphone::pressed(before.buttons, after.buttons)
+                && matches!(p.model.family, Family::DualSense | Family::DualSenseEdge)
+                && self.profiles.get(&p.model.store).is_some_and(|x| {
+                    x.mic_control && !x.for_program(&self.foreground).bindings.contains_key(&(crate::mapping::button::MISC1 as u8))
+                });
+            if mic_press {
+                self.microphone.toggle();
+            }
+            if owned && before != after {
+                self.input_changed = true;
+                if let Kind::Slot(s) = kind
+                    && mapped
+                {
+                    self.resend(s);
+                }
+            }
+            if owned && (before.buttons != after.buttons || !self.held.is_empty()) {
+                match kind {
+                    Kind::Slot(s) if mapped => self.type_keys(Owner::Slot(s), id, before.buttons, after.buttons),
+                    Kind::Native => self.type_keys(Owner::Device(id), id, before.buttons, after.buttons),
+                    _ => {}
+                }
+            }
+        }
     }
 
     fn feedback(&mut self, now: Instant) {
@@ -2183,6 +2271,15 @@ impl Core {
             view.role = role;
             view.hidden = slot.devices.iter().any(|d| self.is_hidden(*d));
             view.input = source.map(|p| p.state).unwrap_or_default();
+            view.lab_status = source
+                .map(|p| crate::lab::Status {
+                    testing: p.tools.trial.is_some(),
+                    trigger_error: p.tools.error.clone(),
+                    dsu: Default::default(),
+                    output: p.tools.runtime.output,
+                    led: p.led,
+                })
+                .unwrap_or_default();
             view.gyro = source.and_then(|p| p.rate);
             view.aim = source.map_or((0, 0), |p| p.aim_out);
             view.can_power_off = source.is_some_and(|p| p.link == Link::Bluetooth && device::bluetooth_address(&p.identity).is_some());
@@ -2200,6 +2297,13 @@ impl Core {
             let player = device::xinput_slot(&p.path).or_else(|| if VIRTUAL_PADS { None } else { p.pad.player() });
             view.role = Role::Native { player };
             view.input = p.state;
+            view.lab_status = crate::lab::Status {
+                testing: p.tools.trial.is_some(),
+                trigger_error: p.tools.error.clone(),
+                dsu: Default::default(),
+                output: p.tools.runtime.output,
+                led: p.led,
+            };
             pads.push(view);
         }
         // In player order, whoever holds the slot: games number them that way. The sort is
@@ -2262,6 +2366,7 @@ impl Core {
         // A controller that copies another's ids goes by the name of the model its owner chose.
         let alias = model.and_then(|m| models::alias(m.vendor, m.product, chosen));
         PadView {
+            lab_status: Default::default(),
             microphone_muted: model.filter(|m| matches!(m.family, Family::DualSense | Family::DualSenseEdge)).and(self.microphone_seen),
             key,
             name: alias.map(|a| a.4.to_string()).or_else(|| model.map(|m| m.name.clone())).unwrap_or_default(),
@@ -2297,6 +2402,11 @@ impl Core {
     }
 
     fn shutdown(&mut self) {
+        for p in self.phys.values() {
+            if p.tools.last_effect.is_some() {
+                let _ = p.pad.trigger_effect(Default::default());
+            }
+        }
         for p in self.phys.values().filter(|p| !(matches!(p.kind, Kind::Slot(_)) && native(&self.profiles, &p.model.store, p.model.form))) {
             p.pad.rumble(0, 0, 0);
         }
@@ -2351,6 +2461,21 @@ fn slot_role(native: bool, remaining: Option<Duration>, target: Option<Option<u8
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn trigger_trials_restore_the_profile_and_stop_on_disconnect() {
+        use crate::lab::{Config, EffectMode, TriggerEffect};
+        use std::time::{Duration, Instant};
+        let now = Instant::now();
+        let mut tools = super::Tools::new(now);
+        let saved = [TriggerEffect { mode: EffectMode::Resistance, ..Default::default() }; 2];
+        let trial = [TriggerEffect { mode: EffectMode::Vibration, ..Default::default() }; 2];
+        let cfg = Config { adaptive_enabled: true, adaptive: saved, ..Default::default() };
+        tools.trial = Some((now + Duration::from_secs(5), trial));
+        assert_eq!(tools.wanted(cfg, true, now).0, trial);
+        assert_eq!(tools.wanted(cfg, true, now + Duration::from_secs(6)), (saved, true));
+        assert_eq!(tools.wanted(cfg, false, now).0, [TriggerEffect::default(); 2]);
+        assert_eq!(tools.wanted(Config::default(), true, now).0, [TriggerEffect::default(); 2]);
+    }
     use super::*;
     use crate::profile::Edit;
 
