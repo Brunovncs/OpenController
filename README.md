@@ -14,7 +14,7 @@ It works with the several hundred controllers SDL knows and keeps out of the way
 controller and the game. Xbox controllers are left alone, since games already read them. The
 window is a separate program that only exists while it is open.
 
-OpenController is open source (MIT) and in beta, at version 0.8.22. With so many controllers out
+OpenController is open source (MIT) and in beta, at version 0.9.0. With so many controllers out
 there, some will not work as they should yet and some features are still missing, so every report
 helps. If your controller is not recognised, a button does nothing or anything else goes wrong,
 feel free to [open an issue](https://github.com/Brunovncs/OpenController/issues); see
@@ -32,8 +32,8 @@ with its SHA-256 next to it.
 
 ### Windows
 
-Download `open-controller-0.8.22-windows-x64-setup.exe` (on an ARM PC,
-`open-controller-0.8.22-windows-arm64-setup.exe`) and run it. It installs for your user only,
+Download `open-controller-0.9.0-windows-x64-setup.exe` (on an ARM PC,
+`open-controller-0.9.0-windows-arm64-setup.exe`) and run it. It installs for your user only,
 without administrator rights, adds OpenController to the Start menu and to Apps in Settings
 (where it uninstalls), and starts it. Run it again over an existing installation, or let the app
 do it, and it updates in place: the running copy quits first, and your settings, kept in
@@ -41,8 +41,8 @@ do it, and it updates in place: the running copy quits first, and your settings,
 too. The installer is not code-signed, so
 SmartScreen warns the first time ("More info", then "Run anyway").
 
-To run it without installing, download `open-controller-0.8.22-windows-x64.zip` (or
-`open-controller-0.8.22-windows-arm64.zip`), extract it anywhere and run `open-controller.exe`.
+To run it without installing, download `open-controller-0.9.0-windows-x64.zip` (or
+`open-controller-0.9.0-windows-arm64.zip`), extract it anywhere and run `open-controller.exe`.
 The programs are not code-signed yet, so Windows SmartScreen warns on the first start ("More info", then "Run anyway"). Neither the app nor its installation needs administrator
 rights.
 
@@ -74,7 +74,7 @@ Windows" and "Quit". Closing the window does not stop anything.
 
 ### Linux
 
-Download `open-controller-0.8.22-linux-x64.tar.gz` (or `open-controller-0.8.22-linux-arm64.tar.gz`),
+Download `open-controller-0.9.0-linux-x64.tar.gz` (or `open-controller-0.9.0-linux-arm64.tar.gz`),
 extract it and run `./install.sh`. The programs are built on Ubuntu 22.04 and need glibc 2.35 or
 newer, as in Ubuntu 22.04, Debian 12 and Fedora 36 and later; `ldd --version` shows yours.
 
@@ -103,7 +103,7 @@ controller keeps moving the pointer, as it does without OpenController.
 
 ### macOS
 
-Download `open-controller-0.8.22-macos-universal.zip`, which runs on Apple silicon and Intel, and
+Download `open-controller-0.9.0-macos-universal.zip`, which runs on Apple silicon and Intel, and
 move OpenController to Applications. It is not notarised, so macOS refuses to open it the first
 time. Open it once, then go to System Settings, Privacy & Security, and click Open Anyway.
 
@@ -266,7 +266,7 @@ document about these machines and has not been tried on one yet.
 
 ### Keeping a controller native
 
-"Keep native" on a controller's page takes OpenController out of the way for that controller. No
+Native mode, on a controller's page, takes OpenController out of the way for that controller. No
 Xbox controller is made for it, it is not hidden, and nothing is written to it: no light, no
 player number, no rumble. Games see the real controller, so a game that knows a DualSense gets
 its button prompts, adaptive triggers and, over the cable, haptic feedback. This is also the way
@@ -279,58 +279,34 @@ already opened it keeps it after it goes back to Xbox, so it would read it twice
 without a serial number shares its settings with every controller of its model, and so does this
 choice. With "Hide original controllers" off, native only removes the Xbox controller.
 
-The Light page can explicitly opt into light-bar control while input stays native. This is off
-by default; a game that also sets the light can compete with it. Custom colours accept a full
-`#RRGGBB` value as well as the colour swatches.
+The light is left alone too, unless "Control the light in native mode" is turned on in the Light
+section. A game that also sets the light may change it back.
 
-The preview follows both touchpad contacts, including movement without clicking, with
-frame-timed smoothing and a short fading trail in the focused detailed preview. Unfocused
-windows and reduced-motion mode keep direct feedback instead; losing focus clears old trails.
-Both contacts and trails follow the configured LED colour, with the theme accent as a fallback
-when the LED colour is black or off. This only affects drawing, never controller input. On Windows,
-the DualSense microphone indicator shows the actual mute state of the default recording device.
-Its separate, opt-in mic-button switch toggles that device; another binding for the button takes
-priority. Bluetooth may use the PC microphone, since it need not expose a DualSense recording
-device. This reads the endpoint's mute flag and never records audio.
+### More on a controller's page
 
-Windows uses one application-drawn title bar with the usual window controls.
+A colour for the light can also be typed as a code, like `#7800FF`. Touching the touchpad shows
+each finger on the drawing, in the light bar's colour, and pressing it turns them dark so they
+still show.
+
+On Windows, the mic button of a DualSense can mute the PC's default microphone once that is turned
+on under Buttons. Another assignment for that button comes first. OpenController only reads and
+flips the mute switch: it never records.
 
 ### Controller Lab
 
-The controller's Lab page has seven optional tools, saved with each profile and off by default:
+The Lab page has optional tools, saved with each profile and off until turned on. It only shows
+the ones that work with the controller in front of it.
 
-- **Trigger Lab:** independent DualSense/Edge L2 and R2 resistance, vibration and trigger-break
-  effects. Adjust the start/end zones, force and frequency, try them for five seconds, stop
-  them immediately or opt into persistent profile effects. A trial restores the profile after
-  its timeout; disconnect and normal exit clear effects owned by OpenController. Output goes
-  through SDL, including USB/Bluetooth framing and checksums.
-- **Touchpad mouse (Windows):** relative movement, tap-to-click, physical left/right clicks,
-  two-finger scrolling and a trackball mode with adjustable inertia decay. This is shared
-  desktop input; disable it in the Lab when a game should handle the touchpad itself.
-- **Flick Stick (Windows, mapping mode):** the right stick's direction starts a turn, rotation
-  around its rim continues it, and the gyro can provide fine aim. Counts per full turn, flick
-  duration, activation threshold and gyro sensitivity are adjustable. Calibrate counts against
-  the game's mouse sensitivity. The virtual right stick is consumed while this is enabled.
-- **Trigger mapping (mapping mode):** Hair Trigger uses short pull/release reversals; two-stage
-  mapping assigns buttons to soft/full pulls; Hip Fire delays the soft action so a quick full
-  pull can bypass it. The chosen buttons also use their existing keyboard/gamepad assignments.
-- **Button debounce (mapping mode):** require a stable press/release for 0–100 ms before output.
-  Timers settle without another controller report. Zero preserves the original latency.
-- **DSU motion:** a single loopback-only UDP server at `127.0.0.1:26760`, implementing Cemuhook
-  protocol 1001 for up to four enabled controllers, subscriptions and their expiry, CRC32,
-  touch, buttons, gyro in degrees/second and acceleration in g. Add a DSU controller in the
-  emulator and enable motion. Binding failures and client counts are shown in the Lab.
-- **Dynamic lighting:** rainbow, breathing, rumble-linked colour and optional idle fade. These
-  respect the Light page's brightness and native-mode output opt-in, and stop when lights are
-  turned off. The drawing and touch feedback follow the output colour.
+Trigger effects give a DualSense's L2 and R2 resistance, vibration or a click, with a five second
+test before keeping them. On Windows, the touchpad can move the mouse, as a mouse or a trackball,
+and Flick Stick turns the camera with the right stick as a mouse would, with the gyro for fine aim
+(set it up per game, with the game's mouse acceleration off). Trigger modes add Hair Trigger, two
+stages with a button each, and Hip Fire. The button filter ignores the double presses of a worn
+button, at the cost of the same delay on every press. Emulators like Cemu and Dolphin can read the
+motion through a DSU server on `127.0.0.1:26760`, which only this PC can reach. Light effects make
+the light bar cycle colours, breathe, follow the rumble or dim when the controller sits still.
 
-Native input stays native: only explicitly enabled desktop, sensor-sharing and hardware-effect
-tools run there. Flick Stick, trigger remapping and debounce need mapping mode. Use matching
-resident/UI binaries (IPC protocol 2). The input loop does not wait on UDP clients or mouse output.
-
-Protocol references: [SDL's gamepad effect example](https://github.com/libsdl-org/SDL/blob/main/test/testcontroller.c),
-[DualSense trigger encoding](https://gist.github.com/Nielk1/6d54cc2c00d2201ccb8c2720ad7538db),
-and the [Cemuhook protocol](https://v1993.github.io/cemuhook-protocol/).
+Flick Stick, trigger modes and the button filter work while a controller is mapped, not native.
 
 ## Supported controllers
 

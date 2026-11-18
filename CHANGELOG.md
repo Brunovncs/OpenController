@@ -3,6 +3,25 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.0
+
+Each controller has a new Lab page with optional tools, all off until you turn them on. A
+DualSense's triggers can get resistance, vibration or a click. On Windows, the touchpad can move
+the mouse, and Flick Stick turns the camera with the right stick, with the gyro for fine aim. The
+triggers can work as Hair Trigger, in two stages or as Hip Fire, a filter can ignore the double
+presses of a worn button, emulators like Cemu can read the motion over DSU, and the light bar can
+cycle colours, breathe or follow the rumble. Thanks to slkass, who built all of it.
+
+On Windows, a DualSense's mic button can now mute the PC's microphone. The light can take a colour
+typed as a code, and can be set while a controller is kept native.
+
+Touching the touchpad now shows your fingers on the controller's drawing.
+
+The window got simpler: the long explanations under each setting moved behind a small info mark,
+and on Windows it has its own title bar. The DualShock 4's face buttons are drawn bigger.
+
+Settings carry over.
+
 ## 0.8.22
 
 The ShanWan pad that calls itself Twin USB Joystick, id 2563:0555, now works as a controller.
