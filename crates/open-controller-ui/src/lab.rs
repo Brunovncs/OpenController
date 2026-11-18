@@ -11,7 +11,8 @@ use gpui::{
 use open_controller_core::extras::Family;
 use open_controller_core::i18n::Text;
 use open_controller_core::ipc::ToTray;
-use open_controller_core::lab::{Config, EffectMode, TouchMode};
+use open_controller_core::lab::{Config, EffectMode, TouchMode, TriggerMode};
+use open_controller_core::mapping::{axis, button as b};
 use open_controller_core::profile::Edit;
 use open_controller_core::{PadKey, PadView, Role};
 
@@ -21,6 +22,9 @@ pub struct Number {
     last: u16,
     field: Entity<TextField>,
     _events: Subscription,
+}
+fn field(label: &'static str, control: Div, t: &Theme) -> Div {
+    div().flex().flex_col().gap(px(6.)).child(strong(label, t.text)).child(control)
 }
 fn panel(t: &Theme) -> Div {
     card(t).p(px(16.)).flex().flex_col().gap(px(14.))
@@ -125,7 +129,7 @@ impl MainView {
         let cfg = pad.profiles.active().lab;
         let tabs = widgets::segmented(
             "lab-tabs",
-            l.tabs.iter().take(3).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
+            l.tabs.iter().take(4).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
             self.lab_tab,
             &t,
             cx,
@@ -270,6 +274,13 @@ impl MainView {
                     })
                     .into_any_element()
             }
+            3 => {
+                let mut rows = div().flex().flex_wrap().gap(px(12.));
+                for side in 0..2 {
+                    rows = rows.child(self.lab_trigger_input(pad, side, text, cx));
+                }
+                div().flex().flex_col().gap(px(12.)).child(caption(l.input_note, t.text2)).child(rows).into_any_element()
+            }
             _ => self.lab_effects(pad, text, cx),
         };
         div()
@@ -391,5 +402,112 @@ impl MainView {
             ))
             .child(cards)
             .into_any_element()
+    }
+
+    fn lab_trigger_input(&mut self, pad: &PadView, side: usize, text: &'static Text, cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        let l = text.lab;
+        let cfg = pad.profiles.active().lab;
+        let trig = cfg.triggers[side];
+        let key = pad.key;
+        const IDS: [[&str; 8]; 2] = [
+            [
+                "lab-l-input",
+                "lab-l-soft",
+                "lab-l-full",
+                "lab-l-hyst",
+                "lab-l-delay",
+                "lab-l-soft-action",
+                "lab-l-full-action",
+                "lab-l-exclusive",
+            ],
+            [
+                "lab-r-input",
+                "lab-r-soft",
+                "lab-r-full",
+                "lab-r-hyst",
+                "lab-r-delay",
+                "lab-r-soft-action",
+                "lab-r-full-action",
+                "lab-r-exclusive",
+            ],
+        ];
+        let ids = IDS[side];
+        let mode = choices(
+            ids[0],
+            &l.input_modes,
+            &[TriggerMode::Normal, TriggerMode::Hair, TriggerMode::TwoStage, TriggerMode::HipFire],
+            trig.mode,
+            key,
+            &t,
+            move |c, mode| {
+                if c.triggers[side].mode == TriggerMode::Normal {
+                    c.triggers[side].soft_button = if side == 0 { b::LEFT_SHOULDER } else { b::RIGHT_SHOULDER } as u8;
+                    c.triggers[side].full_button = if side == 0 { b::SOUTH } else { b::EAST } as u8;
+                }
+                c.triggers[side].mode = mode;
+                if mode == TriggerMode::Hair {
+                    c.triggers[side].soft = 5;
+                }
+            },
+            cx,
+        );
+        let soft = self.lab_number(ids[1], l.soft, u16::from(trig.soft), (1, 90), 5, pad, move |c, v| c.triggers[side].soft = v as u8, cx);
+        let full = self.lab_number(
+            ids[2],
+            l.full,
+            u16::from(trig.full),
+            (u16::from(trig.soft) + 1, 100),
+            5,
+            pad,
+            move |c, v| c.triggers[side].full = v as u8,
+            cx,
+        );
+        let hyst = self.lab_number(
+            ids[3],
+            l.hysteresis,
+            u16::from(trig.hysteresis),
+            (1, 20),
+            1,
+            pad,
+            move |c, v| c.triggers[side].hysteresis = v as u8,
+            cx,
+        );
+        let delay = self.lab_number(ids[4], l.delay, trig.delay_ms, (10, 1000), 10, pad, move |c, v| c.triggers[side].delay_ms = v, cx);
+        let labels = ["A / ×", "B / ○", "X / □", "Y / △", "LB / L1", "RB / R1", "LS / L3", "RS / R3"];
+        let values = [
+            b::SOUTH as u8,
+            b::EAST as u8,
+            b::WEST as u8,
+            b::NORTH as u8,
+            b::LEFT_SHOULDER as u8,
+            b::RIGHT_SHOULDER as u8,
+            b::LEFT_STICK as u8,
+            b::RIGHT_STICK as u8,
+        ];
+        let soft_action = choices(ids[5], &labels, &values, trig.soft_button, key, &t, move |c, v| c.triggers[side].soft_button = v, cx);
+        let full_action = choices(ids[6], &labels, &values, trig.full_button, key, &t, move |c, v| c.triggers[side].full_button = v, cx);
+        let mut replacement = cfg;
+        replacement.triggers[side].exclusive = !trig.exclusive;
+        let a = if side == 0 { axis::LEFT_TRIGGER } else { axis::RIGHT_TRIGGER };
+        let raw = u32::from(pad.input.axes[a].max(0) as u16) * 100 / 32767;
+        let out = u32::from(pad.lab_status.output.axes[a].max(0) as u16) * 100 / 32767;
+        panel(&t)
+            .flex_1()
+            .min_w(px(270.))
+            .child(strong(if side == 0 { l.left } else { l.right }, t.text))
+            .child(caption(format!("{}: {raw}%  →  {}: {out}%", l.raw, l.output), t.accent))
+            .child(mode)
+            .when(trig.mode != TriggerMode::Normal, |d| {
+                d.child(soft)
+                    .when(trig.mode == TriggerMode::Hair, |d| d.child(hyst))
+                    .when(matches!(trig.mode, TriggerMode::TwoStage | TriggerMode::HipFire), |d| {
+                        d.child(full)
+                            .child(field(l.soft_action, soft_action, &t))
+                            .child(field(l.full_action, full_action, &t))
+                            .child(self.toggle(ids[7], (l.exclusive, ""), trig.exclusive, Edit::Lab(replacement), key, cx))
+                    })
+                    .when(trig.mode == TriggerMode::HipFire, |d| d.child(delay))
+            })
     }
 }
