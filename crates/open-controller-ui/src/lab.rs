@@ -11,7 +11,7 @@ use gpui::{
 use open_controller_core::extras::Family;
 use open_controller_core::i18n::Text;
 use open_controller_core::ipc::ToTray;
-use open_controller_core::lab::{Config, EffectMode};
+use open_controller_core::lab::{Config, EffectMode, TouchMode};
 use open_controller_core::profile::Edit;
 use open_controller_core::{PadKey, PadView};
 
@@ -121,9 +121,11 @@ impl MainView {
     pub fn lab_section(&mut self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let l = text.lab;
+        let key = pad.key;
+        let cfg = pad.profiles.active().lab;
         let tabs = widgets::segmented(
             "lab-tabs",
-            l.tabs.iter().take(1).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
+            l.tabs.iter().take(2).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
             self.lab_tab,
             &t,
             cx,
@@ -132,7 +134,70 @@ impl MainView {
                 cx.notify();
             },
         );
-        let content = self.lab_effects(pad, text, cx);
+        let content = match self.lab_tab {
+            0 => self.lab_effects(pad, text, cx),
+            1 => {
+                if !cfg!(windows) {
+                    return panel(&t).child(caption(l.windows, t.text2)).into_any_element();
+                }
+                let mode = choices(
+                    "lab-touch-mode",
+                    &l.touch_modes,
+                    &[TouchMode::Off, TouchMode::Mouse, TouchMode::Trackball],
+                    cfg.touch.mode,
+                    key,
+                    &t,
+                    |c, mode| c.touch.mode = mode,
+                    cx,
+                );
+                let sens = self.lab_number(
+                    "lab-touch-sens",
+                    l.sensitivity,
+                    cfg.touch.sensitivity,
+                    (10, 400),
+                    10,
+                    pad,
+                    |c, v| c.touch.sensitivity = v,
+                    cx,
+                );
+                let friction = self.lab_number(
+                    "lab-touch-friction",
+                    l.friction,
+                    cfg.touch.friction_ms,
+                    (40, 1000),
+                    20,
+                    pad,
+                    |c, v| c.touch.friction_ms = v,
+                    cx,
+                );
+                panel(&t)
+                    .child(caption(l.touch_note, t.text2))
+                    .child(mode)
+                    .child(sens)
+                    .when(cfg.touch.mode == TouchMode::Trackball, |d| d.child(friction))
+                    .child(self.toggle(
+                        "lab-touch-tap",
+                        (l.tap, ""),
+                        cfg.touch.tap,
+                        Edit::Lab(Config { touch: open_controller_core::lab::TouchMouse { tap: !cfg.touch.tap, ..cfg.touch }, ..cfg }),
+                        key,
+                        cx,
+                    ))
+                    .child(self.toggle(
+                        "lab-touch-scroll",
+                        (l.scroll, ""),
+                        cfg.touch.scroll,
+                        Edit::Lab(Config {
+                            touch: open_controller_core::lab::TouchMouse { scroll: !cfg.touch.scroll, ..cfg.touch },
+                            ..cfg
+                        }),
+                        key,
+                        cx,
+                    ))
+                    .into_any_element()
+            }
+            _ => self.lab_effects(pad, text, cx),
+        };
         div().flex().flex_col().gap(px(16.)).child(caption(l.intro, t.text2)).child(tabs).child(content).into_any_element()
     }
 

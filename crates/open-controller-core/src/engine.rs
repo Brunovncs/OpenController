@@ -442,6 +442,7 @@ struct Tools {
     trial: Option<(Instant, [crate::lab::TriggerEffect; 2])>,
     last_effect: Option<([crate::lab::TriggerEffect; 2], Instant)>,
     error: Option<String>,
+    mouse_on: bool,
 }
 impl Tools {
     fn wanted(&mut self, cfg: crate::lab::Config, owned: bool, now: Instant) -> ([crate::lab::TriggerEffect; 2], bool) {
@@ -457,7 +458,7 @@ impl Tools {
         (effects, expired)
     }
     fn new(_now: Instant) -> Self {
-        Self { runtime: Default::default(), trial: None, last_effect: None, error: None }
+        Self { runtime: Default::default(), trial: None, last_effect: None, error: None, mouse_on: false }
     }
 }
 
@@ -572,6 +573,7 @@ impl Target {
 }
 
 struct Core {
+    desktop: crate::desktop::Desktop,
     microphone: crate::microphone::Monitor,
     microphone_seen: Option<bool>,
     bus: Option<Arc<Bus>>,
@@ -671,6 +673,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
     HANDHELD_STOP.store(false, Ordering::Relaxed);
     let handheld_reader = handheld::start(handheld_tx, &HANDHELD_STOP);
     let mut core = Core {
+        desktop: crate::desktop::Desktop::start(),
         microphone: crate::microphone::Monitor::start(),
         microphone_seen: None,
         bus: None,
@@ -1565,6 +1568,7 @@ impl Core {
             self.gone_halves.push((p.pad.pad_type() == device::PadType::JoyConRight, p.path.clone(), now));
         }
         self.updated.retain(|&d| d != id);
+        self.desktop.send(id, Default::default());
         if p.tools.last_effect.is_some() {
             let _ = p.pad.trigger_effect(Default::default());
         }
@@ -1904,9 +1908,18 @@ impl Core {
                 if !p.tools.runtime.active {
                     p.tools.runtime = Default::default();
                 }
-                let _mouse = p.tools.runtime.update(p.state, cfg, mapped, p.rate, now);
+                let mouse = p.tools.runtime.update(p.state, cfg, mapped, p.rate, now);
                 p.tools.runtime.active = true;
+                let mouse_on = cfg!(windows) && cfg.touch.mode != crate::lab::TouchMode::Off;
+                if mouse_on || p.tools.mouse_on {
+                    self.desktop.send(id, mouse);
+                }
+                p.tools.mouse_on = mouse_on;
             } else {
+                if p.tools.mouse_on {
+                    self.desktop.send(id, Default::default());
+                    p.tools.mouse_on = false;
+                }
                 p.tools.runtime.active = false;
                 p.tools.trial = None;
             }
@@ -2402,7 +2415,8 @@ impl Core {
     }
 
     fn shutdown(&mut self) {
-        for p in self.phys.values() {
+        for (&id, p) in &self.phys {
+            self.desktop.send(id, Default::default());
             if p.tools.last_effect.is_some() {
                 let _ = p.pad.trigger_effect(Default::default());
             }

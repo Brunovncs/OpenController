@@ -8,6 +8,7 @@
 
 pub mod binding;
 pub mod crash;
+mod desktop;
 pub mod device;
 pub mod ds3;
 pub mod ds4;

@@ -304,6 +304,11 @@ The controller's Lab page has optional tools, saved with each profile and off by
   them immediately or opt into persistent profile effects. A trial restores the profile after
   its timeout; disconnect and normal exit clear effects owned by OpenController. Output goes
   through SDL, including USB/Bluetooth framing and checksums.
+- **Touchpad mouse (Windows):** relative movement, tap-to-click, physical left/right clicks,
+  two-finger scrolling and a trackball mode with adjustable inertia decay. This is shared
+  desktop input; disable it in the Lab when a game should handle the touchpad itself.
+
+Desktop mouse output uses a worker and a watchdog to release abandoned clicks.
 
 Use matching resident/UI binaries (IPC protocol 2). Trials restore the saved profile settings.
 
