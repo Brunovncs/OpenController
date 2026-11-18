@@ -13,7 +13,7 @@ use open_controller_core::i18n::Text;
 use open_controller_core::ipc::ToTray;
 use open_controller_core::lab::{Config, EffectMode, TouchMode};
 use open_controller_core::profile::Edit;
-use open_controller_core::{PadKey, PadView};
+use open_controller_core::{PadKey, PadView, Role};
 
 pub struct Number {
     key: (PadKey, usize),
@@ -125,7 +125,7 @@ impl MainView {
         let cfg = pad.profiles.active().lab;
         let tabs = widgets::segmented(
             "lab-tabs",
-            l.tabs.iter().take(2).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
+            l.tabs.iter().take(3).enumerate().map(|(i, &label)| (i as u8, label.into())).collect(),
             self.lab_tab,
             &t,
             cx,
@@ -134,6 +134,7 @@ impl MainView {
                 cx.notify();
             },
         );
+        let native = matches!(pad.role, Role::KeptNative | Role::Native { .. });
         let content = match self.lab_tab {
             0 => self.lab_effects(pad, text, cx),
             1 => {
@@ -196,9 +197,90 @@ impl MainView {
                     ))
                     .into_any_element()
             }
+            2 => {
+                if !cfg!(windows) {
+                    return panel(&t).child(caption(l.windows, t.text2)).into_any_element();
+                }
+                let counts = self.lab_number(
+                    "lab-flick-counts",
+                    l.counts,
+                    cfg.flick.counts_per_turn,
+                    (100, 60000),
+                    100,
+                    pad,
+                    |c, v| c.flick.counts_per_turn = v,
+                    cx,
+                );
+                let duration = self.lab_number(
+                    "lab-flick-duration",
+                    l.duration,
+                    cfg.flick.duration_ms,
+                    (20, 300),
+                    10,
+                    pad,
+                    |c, v| c.flick.duration_ms = v,
+                    cx,
+                );
+                let threshold = self.lab_number(
+                    "lab-flick-threshold",
+                    l.threshold,
+                    u16::from(cfg.flick.threshold),
+                    (50, 99),
+                    5,
+                    pad,
+                    |c, v| c.flick.threshold = v as u8,
+                    cx,
+                );
+                let sens = self.lab_number(
+                    "lab-flick-gyro-sens",
+                    l.gyro_sens,
+                    cfg.flick.gyro_sensitivity,
+                    (1, 100),
+                    1,
+                    pad,
+                    |c, v| c.flick.gyro_sensitivity = v,
+                    cx,
+                );
+                panel(&t)
+                    .child(caption(l.flick_note, t.text2))
+                    .child(self.toggle(
+                        "lab-flick-on",
+                        (l.flick_on, ""),
+                        cfg.flick.enabled,
+                        Edit::Lab(Config { flick: open_controller_core::lab::Flick { enabled: !cfg.flick.enabled, ..cfg.flick }, ..cfg }),
+                        key,
+                        cx,
+                    ))
+                    .child(counts)
+                    .child(duration)
+                    .child(threshold)
+                    .when(pad.features.motion, |d| {
+                        d.child(self.toggle(
+                            "lab-flick-gyro",
+                            (l.gyro, ""),
+                            cfg.flick.gyro_mouse,
+                            Edit::Lab(Config {
+                                flick: open_controller_core::lab::Flick { gyro_mouse: !cfg.flick.gyro_mouse, ..cfg.flick },
+                                ..cfg
+                            }),
+                            key,
+                            cx,
+                        ))
+                        .child(sens)
+                    })
+                    .into_any_element()
+            }
             _ => self.lab_effects(pad, text, cx),
         };
-        div().flex().flex_col().gap(px(16.)).child(caption(l.intro, t.text2)).child(tabs).child(content).into_any_element()
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .child(caption(l.intro, t.text2))
+            .when(native, |d| d.child(caption(l.native, t.caution)))
+            .child(tabs)
+            .child(content)
+            .into_any_element()
     }
 
     fn lab_effects(&mut self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {

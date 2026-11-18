@@ -216,8 +216,8 @@ the left trigger is pulled (aiming down sights) or while a chosen button is held
 also work as a switch: one press turns the gyro on, the next turns it off. The game still gets the
 button. A half turn a second is the stick all the way at 100 % sensitivity; a small deadzone keeps
 a still hand still, a filter smooths slow movement without delaying fast turns, and the stick
-keeps working. Each friend aims with their own controller, which a gyro mapped to the mouse would
-not allow.
+keeps working. Each friend aims with their own controller; the separate Flick Stick option
+instead uses the shared desktop mouse.
 
 The aim can be tuned further: a sensitivity of its own while the left trigger is pulled, a slower
 or faster up and down, and a button that pauses the gyro while held, to put the controller back
@@ -307,6 +307,12 @@ The controller's Lab page has optional tools, saved with each profile and off by
 - **Touchpad mouse (Windows):** relative movement, tap-to-click, physical left/right clicks,
   two-finger scrolling and a trackball mode with adjustable inertia decay. This is shared
   desktop input; disable it in the Lab when a game should handle the touchpad itself.
+- **Flick Stick (Windows, mapping mode):** the right stick's direction starts a turn, rotation
+  around its rim continues it, and the gyro can provide fine aim. Counts per full turn, flick
+  duration, activation threshold and gyro sensitivity are adjustable. Calibrate counts against
+  the game's mouse sensitivity. The virtual right stick is consumed while this is enabled.
+
+Native input stays native. Flick Stick and input remapping require mapping mode.
 
 Desktop mouse output uses a worker and a watchdog to release abandoned clicks.
 

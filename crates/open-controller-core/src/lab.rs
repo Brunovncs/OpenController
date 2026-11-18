@@ -1,6 +1,7 @@
 //! Optional controller tools. All defaults preserve direct gamepad input.
-use crate::mapping::{PadState, button};
+use crate::mapping::{PadState, axis, button};
 use serde::{Deserialize, Serialize};
+use std::f32::consts::{PI, TAU};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,24 +281,100 @@ impl TouchState {
 }
 
 #[derive(Default)]
+struct FlickState {
+    angle: Option<f32>,
+    remaining: f32,
+    total: f32,
+    progress: f32,
+}
+fn wrap(angle: f32) -> f32 {
+    (angle + PI).rem_euclid(TAU) - PI
+}
+impl FlickState {
+    fn update(&mut self, pad: &PadState, cfg: Flick, rate: Option<[f32; 3]>, dt: f32) -> (f32, f32) {
+        if !cfg.enabled {
+            *self = Self::default();
+            return (0., 0.);
+        }
+        let x = f32::from(pad.axes[axis::RIGHT_X]) / 32768.;
+        let y = f32::from(pad.axes[axis::RIGHT_Y]) / 32768.;
+        let mut dx = 0.;
+        let mut dy = 0.;
+        if x.hypot(y) >= f32::from(cfg.threshold) / 100. {
+            let angle = x.atan2(-y);
+            if let Some(before) = self.angle {
+                dx += wrap(angle - before) / TAU * f32::from(cfg.counts_per_turn);
+            } else {
+                self.total = self.remaining + angle / TAU * f32::from(cfg.counts_per_turn);
+                self.remaining = self.total;
+                self.progress = 0.;
+            }
+            self.angle = Some(angle);
+        } else if x.hypot(y) < f32::from(cfg.threshold.saturating_sub(10)) / 100. {
+            self.angle = None;
+        }
+        if self.remaining.abs() > 0.001 {
+            let before = self.progress;
+            self.progress = (self.progress + dt * 1000. / f32::from(cfg.duration_ms)).min(1.);
+            let ease = |t: f32| t * t * (3. - 2. * t);
+            let step = self.total * (ease(self.progress) - ease(before));
+            dx += step;
+            self.remaining -= step;
+            if self.progress >= 1. {
+                self.remaining = 0.;
+            }
+        }
+        if cfg.gyro_mouse
+            && let Some([pitch, yaw, _]) = rate
+            && pitch.is_finite()
+            && yaw.is_finite()
+        {
+            let quiet = |rate: f32| {
+                let degrees = rate.to_degrees();
+                if degrees.abs() < 0.05 { 0. } else { degrees }
+            };
+            dx -= quiet(yaw) * dt * f32::from(cfg.gyro_sensitivity);
+            dy -= quiet(pitch) * dt * f32::from(cfg.gyro_sensitivity);
+        }
+        (dx, dy)
+    }
+}
+
+#[derive(Default)]
 pub struct Runtime {
     pub output: PadState,
     pub active: bool,
     config: Config,
     last: Option<Instant>,
     touch: TouchState,
+    flick: FlickState,
 }
 impl Runtime {
-    pub fn update(&mut self, raw: PadState, cfg: Config, _mapped: bool, _rate: Option<[f32; 3]>, now: Instant) -> Mouse {
+    pub fn update(&mut self, raw: PadState, cfg: Config, mapped: bool, rate: Option<[f32; 3]>, now: Instant) -> Mouse {
         let cfg = cfg.clean();
         if self.config.touch != cfg.touch {
             self.touch = TouchState::default();
         }
+        if self.config.flick != cfg.flick {
+            self.flick = FlickState::default();
+        }
         self.config = cfg;
         let dt = self.last.map_or(0.004, |last| now.duration_since(last).as_secs_f32().min(0.05));
         self.last = Some(now);
-        let output = raw;
-        let mouse = self.touch.update(&raw, cfg.touch, now, dt);
+        let mut output = raw;
+        let mut mouse = self.touch.update(&raw, cfg.touch, now, dt);
+        if mapped {
+            let flick = if cfg!(windows) { cfg.flick } else { Flick::default() };
+            let (dx, dy) = self.flick.update(&raw, flick, rate, dt);
+            mouse.dx += dx;
+            mouse.dy += dy;
+            if flick.enabled {
+                output.axes[axis::RIGHT_X] = 0;
+                output.axes[axis::RIGHT_Y] = 0;
+            }
+        } else {
+            self.flick = FlickState::default();
+        }
         self.output = output;
         mouse
     }
@@ -356,6 +433,32 @@ mod tests {
     }
 
     #[test]
+    fn rapid_flicks_keep_the_unfinished_turn() {
+        let mut f = FlickState::default();
+        let cfg = Flick { enabled: true, gyro_mouse: false, ..Default::default() };
+        let mut p = PadState::default();
+        p.axes[axis::RIGHT_X] = 32767;
+        let mut sum = f.update(&p, cfg, None, 0.004).0;
+        let rest = PadState::default();
+        sum += f.update(&rest, cfg, None, 0.004).0;
+        for _ in 0..20 {
+            sum += f.update(&p, cfg, None, 0.004).0;
+        }
+        assert!((sum - 1800.).abs() < 0.1);
+    }
+
+    #[test]
+    fn gyro_mouse_ignores_sensor_noise_and_invalid_samples() {
+        let mut f = FlickState::default();
+        let cfg = Flick { enabled: true, ..Default::default() };
+        let p = PadState::default();
+        assert_eq!(f.update(&p, cfg, Some([0.0001, -0.0001, 0.]), 0.01), (0., 0.));
+        assert_eq!(f.update(&p, cfg, Some([f32::NAN, 1., 0.]), 0.01), (0., 0.));
+        let motion = f.update(&p, cfg, Some([1., 0., 0.]), 0.01);
+        assert!(motion.1 < -5.);
+    }
+
+    #[test]
     fn lab_settings_survive_profiles_and_old_profiles_keep_every_tool_off() {
         let mut profiles = crate::profile::Profiles::default();
         let cfg = Config { dsu: true, debounce_ms: 15, ..Default::default() };
@@ -365,6 +468,16 @@ mod tests {
         assert_eq!(loaded.active().lab, cfg);
         let old: crate::profile::Profile = serde_json::from_str(r#"{"name":"old"}"#).unwrap();
         assert_eq!(old.lab, Config::default());
+    }
+    #[test]
+    fn flick_wraps_at_back_and_finishes_a_quarter_turn() {
+        assert!((wrap(-PI + 0.01 - (PI - 0.01)) - 0.02).abs() < 0.001);
+        let mut f = FlickState::default();
+        let mut p = PadState::default();
+        p.axes[axis::RIGHT_X] = 32767;
+        let cfg = Flick { enabled: true, gyro_mouse: false, ..Default::default() };
+        let sum: f32 = (0..20).map(|_| f.update(&p, cfg, None, 0.004).0).sum();
+        assert!((sum - 900.).abs() < 0.1);
     }
     #[test]
     fn defaults_leave_input_and_mouse_untouched() {
