@@ -448,6 +448,8 @@ struct Tools {
     touches: [bool; 2],
     touch_ids: [u8; 2],
     mouse_on: bool,
+    /// Its buttons at the last pass, for the presses of a connection that just took its slot.
+    seen: u64,
 }
 impl Tools {
     fn wanted(&mut self, cfg: crate::lab::Config, owned: bool, now: Instant) -> ([crate::lab::TriggerEffect; 2], bool) {
@@ -474,6 +476,7 @@ impl Tools {
             touches: [false; 2],
             touch_ids: [0, 1],
             mouse_on: false,
+            seen: 0,
         }
     }
 }
@@ -594,6 +597,7 @@ struct Core {
     dsu_seen: crate::dsu::Status,
     dsu_slots: [Option<String>; 4],
     dsu_at: Instant,
+    dsu_on: bool,
     lights_at: Instant,
     microphone: crate::microphone::Monitor,
     microphone_seen: Option<bool>,
@@ -656,6 +660,9 @@ struct Core {
     /// Before `sdl`, so it is let go of before SDL quits.
     _handheld_reader: Option<handheld::Reader>,
     updated: Vec<DeviceId>,
+    /// Slots to send once the pass has worked out their controllers' output.
+    resend_due: Vec<SlotId>,
+    tool_ids: Vec<DeviceId>,
     /// Controllers coming and going, for reports: the last `LOG_LINES`.
     log: VecDeque<String>,
     changed: bool,
@@ -699,6 +706,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         dsu_seen: Default::default(),
         dsu_slots: Default::default(),
         dsu_at: Instant::now(),
+        dsu_on: false,
         lights_at: Instant::now(),
         microphone: crate::microphone::Monitor::start(),
         microphone_seen: None,
@@ -740,6 +748,8 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         handheld_held: 0,
         _handheld_reader: handheld_reader,
         updated: Vec::with_capacity(16),
+        resend_due: Vec::with_capacity(8),
+        tool_ids: Vec::with_capacity(16),
         log: VecDeque::new(),
         changed: true,
         input_changed: false,
@@ -777,9 +787,11 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         core.poll_sixaxis(now);
         core.forward(now);
         core.update_tools(now);
+        core.flush_resends();
         core.macro_buttons();
         core.feedback(now);
         core.housekeeping(now);
+        core.microphone.watch(core.phys.values().any(|p| matches!(p.model.family, Family::DualSense | Family::DualSenseEdge)));
         let muted = core.microphone.muted();
         if core.microphone_seen != muted {
             core.microphone_seen = muted;
@@ -1675,8 +1687,8 @@ impl Core {
                 let p = source.and_then(|d| self.phys.get(&d));
                 let profile = p.and_then(|p| self.profiles.get(&p.model.store)).map(|x| x.for_program(&self.foreground));
                 let touchpad = p.is_some_and(|p| match profile {
-                    Some(pr) => binding::touchpad_click(&pr.bindings, p.state.buttons),
-                    None => p.state.pressed(mapping::button::TOUCHPAD),
+                    Some(pr) => binding::touchpad_click(&pr.bindings, p.tools.runtime.output.buttons),
+                    None => p.tools.runtime.output.pressed(mapping::button::TOUCHPAD),
                 });
                 let battery = ds4::battery(p.map_or(Power::Unknown, |p| p.power));
                 Report::Ds4(ds4::from_xusb(&report, touchpad, battery, p.map_or(Motion::REST, Phys::motion)))
@@ -1938,7 +1950,7 @@ impl Core {
                     self.move_rumble(s);
                 }
                 if self.roster.get(s).and_then(|x| x.source) == Some(id) && !self.is_native(s) {
-                    self.resend(s);
+                    self.resend_due.push(s);
                 }
             }
         }
@@ -1946,10 +1958,25 @@ impl Core {
         self.updated.clear();
     }
 
+    /// Sends the slots `forward` and `update_tools` changed, once each, after the tools have
+    /// worked out the output a report is made of.
+    fn flush_resends(&mut self) {
+        let mut due = std::mem::take(&mut self.resend_due);
+        for (i, &s) in due.iter().enumerate() {
+            if !due[..i].contains(&s) {
+                self.resend(s);
+            }
+        }
+        due.clear();
+        self.resend_due = due;
+    }
+
     fn update_tools(&mut self, now: Instant) {
-        let ids: Vec<DeviceId> = self.phys.keys().copied().collect();
+        let mut ids = std::mem::take(&mut self.tool_ids);
+        ids.clear();
+        ids.extend(self.phys.keys().copied());
         let mut dsu_frames = Vec::new();
-        for id in ids {
+        for &id in &ids {
             let (owned, mapped) = match self.phys[&id].kind {
                 Kind::Slot(s) => (self.roster.get(s).and_then(|slot| slot.source) == Some(id), !self.is_native(s)),
                 Kind::Native => (true, false),
@@ -1957,10 +1984,13 @@ impl Core {
             };
             let cfg = self.profile_of(&self.phys[&id].model.store).map(|p| p.lab).unwrap_or_default();
             let p = self.phys.get_mut(&id).unwrap();
-            let before = p.tools.runtime.output;
+            let mut before = p.tools.runtime.output;
             if owned {
                 if !p.tools.runtime.active {
+                    // A connection taking its slot over: what it last output is stale, its
+                    // buttons at the last pass tell which presses are new.
                     p.tools.runtime = Default::default();
+                    before = PadState { buttons: p.tools.seen, ..p.state };
                 }
                 let mouse = p.tools.runtime.update(p.state, cfg, mapped, p.rate, now);
                 p.tools.runtime.active = true;
@@ -2048,6 +2078,7 @@ impl Core {
                     },
                 ));
             }
+            p.tools.seen = p.state.buttons;
             let after = p.tools.runtime.output;
             let kind = p.kind;
             let mic_press = owned
@@ -2064,7 +2095,7 @@ impl Core {
                 if let Kind::Slot(s) = kind
                     && mapped
                 {
-                    self.resend(s);
+                    self.resend_due.push(s);
                 }
             }
             if owned && (before.buttons != after.buttons || !self.held.is_empty()) {
@@ -2075,8 +2106,10 @@ impl Core {
                 }
             }
         }
+        self.tool_ids = ids;
         let dsu_enabled = self.profiles.values().any(|p| p.for_program(&self.foreground).lab.dsu);
-        if now.duration_since(self.dsu_at) >= Duration::from_millis(if dsu_enabled { 8 } else { 200 }) {
+        // Off, the server is told once and then left asleep.
+        if (dsu_enabled || self.dsu_on) && now.duration_since(self.dsu_at) >= Duration::from_millis(8) {
             self.dsu_at = now;
             let mut frames = [None; 4];
             dsu_frames.sort_by(|a, b| a.0.cmp(&b.0));
@@ -2089,7 +2122,10 @@ impl Core {
                     frames[slot] = Some(*frame);
                 }
             }
-            self.dsu.update(dsu_enabled, frames);
+            // Kept on until the server has taken the update that turns it off.
+            if self.dsu.update(dsu_enabled, frames) {
+                self.dsu_on = dsu_enabled;
+            }
         }
         if let Some(status) = self.dsu.status()
             && status != self.dsu_seen

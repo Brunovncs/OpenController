@@ -45,7 +45,13 @@ fn worker(rx: crossbeam_channel::Receiver<(u32, Mouse)>) {
     loop {
         let mut tap = false;
         let mut disconnected = false;
-        match rx.recv_timeout(Duration::from_millis(20)) {
+        // With no click to watch over, it sleeps until the touchpad or Flick Stick moves it.
+        let next = if owners.is_empty() && held == 0 {
+            rx.recv().map_err(|_| crossbeam_channel::RecvTimeoutError::Disconnected)
+        } else {
+            rx.recv_timeout(Duration::from_millis(20))
+        };
+        match next {
             Ok((id, m)) => {
                 owners.insert(id, (m.buttons & 3, Instant::now()));
                 residual.0 += m.dx.clamp(-20000., 20000.);

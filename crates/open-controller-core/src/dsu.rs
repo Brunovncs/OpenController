@@ -48,8 +48,9 @@ impl Server {
         let _ = std::thread::Builder::new().name("open-controller-dsu".into()).spawn(move || serve(rx, port, shared));
         Self { tx, status }
     }
-    pub fn update(&self, enabled: bool, frames: [Option<Frame>; 4]) {
-        let _ = self.tx.try_send(Update { enabled, frames });
+    /// False when the server has not taken the last update yet: this one is dropped.
+    pub fn update(&self, enabled: bool, frames: [Option<Frame>; 4]) -> bool {
+        self.tx.try_send(Update { enabled, frames }).is_ok()
     }
     pub fn status(&self) -> Option<Status> {
         self.status.try_lock().ok().map(|s| s.clone())
@@ -192,7 +193,9 @@ fn serve(rx: crossbeam_channel::Receiver<Update>, port: u16, status: Arc<Mutex<S
     let mut last_send = Instant::now();
     let mut error = None;
     loop {
-        match rx.recv_timeout(if enabled { Duration::from_millis(8) } else { Duration::from_millis(200) }) {
+        // Off, it sleeps until the engine turns it on.
+        let next = if enabled { rx.recv_timeout(Duration::from_millis(8)) } else { rx.recv().map_err(Into::into) };
+        match next {
             Ok(update) => {
                 enabled = update.enabled;
                 frames = update.frames;
@@ -221,7 +224,13 @@ fn serve(rx: crossbeam_channel::Receiver<Update>, port: u16, status: Arc<Mutex<S
         if let Some(socket) = &socket {
             let mut buffer = [0; 512];
             for _ in 0..32 {
-                let Ok((n, peer)) = socket.recv_from(&mut buffer) else { break };
+                // Windows reports a send to a client that went away as a reset on the next read:
+                // the requests behind it are still there.
+                let (n, peer) = match socket.recv_from(&mut buffer) {
+                    Ok(read) => read,
+                    Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => continue,
+                    Err(_) => break,
+                };
                 if !peer.ip().is_loopback() {
                     continue;
                 }

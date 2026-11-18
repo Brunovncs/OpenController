@@ -222,12 +222,29 @@ fn main() {
     wait_for("an Xbox controller again", Duration::from_secs(10), || (0..4).any(xinput).then_some(()));
     wait_for("the DualShock 4 to leave", Duration::from_secs(5), || open_ds4().is_none().then_some(()));
     check(true, "set back, it is an Xbox controller again");
+    let slot = wait_for("its XInput slot again", Duration::from_secs(10), || {
+        engine.snapshot().pads.iter().find(|p| p.store.as_deref() == Some(PROFILE)).and_then(|p| match p.role {
+            Role::Virtual { player: Some(i) } => Some(u32::from(i)),
+            _ => None,
+        })
+    });
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, true) };
+    wait_for("A on the Xbox controller", Duration::from_secs(2), || (xinput_buttons(slot) & 0x1000 != 0).then_some(()));
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+    wait_for("A let go", Duration::from_secs(2), || (xinput_buttons(slot) & 0x1000 == 0).then_some(()));
+    check(true, "input still reaches it after the switch");
     profiles.apply(Edit::Output(Output::DualShock4));
     engine.send(open_controller_core::Command::SetProfiles(PROFILE.into(), profiles.clone()));
     wait_for("the DualShock 4 again", Duration::from_secs(10), || open_ds4().map(|d| unsafe { SDL_hid_close(d) }));
     engine.stop();
     std::thread::sleep(Duration::from_millis(500));
     check(open_ds4().is_none(), "stopping the engine unplugs the DualShock 4");
+}
+
+fn xinput_buttons(slot: u32) -> u16 {
+    use windows_sys::Win32::UI::Input::XboxController::{XINPUT_STATE, XInputGetState};
+    let mut s: XINPUT_STATE = unsafe { std::mem::zeroed() };
+    if unsafe { XInputGetState(slot, &mut s) } == 0 { s.Gamepad.wButtons } else { 0 }
 }
 
 fn xinput(slot: u32) -> bool {

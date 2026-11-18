@@ -6,8 +6,15 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 pub struct Monitor {
     state: Arc<AtomicU8>,
+    wanted: bool,
     #[cfg(windows)]
-    tx: std::sync::mpsc::SyncSender<()>,
+    tx: std::sync::mpsc::SyncSender<Ask>,
+}
+
+#[cfg(windows)]
+enum Ask {
+    Watch(bool),
+    Toggle,
 }
 
 impl Monitor {
@@ -18,10 +25,22 @@ impl Monitor {
             let (tx, rx) = std::sync::mpsc::sync_channel(8);
             let shared = state.clone();
             let _ = std::thread::Builder::new().name("open-controller-microphone".into()).spawn(move || windows_worker(rx, shared));
-            Self { state, tx }
+            Self { state, wanted: false, tx }
         }
         #[cfg(not(windows))]
-        Self { state }
+        Self { state, wanted: false }
+    }
+
+    /// Whether the mute flag is read: only while a controller with a mic button is connected.
+    pub fn watch(&mut self, wanted: bool) {
+        if self.wanted == wanted {
+            return;
+        }
+        #[cfg(windows)]
+        if self.tx.try_send(Ask::Watch(wanted)).is_err() {
+            return;
+        }
+        self.wanted = wanted;
     }
 
     pub fn muted(&self) -> Option<bool> {
@@ -34,12 +53,12 @@ impl Monitor {
 
     pub fn toggle(&self) {
         #[cfg(windows)]
-        let _ = self.tx.try_send(());
+        let _ = self.tx.try_send(Ask::Toggle);
     }
 }
 
 #[cfg(windows)]
-fn windows_worker(rx: std::sync::mpsc::Receiver<()>, state: Arc<AtomicU8>) {
+fn windows_worker(rx: std::sync::mpsc::Receiver<Ask>, state: Arc<AtomicU8>) {
     use std::sync::mpsc::RecvTimeoutError;
     use std::time::Duration;
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
@@ -50,8 +69,13 @@ fn windows_worker(rx: std::sync::mpsc::Receiver<()>, state: Arc<AtomicU8>) {
         if CoInitializeEx(None, COINIT_MULTITHREADED).is_err() {
             return;
         }
-        let query = |toggle: bool| -> windows::core::Result<bool> {
-            let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+        let mut enumerator: Option<IMMDeviceEnumerator> = None;
+        let mut query = |toggle: bool| -> windows::core::Result<bool> {
+            if enumerator.is_none() {
+                enumerator = Some(CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?);
+            }
+            let Some(enumerator) = &enumerator else { unreachable!() };
+            // The default device can change: it is looked up each time.
             let endpoint = enumerator.GetDefaultAudioEndpoint(eCapture, eConsole)?;
             let volume: IAudioEndpointVolume = endpoint.Activate(CLSCTX_ALL, None)?;
             let muted = volume.GetMute()?.as_bool();
@@ -60,20 +84,35 @@ fn windows_worker(rx: std::sync::mpsc::Receiver<()>, state: Arc<AtomicU8>) {
             }
             Ok(volume.GetMute()?.as_bool())
         };
+        let mut watching = false;
         let mut toggle = false;
         loop {
-            let value = match query(toggle) {
-                Ok(false) => 1,
-                Ok(true) => 2,
-                Err(_) => 0,
-            };
-            state.store(value, Ordering::Release);
-            match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(()) => toggle = true,
-                Err(RecvTimeoutError::Timeout) => toggle = false,
+            if watching {
+                let value = match query(toggle) {
+                    Ok(false) => 1,
+                    Ok(true) => 2,
+                    Err(_) => 0,
+                };
+                state.store(value, Ordering::Release);
+            }
+            toggle = false;
+            // Not watching, it sleeps until asked.
+            let ask =
+                if watching { rx.recv_timeout(Duration::from_millis(200)) } else { rx.recv().map_err(|_| RecvTimeoutError::Disconnected) };
+            match ask {
+                Ok(Ask::Watch(on)) => {
+                    watching = on;
+                    if !on {
+                        state.store(0, Ordering::Release);
+                    }
+                }
+                Ok(Ask::Toggle) => toggle = watching,
+                Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
         }
+        drop(query);
+        drop(enumerator);
         CoUninitialize();
     }
 }
