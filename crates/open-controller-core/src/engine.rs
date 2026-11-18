@@ -442,6 +442,10 @@ struct Tools {
     trial: Option<(Instant, [crate::lab::TriggerEffect; 2])>,
     last_effect: Option<([crate::lab::TriggerEffect; 2], Instant)>,
     error: Option<String>,
+    motion_accel: Option<[f32; 3]>,
+    motion_us: u64,
+    touches: [bool; 2],
+    touch_ids: [u8; 2],
     mouse_on: bool,
 }
 impl Tools {
@@ -458,7 +462,17 @@ impl Tools {
         (effects, expired)
     }
     fn new(_now: Instant) -> Self {
-        Self { runtime: Default::default(), trial: None, last_effect: None, error: None, mouse_on: false }
+        Self {
+            runtime: Default::default(),
+            trial: None,
+            last_effect: None,
+            error: None,
+            motion_accel: None,
+            motion_us: 0,
+            touches: [false; 2],
+            touch_ids: [0, 1],
+            mouse_on: false,
+        }
     }
 }
 
@@ -574,6 +588,10 @@ impl Target {
 
 struct Core {
     desktop: crate::desktop::Desktop,
+    dsu: crate::dsu::Server,
+    dsu_seen: crate::dsu::Status,
+    dsu_slots: [Option<String>; 4],
+    dsu_at: Instant,
     microphone: crate::microphone::Monitor,
     microphone_seen: Option<bool>,
     bus: Option<Arc<Bus>>,
@@ -674,6 +692,10 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
     let handheld_reader = handheld::start(handheld_tx, &HANDHELD_STOP);
     let mut core = Core {
         desktop: crate::desktop::Desktop::start(),
+        dsu: crate::dsu::Server::start(),
+        dsu_seen: Default::default(),
+        dsu_slots: Default::default(),
+        dsu_at: Instant::now(),
         microphone: crate::microphone::Monitor::start(),
         microphone_seen: None,
         bus: None,
@@ -1193,13 +1215,16 @@ impl Core {
             let (gyro, accel) = {
                 let p = &self.phys[&id];
                 let ds4 = self.output_of(&p.model.store) == Output::DualShock4;
-                let gyro = matches!(p.kind, Kind::Slot(s) if !self.is_native(s))
+                let mapped = matches!(p.kind, Kind::Slot(s) if !self.is_native(s));
+                let lab = self.profile_of(&p.model.store).map(|pr| pr.lab).unwrap_or_default();
+                let gyro = !matches!(p.kind, Kind::Own | Kind::Pending)
                     && p.model.features.motion
-                    && (ds4
-                        || cfg!(windows)
-                            && self.profile_of(&p.model.store).is_some_and(|pr| pr.lab.flick.enabled && pr.lab.flick.gyro_mouse)
-                        || self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off));
-                (gyro, gyro && ds4)
+                    && (lab.dsu
+                        || (mapped
+                            && (ds4
+                                || cfg!(windows) && lab.flick.enabled && lab.flick.gyro_mouse
+                                || self.profile_of(&p.model.store).is_some_and(|pr| pr.gyro.mode != GyroMode::Off))));
+                (gyro, gyro && (mapped && ds4 || lab.dsu))
             };
             let p = self.phys.get_mut(&id).unwrap();
             if (p.gyro_on, p.accel_on) == (gyro, accel) {
@@ -1898,6 +1923,7 @@ impl Core {
 
     fn update_tools(&mut self, now: Instant) {
         let ids: Vec<DeviceId> = self.phys.keys().copied().collect();
+        let mut dsu_frames = Vec::new();
         for id in ids {
             let (owned, mapped) = match self.phys[&id].kind {
                 Kind::Slot(s) => (self.roster.get(s).and_then(|slot| slot.source) == Some(id), !self.is_native(s)),
@@ -1943,6 +1969,53 @@ impl Core {
                     p.tools.last_effect = Some((effects, now));
                 }
             }
+            if owned && cfg.dsu && p.rate.is_some() && p.accel.is_some() {
+                if p.accel != p.tools.motion_accel {
+                    p.tools.motion_accel = p.accel;
+                    p.tools.motion_us = now.duration_since(self.started).as_micros() as u64;
+                }
+                for i in 0..2 {
+                    let down = p.state.touches[i].down;
+                    if down && !p.tools.touches[i] {
+                        p.tools.touch_ids[i] = p.tools.touch_ids[i].wrapping_add(2);
+                    }
+                    p.tools.touches[i] = down;
+                }
+                let source_key = dsu_source_key(&p.model.store, &p.path);
+                let hash = source_key.bytes().fold(0xcbf29ce484222325u64, |hash, b| (hash ^ u64::from(b)).wrapping_mul(0x100000001b3));
+                let mut mac = [0; 6];
+                mac.copy_from_slice(&hash.to_le_bytes()[..6]);
+                mac[0] = (mac[0] & 0xfc) | 2;
+                let battery = match p.power {
+                    Power::Charging(_) => 0xee,
+                    Power::Battery(Some(v)) => {
+                        if v >= 95 {
+                            5
+                        } else if v >= 60 {
+                            4
+                        } else if v >= 30 {
+                            3
+                        } else if v >= 10 {
+                            2
+                        } else {
+                            1
+                        }
+                    }
+                    _ => 0,
+                };
+                dsu_frames.push((
+                    source_key,
+                    crate::dsu::Frame {
+                        state: p.state,
+                        motion: p.motion(),
+                        connection: if p.link == Link::Bluetooth { 2 } else { 1 },
+                        battery,
+                        mac,
+                        timestamp_us: p.tools.motion_us,
+                        touch_ids: p.tools.touch_ids,
+                    },
+                ));
+            }
             let after = p.tools.runtime.output;
             let kind = p.kind;
             let mic_press = owned
@@ -1969,6 +2042,28 @@ impl Core {
                     _ => {}
                 }
             }
+        }
+        let dsu_enabled = self.profiles.values().any(|p| p.for_program(&self.foreground).lab.dsu);
+        if now.duration_since(self.dsu_at) >= Duration::from_millis(if dsu_enabled { 8 } else { 200 }) {
+            self.dsu_at = now;
+            let mut frames = [None; 4];
+            dsu_frames.sort_by(|a, b| a.0.cmp(&b.0));
+            for (store, frame) in &dsu_frames {
+                let slot = self.dsu_slots.iter().position(|s| s.as_ref() == Some(store)).or_else(|| {
+                    self.dsu_slots.iter().position(|s| s.is_none() || !dsu_frames.iter().any(|(key, _)| s.as_ref() == Some(key)))
+                });
+                if let Some(slot) = slot {
+                    self.dsu_slots[slot] = Some(store.clone());
+                    frames[slot] = Some(*frame);
+                }
+            }
+            self.dsu.update(dsu_enabled, frames);
+        }
+        if let Some(status) = self.dsu.status()
+            && status != self.dsu_seen
+        {
+            self.dsu_seen = status;
+            self.changed = true;
         }
     }
 
@@ -2291,7 +2386,7 @@ impl Core {
                 .map(|p| crate::lab::Status {
                     testing: p.tools.trial.is_some(),
                     trigger_error: p.tools.error.clone(),
-                    dsu: Default::default(),
+                    dsu: self.dsu_seen.clone(),
                     output: p.tools.runtime.output,
                     led: p.led,
                 })
@@ -2316,7 +2411,7 @@ impl Core {
             view.lab_status = crate::lab::Status {
                 testing: p.tools.trial.is_some(),
                 trigger_error: p.tools.error.clone(),
-                dsu: Default::default(),
+                dsu: self.dsu_seen.clone(),
                 output: p.tools.runtime.output,
                 led: p.led,
             };
@@ -2476,8 +2571,17 @@ fn slot_role(native: bool, remaining: Option<Duration>, target: Option<Option<u8
     }
 }
 
+fn dsu_source_key(store: &str, path: &str) -> String {
+    if store.starts_with("model:") { format!("{store}@{path}") } else { store.to_string() }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dsu_distinguishes_identical_serialless_pads_but_keeps_serialled_links_together() {
+        assert_ne!(super::dsu_source_key("model:1234:5678", "usb-a"), super::dsu_source_key("model:1234:5678", "usb-b"));
+        assert_eq!(super::dsu_source_key("serial:abc", "usb"), super::dsu_source_key("serial:abc", "bluetooth"));
+    }
     #[test]
     fn trigger_trials_restore_the_profile_and_stop_on_disconnect() {
         use crate::lab::{Config, EffectMode, TriggerEffect};
