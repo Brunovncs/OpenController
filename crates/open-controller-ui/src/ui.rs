@@ -157,6 +157,8 @@ pub struct MainView {
     /// The bar on top was pressed where the window draws its own frame: moving the mouse now
     /// moves the window.
     pub moving: bool,
+    pub color_input: Option<crate::detail::ColorInput>,
+    pub touch_animation: crate::touch_animation::Animation,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -174,14 +176,16 @@ impl MainView {
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             // Behind a game, the drawings need not follow every frame of input.
             this.send(ToTray::Focused(window.is_window_active()), cx);
+            // Drop the old gesture immediately on blur; never replay it on reactivation.
+            this.touch_animation = crate::touch_animation::Animation::default();
             // GPUI tells of light and dark changing but not of the accent colour, which is
             // picked in Windows' settings: coming back from them makes the window active.
             let now = theme(window);
             if now.accent != this.theme.accent {
                 crate::theme::accent_changed();
                 this.theme = now;
-                cx.notify();
             }
+            cx.notify();
         });
         let focus = cx.focus_handle();
         focus.focus(window, cx);
@@ -211,6 +215,8 @@ impl MainView {
             brand: brand(window.scale_factor()),
             held: 0,
             moving: false,
+            color_input: None,
+            touch_animation: crate::touch_animation::Animation::default(),
             _subscriptions: vec![observe, theme_change, activation],
         };
         view.read_installed(cx);
@@ -559,7 +565,7 @@ impl MainView {
     /// The bar across the top: where you are, and the way to the settings.
     fn top_bar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
-        let framed = crate::frame::tiling(window).is_some();
+        let framed = crate::frame::custom_title_bar(window);
         let attention = self.needs_attention(cx);
         let on_settings = self.screen == Screen::Settings;
         let mark = img(self.brand.1.clone()).size(px(BRAND)).flex_none();
@@ -592,10 +598,11 @@ impl MainView {
             .items_center()
             .justify_between()
             .w_full()
-            .max_w(px(layout::MAX_W))
+            .when(!cfg!(windows), |d| d.max_w(px(layout::MAX_W)))
             // The brand's own padding and the gear's hit area sit in the gutter.
             .px(px(layout::GUTTER - 6.))
             .child(home)
+            .when(cfg!(windows), |d| d.child(div().flex_1().h_full().window_control_area(gpui::WindowControlArea::Drag)))
             .child(gear);
         self.title_bar(bar, row, window, cx).into_any_element()
     }

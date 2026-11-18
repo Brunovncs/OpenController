@@ -1,6 +1,6 @@
 //! The window's own frame, where the desktop leaves it to the program, as GNOME does on Wayland:
 //! a shadow, edges to resize the window by, and minimize, maximize and close in the bar on top.
-//! Where the system draws the frame (Windows, macOS, X11, KDE) none of this shows.
+//! Windows uses the same title controls while keeping its system border and shadow.
 
 use crate::theme::{Theme, icon as glyph, layout, radius};
 use crate::ui::MainView;
@@ -18,6 +18,29 @@ const BUTTON: f32 = 36.;
 const GAP: f32 = 4.;
 /// From the window's buttons to the side of the window.
 const EDGE: f32 = 10.;
+
+pub fn custom_title_bar(window: &Window) -> bool {
+    cfg!(windows) || tiling(window).is_some()
+}
+
+/// GPUI 0.3.7's Windows `zoom` only maximizes; restore explicitly through the same HWND.
+fn toggle_maximized(window: &mut Window) {
+    #[cfg(windows)]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, SW_MAXIMIZE, SW_RESTORE, ShowWindowAsync};
+        if let Ok(handle) = window.window_handle()
+            && let RawWindowHandle::Win32(handle) = handle.as_raw()
+        {
+            let hwnd = handle.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+            unsafe {
+                ShowWindowAsync(hwnd, if IsZoomed(hwnd) != 0 { SW_RESTORE } else { SW_MAXIMIZE });
+            }
+            return;
+        }
+    }
+    window.zoom_window();
+}
 
 /// Which sides of the window touch the screen's edges or another window, when the program
 /// draws the frame; `None` when the system does.
@@ -124,15 +147,19 @@ impl MainView {
     /// moves the window, a double click maximizes, a right click opens the window menu, and the
     /// window's buttons sit at its ends. `row` is the bar's content, kept clear of them.
     pub fn title_bar(&self, bar: Div, row: Div, window: &Window, cx: &mut Context<Self>) -> Div {
-        if tiling(window).is_none() {
+        if !custom_title_bar(window) {
             return bar.child(row);
         }
         let t = self.theme;
         let (left, right) = buttons(window, cx);
         let can = window.window_controls();
         let maximized = window.is_maximized();
-        let width = inner_width(window);
-        let margin = (width - width.min(layout::MAX_W)) / 2.;
+        let margin = if cfg!(windows) {
+            0.
+        } else {
+            let width = inner_width(window);
+            (width - width.min(layout::MAX_W)) / 2.
+        };
         let room = |n: usize| {
             let own = layout::GUTTER - 6.;
             if n == 0 { own } else { own.max(EDGE + n as f32 * (BUTTON + GAP) + 4. - margin) }
@@ -155,7 +182,7 @@ impl MainView {
                 cx.listener(move |this, ev: &MouseDownEvent, window, _| {
                     this.moving = ev.click_count < 2;
                     if ev.click_count == 2 && can.maximize {
-                        window.zoom_window();
+                        toggle_maximized(window);
                     }
                 }),
             )
@@ -205,7 +232,7 @@ fn window_button(b: WindowButton, maximized: bool, t: &Theme, cx: &mut Context<M
     };
     d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()).on_click(cx.listener(move |_, _, window, _| match b {
         WindowButton::Minimize => window.minimize_window(),
-        WindowButton::Maximize => window.zoom_window(),
+        WindowButton::Maximize => toggle_maximized(window),
         WindowButton::Close => window.remove_window(),
     }))
 }

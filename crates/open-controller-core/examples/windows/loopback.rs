@@ -217,7 +217,13 @@ fn main() {
         engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.extras.contains(&TOUCH_LEFT))
     });
     check(pad.features.touchpad && pad.features.motion, "a touchpad and a gyro are seen, and the touchpad's halves listed");
+    engine.send(Command::Watch(true));
     unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 0, true, 0.2, 0.5, 1.0) };
+    wait_for("touch coordinates in the preview", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE)
+            && p.input.touches[0] == open_controller_core::mapping::Touch::from_position(true, 0.2, 0.5))
+    });
+    check(true, "touching without clicking reaches the preview with its position");
     button(TOUCHPAD, true);
     wait_for("a click on the left half as X", Duration::from_millis(500), x(true));
     button(TOUCHPAD, false);
@@ -229,6 +235,21 @@ fn main() {
     button(TOUCHPAD, false);
     unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 0, false, 0.8, 0.5, 0.0) };
     check(right_is_not_x, "a click on the left half of the touchpad is a button of its own, the right half another");
+    wait_for("released touch clears the preview", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && !p.input.touches[0].down)
+    });
+    unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 1, true, 0.7, 0.2, 1.0) };
+    wait_for("the second finger independently reaches the preview", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE)
+            && !p.input.touches[0].down
+            && p.input.touches[1] == open_controller_core::mapping::Touch::from_position(true, 0.7, 0.2))
+    });
+    unsafe { SDL_SetJoystickVirtualTouchpad(joy, 0, 1, false, 0.7, 0.2, 0.0) };
+    wait_for("both fingers release", Duration::from_secs(1), || {
+        engine.snapshot().pads.into_iter().find(|p| p.store.as_deref() == Some(PROFILE) && p.input.touches.iter().all(|t| !t.down))
+    });
+    check(true, "both touchpad fingers and their independent releases reach the preview");
+    engine.send(Command::Watch(false));
 
     // A profile for a program: in front, its assignments; away, the chosen profile's again.
     profiles.apply(Edit::Select(0));

@@ -57,6 +57,23 @@ pub mod xusb {
     pub const Y: u16 = 0x8000;
 }
 
+/// A finger on a touchpad, in normalised 0..=65535 coordinates. Released fingers are zeroed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Touch {
+    pub down: bool,
+    pub x: u16,
+    pub y: u16,
+}
+
+impl Touch {
+    pub fn from_position(down: bool, x: f32, y: f32) -> Self {
+        if !down || !x.is_finite() || !y.is_finite() {
+            return Self::default();
+        }
+        Self { down, x: (x.clamp(0., 1.) * 65535.).round() as u16, y: (y.clamp(0., 1.) * 65535.).round() as u16 }
+    }
+}
+
 /// One gamepad's input as SDL reports it: a bit per button, sticks in -32768..=32767 with Y
 /// growing downwards, triggers in 0..=32767.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -65,6 +82,8 @@ pub struct PadState {
     /// (`extras::TOUCH_LEFT` and up).
     pub buttons: u64,
     pub axes: [i16; axis::COUNT],
+    #[serde(default)]
+    pub touches: [Touch; 2],
     /// How hard each pressure-sensitive button is pressed, 0 to 255, in [`PRESSURE`]'s order; all
     /// 0 on a controller without them.
     #[serde(default)]
@@ -178,7 +197,9 @@ const NOISE: i32 = 2048;
 
 /// A change a person made: a button, or an axis moved further than stick noise.
 pub fn significant(before: &PadState, after: &PadState) -> bool {
-    before.buttons != after.buttons || before.axes.iter().zip(after.axes).any(|(&a, b)| (a as i32 - b as i32).abs() > NOISE)
+    before.buttons != after.buttons
+        || before.touches != after.touches
+        || before.axes.iter().zip(after.axes).any(|(&a, b)| (a as i32 - b as i32).abs() > NOISE)
 }
 
 /// XInput motor speed (0..=255) to SDL's rumble intensity (0..=65535).
@@ -189,6 +210,16 @@ pub fn motor(v: u8) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn touch_contacts_are_bounded_and_release_clears_stale_coordinates() {
+        assert_eq!(Touch::from_position(true, 0., 1.), Touch { down: true, x: 0, y: 65535 });
+        assert_eq!(Touch::from_position(true, -1., 2.), Touch { down: true, x: 0, y: 65535 });
+        assert_eq!(Touch::from_position(false, 0.8, 0.5), Touch::default());
+        assert_eq!(Touch::from_position(true, f32::NAN, 0.), Touch::default());
+        let old = r#"{"buttons":0,"axes":[0,0,0,0,0,0]}"#;
+        assert_eq!(serde_json::from_str::<PadState>(old).unwrap().touches, [Touch::default(); 2]);
+    }
 
     fn state(buttons: &[u32], axes: [i16; 6]) -> PadState {
         PadState { buttons: buttons.iter().fold(0, |b, &i| b | 1 << i), axes, ..PadState::default() }

@@ -185,6 +185,9 @@ pub enum Role {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PadView {
+    /// Actual mute flag of Windows' default input endpoint, not a latched button press.
+    #[serde(default)]
+    pub microphone_muted: Option<bool>,
     pub key: PadKey,
     pub name: String,
     pub brand: Brand,
@@ -541,6 +544,8 @@ impl Target {
 }
 
 struct Core {
+    microphone: crate::microphone::Monitor,
+    microphone_seen: Option<bool>,
     bus: Option<Arc<Bus>>,
     /// Read once on connecting: the device tree is slow to query, and this is the input thread.
     bus_version: Option<String>,
@@ -638,6 +643,8 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
     HANDHELD_STOP.store(false, Ordering::Relaxed);
     let handheld_reader = handheld::start(handheld_tx, &HANDHELD_STOP);
     let mut core = Core {
+        microphone: crate::microphone::Monitor::start(),
+        microphone_seen: None,
         bus: None,
         bus_version: None,
         bus_error: None,
@@ -715,6 +722,11 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         core.macro_buttons();
         core.feedback(now);
         core.housekeeping(now);
+        let muted = core.microphone.muted();
+        if core.microphone_seen != muted {
+            core.microphone_seen = muted;
+            core.changed = true;
+        }
 
         let waiting = core.roster.slots().iter().any(|s| s.lost_since.is_some());
         let countdown = waiting && now.duration_since(last_countdown) >= Duration::from_millis(500);
@@ -1699,7 +1711,13 @@ impl Core {
         for p in self.phys.values_mut() {
             // Where controllers stay as they are, their lights are still OpenController's to set.
             let player = match p.kind {
-                Kind::Slot(_) if native(&self.profiles, &p.model.store, p.model.form) => continue,
+                Kind::Slot(_)
+                    if native(&self.profiles, &p.model.store, p.model.form)
+                        && !self.profiles.get(&p.model.store).is_some_and(|x| x.native_light) =>
+                {
+                    p.led = None;
+                    continue;
+                }
                 Kind::Slot(s) => self.targets.get(&s).and_then(|t| t.player),
                 Kind::Native if !VIRTUAL_PADS => None,
                 _ => continue,
@@ -1777,6 +1795,22 @@ impl Core {
             let aim_before = p.aim_out;
             let (rate_before, accel_before) = (p.rate, p.accel);
             p.pad.read(&mut p.state);
+            let mic_owner = match p.kind {
+                Kind::Slot(s) => self.roster.get(s).and_then(|s| s.source) == Some(id),
+                Kind::Native => true,
+                _ => false,
+            };
+            if mic_owner
+                && matches!(p.model.family, Family::DualSense | Family::DualSenseEdge)
+                && self.profiles.get(&p.model.store).is_some_and(|x| x.mic_control)
+                && !self
+                    .profiles
+                    .get(&p.model.store)
+                    .is_some_and(|x| x.for_program(&self.foreground).bindings.contains_key(&(crate::mapping::button::MISC1 as u8)))
+                && crate::microphone::pressed(before.buttons, p.state.buttons)
+            {
+                self.microphone.toggle();
+            }
             if p.model.family == Family::Handheld && p.kind == Kind::Native {
                 p.state.buttons |= self.handheld_held;
             }
@@ -2228,6 +2262,7 @@ impl Core {
         // A controller that copies another's ids goes by the name of the model its owner chose.
         let alias = model.and_then(|m| models::alias(m.vendor, m.product, chosen));
         PadView {
+            microphone_muted: model.filter(|m| matches!(m.family, Family::DualSense | Family::DualSenseEdge)).and(self.microphone_seen),
             key,
             name: alias.map(|a| a.4.to_string()).or_else(|| model.map(|m| m.name.clone())).unwrap_or_default(),
             brand: model.map(|m| m.brand).unwrap_or(Brand::Other),

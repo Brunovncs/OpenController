@@ -19,6 +19,7 @@ mod settings;
 mod sticks;
 mod text_field;
 mod theme;
+mod touch_animation;
 mod tuning;
 mod ui;
 mod updates;
@@ -451,7 +452,7 @@ fn forced_lang() -> Option<Lang> {
 fn open_window(model: Entity<Model>, cx: &mut App) -> Option<WindowHandle<MainView>> {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(1160.), px(800.)), cx))),
-        titlebar: Some(TitlebarOptions { title: Some("OpenController".into()), ..Default::default() }),
+        titlebar: Some(TitlebarOptions { title: Some("OpenController".into()), appears_transparent: cfg!(windows), ..Default::default() }),
         // The Wayland app id and the X11 class: the .desktop file's name, so the dock shows its icon.
         app_id: Some("io.github.brunovncs.open-controller".into()),
         window_min_size: Some(size(px(720.), px(520.))),
