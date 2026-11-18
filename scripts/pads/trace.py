@@ -346,6 +346,8 @@ for b in cfg.get("buttons", []):
     m = pick(b)
     if b.get("circle", True):
         x, y, r = circle_of(m)
+        # A button drawn larger than traced, where the source's reads too small at the window's size.
+        r *= b.get("grow", 1)
         e["circle"] = gcircle(x, y, r)
         cv2.circle(overlay, (int(x), int(y)), int(r), (200, 0, 200), 2)
     else:

@@ -38,6 +38,7 @@
  "buttons": [
   {
    "input": "south",
+   "grow": 1.2,
    "seed": [
     1292,
     470
@@ -45,6 +46,7 @@
   },
   {
    "input": "east",
+   "grow": 1.2,
    "seed": [
     1408,
     357
@@ -52,6 +54,7 @@
   },
   {
    "input": "west",
+   "grow": 1.2,
    "seed": [
     1177,
     356
@@ -59,6 +62,7 @@
   },
   {
    "input": "north",
+   "grow": 1.2,
    "seed": [
     1292,
     238

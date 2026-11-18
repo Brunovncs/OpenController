@@ -838,6 +838,20 @@ fn pad_light_supported(look: Look) -> bool {
     matches!(look, Look::DualSense | Look::DualSenseEdge | Look::DualShock4)
 }
 
+/// The colour of the touchpad's contacts: the light bar's hue, made light enough on a dark
+/// touchpad, or dark enough on a light one, to stand out; the accent when the light is off.
+fn touch_color(light: [u8; 3], ink: &Ink, t: &Theme) -> Hsla {
+    if light == [0; 3] {
+        return ink.lit;
+    }
+    let c: Hsla = rgb(u32::from(light[0]) << 16 | u32::from(light[1]) << 8 | u32::from(light[2])).into();
+    let dark = t.art_well.l < 0.5;
+    let l = if dark { c.l.clamp(0.66, 0.8) } else { c.l.clamp(0.32, 0.45) };
+    // A white or grey light stays one: only a colour is made vivid.
+    let s = if c.s < 0.15 { c.s } else { c.s.max(0.75) };
+    hsla(c.h, s, l, 1.)
+}
+
 fn touch_position((left, top, right, bottom): (f32, f32, f32, f32), (x, y): (f32, f32)) -> (f32, f32) {
     (left + (right - left) * x, top + (bottom - top) * y)
 }
@@ -878,11 +892,7 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
     } else {
         touch_light
     };
-    let touch_ink: Hsla = if touch_light == [0; 3] {
-        ink.lit
-    } else {
-        rgb(u32::from(touch_light[0]) << 16 | u32::from(touch_light[1]) << 8 | u32::from(touch_light[2])).into()
-    };
+    let touch_ink = touch_color(touch_light, &ink, t);
     let g = pad_for(look);
     let (turn, gripped) = grip_turn(g, &state);
 
@@ -931,22 +941,23 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
                 // Keep both contacts inside the inset rectangle of the curved touch surface.
                 let inset = 11.;
                 let surface = (left + inset, top + inset, right - inset, bottom - inset);
-                for (i, touch) in touches.fingers.iter().enumerate() {
-                    let color = touch_ink;
+                // Pressed, the surface takes the accent: the contacts turn to the colour drawn on it.
+                let color = if on(button::TOUCHPAD) { ink.on_lit } else { touch_ink };
+                for touch in &touches.fingers {
+                    // One stroke that thins and fades towards its tail, not a row of dots.
                     for segment in touch.trail.windows(2) {
                         let (x0, y0) = touch_position(surface, segment[0].0);
                         let (x1, y1) = touch_position(surface, segment[1].0);
-                        let fade = segment[0].1;
-                        let path = line(x0, y0, x1, y1);
-                        pen.stroke(&path, (4.5 * k).max(1.), color.opacity(fade * 0.18));
-                        pen.stroke(&path, ((0.7 + 1.6 * fade) * k).max(0.6), color.opacity(fade * 0.8));
-                        pen.fill(&circle(x1, y1, 0.35 + fade * 0.8), color.opacity(fade * 0.65));
+                        let fade = segment[1].1;
+                        pen.stroke(&line(x0, y0, x1, y1), ((0.8 + 3.4 * fade) * k).max(0.8), color.opacity(fade * 0.75));
                     }
                     let Some(head) = touch.head else { continue };
                     let (x, y) = touch_position(surface, head);
-                    pen.fill(&circle(x, y, 8.), color.opacity(0.18));
-                    pen.stroke(&circle(x, y, if i == 0 { 5. } else { 6.5 }), (1.3 * k).max(1.), color);
-                    pen.fill(&circle(x, y, 2.2), color);
+                    // A soft glow around a solid contact.
+                    pen.fill(&circle(x, y, 13.), color.opacity(0.1));
+                    pen.fill(&circle(x, y, 9.5), color.opacity(0.2));
+                    pen.fill(&circle(x, y, 6.), color);
+                    pen.stroke(&circle(x, y, 6.), (1.2 * k).max(1.), ink.edge.opacity(0.35));
                 }
             }
 
