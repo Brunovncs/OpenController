@@ -3,6 +3,11 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+New versions are found even on a VPN or a shared network, where GitHub sometimes turned the
+question away and the update never showed. A window left open also checks again every few hours.
+
 ## 0.9.1
 
 Report a problem tells more about your controller. If you send it without pressing anything, it

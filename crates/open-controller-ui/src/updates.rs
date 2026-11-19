@@ -12,6 +12,12 @@ use gpui::{AnyElement, Context, InteractiveElement, IntoElement, ParentElement, 
 use open_controller_core::i18n::fill;
 use open_controller_core::update::{self, Release};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+/// How long a window left open waits to ask GitHub again: after an answer, and after a question
+/// that failed (offline, or GitHub turning too many questions away).
+const ASK_AGAIN: Duration = Duration::from_secs(6 * 60 * 60);
+const RETRY: Duration = Duration::from_secs(30 * 60);
 
 /// Set while "Update now" has asked the resident process to quit and is about to start the
 /// installer, so the window does not close with it.
@@ -27,8 +33,10 @@ pub fn installing() -> bool {
 pub enum Update {
     #[default]
     Unknown,
-    /// Asked, and this is the latest.
-    Current,
+    /// Asked (or being asked), and this is the latest as far as is known: asked again from `next`.
+    Current {
+        next: Instant,
+    },
     Available(Release),
     Working(Release),
     Failed(Release, String),
@@ -38,21 +46,28 @@ pub enum Update {
 }
 
 impl MainView {
-    /// Asks GitHub once, when the preferences say so (they arrive from the resident process a
-    /// moment after the window opens).
+    /// Asks GitHub when the preferences say so (they arrive from the resident process a moment
+    /// after the window opens), then again every few hours while the window stays open.
     pub fn maybe_check_updates(&mut self, cx: &mut Context<Self>) {
         let m = self.model.read(cx);
-        if self.update != Update::Unknown || !m.prefs.check_updates || m.demo {
+        let due = match self.update {
+            Update::Unknown => true,
+            Update::Current { next } => Instant::now() >= next,
+            _ => false,
+        };
+        if !due || !m.prefs.check_updates || m.demo {
             return;
         }
-        self.update = Update::Current;
+        self.update = Update::Current { next: Instant::now() + ASK_AGAIN };
         cx.spawn(async move |this, cx| {
             let found = cx.background_executor().spawn(async { update::check() }).await;
-            let _ = this.update(cx, |this, cx| {
-                if let Ok(Some(r)) = found {
+            let _ = this.update(cx, |this, cx| match found {
+                Ok(Some(r)) => {
                     this.update = Update::Available(r);
                     cx.notify();
                 }
+                Ok(None) => {}
+                Err(_) => this.update = Update::Current { next: Instant::now() + RETRY },
             });
         })
         .detach();

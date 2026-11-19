@@ -1,5 +1,6 @@
-//! Whether a newer release is out, asked of GitHub's API when the window opens (unless the user
-//! turned it off), and on Windows fetching its installer. `curl` does the requests: it ships with
+//! Whether a newer release is out, asked of GitHub's API when the window opens and every few
+//! hours while it stays open (unless the user turned it off), and on Windows fetching its
+//! installer. `curl` does the requests: it ships with
 //! Windows 10 and later, macOS and every desktop Linux, so no TLS stack is built in.
 
 #[cfg(windows)]
@@ -8,6 +9,8 @@ use std::process::Command;
 
 pub const RELEASES_API: &str = "https://api.github.com/repos/Brunovncs/OpenController/releases/latest";
 pub const RELEASES_PAGE: &str = "https://github.com/Brunovncs/OpenController/releases/latest";
+/// Where a release's files are, by tag: `<this>/v0.9.1/open-controller-0.9.1-windows-x64-setup.exe`.
+const RELEASES_DOWNLOAD: &str = "https://github.com/Brunovncs/OpenController/releases/download";
 
 /// The latest release, as far as an update needs to know.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -125,8 +128,63 @@ fn parse_for(json: &[u8], arch: &str) -> Result<Release, String> {
 
 /// The latest release, if it is newer than this one.
 pub fn check() -> Result<Option<Release>, String> {
-    let r = parse(&fetch(RELEASES_API, QUICK)?)?;
+    let r = match fetch(RELEASES_API, QUICK).and_then(|json| parse(&json)) {
+        Ok(r) => r,
+        // GitHub's API answers 60 requests an hour from one address without an account, which a
+        // VPN or a shared network uses up for everyone behind it. Its web pages have no such limit.
+        Err(api) => latest_from_page().map_err(|page| format!("{api}; {page}"))?,
+    };
     Ok(is_newer(&r.version, &current()).then_some(r))
+}
+
+/// The latest release as GitHub's page for it says, which sends `/releases/latest` on to the
+/// latest tag's page. Its installer is found by the name every release gives it.
+fn latest_from_page() -> Result<Release, String> {
+    let to = redirect(RELEASES_PAGE)?;
+    from_tag_page(&to, arch(), |url| cfg!(windows) && exists(url)).ok_or_else(|| format!("no release tag in {to}"))
+}
+
+/// Where `url` sends to, from its `Location` header.
+fn redirect(url: &str) -> Result<String, String> {
+    let out = curl()
+        .args(["--silent", "--show-error", "--fail", "--head", "--proto", "=https"])
+        .args(QUICK)
+        .args(["--user-agent", "open-controller"])
+        .arg(url)
+        .output()
+        .map_err(|e| format!("could not run curl: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    let headers = String::from_utf8_lossy(&out.stdout);
+    headers
+        .lines()
+        .find_map(|l| l.split_once(':').filter(|(k, _)| k.trim().eq_ignore_ascii_case("location")).map(|(_, v)| v.trim().to_string()))
+        .ok_or_else(|| format!("{url} sends nowhere"))
+}
+
+/// Whether a file is there to download.
+fn exists(url: &str) -> bool {
+    curl()
+        .args(["--silent", "--fail", "--head", "--location", "--proto", "=https", "--proto-redir", "=https"])
+        .args(QUICK)
+        .args(["--user-agent", "open-controller"])
+        .arg(url)
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// The release a tag's page (`.../releases/tag/v0.9.1`) is about, with the installer for `arch`
+/// (or the x64 one) when `exists` finds it. Without one, the update bar only opens the page.
+fn from_tag_page(page: &str, arch: &str, exists: impl Fn(&str) -> bool) -> Option<Release> {
+    let tag = page.split("/releases/tag/").nth(1)?.split(['?', '#', '/']).next().filter(|t| !t.is_empty())?;
+    let version = tag.trim_start_matches(['v', 'V']).to_string();
+    version.as_str().chars().next().filter(char::is_ascii_digit)?;
+    let setup = [arch, "x64"].into_iter().find_map(|a| {
+        let url = format!("{RELEASES_DOWNLOAD}/{tag}/open-controller-{version}-windows-{a}-setup.exe");
+        exists(&url).then(|| (url.clone(), format!("{url}.sha256")))
+    });
+    Some(Release { version, page: page.to_string(), setup })
 }
 
 /// Downloads the release's installer into `dir` and checks it against the SHA-256 published with
@@ -216,5 +274,31 @@ mod tests {
             {"name":"open-controller-0.9.0-windows-x64-setup.exe.sha256","browser_download_url":"https://example/x64-sha"}]}"#;
         assert_eq!(parse_for(json, "x64").unwrap().setup, Some(("https://example/x64".into(), "https://example/x64-sha".into())));
         assert_eq!(parse_for(json, "arm64").unwrap().setup, Some(("https://example/arm".into(), "https://example/arm-sha".into())));
+    }
+
+    #[test]
+    fn reads_a_release_from_its_page() {
+        let page = "https://github.com/Brunovncs/OpenController/releases/tag/v0.9.1";
+        let base = "https://github.com/Brunovncs/OpenController/releases/download/v0.9.1/open-controller-0.9.1-windows";
+        let r = from_tag_page(page, "arm64", |_| true).unwrap();
+        assert_eq!(r.version, "0.9.1");
+        assert_eq!(r.page, page);
+        assert_eq!(r.setup, Some((format!("{base}-arm64-setup.exe"), format!("{base}-arm64-setup.exe.sha256"))));
+        // Without the ARM64 installer, the x64 one; without any, only the page.
+        let x64 = from_tag_page(page, "arm64", |u| u.contains("-x64-")).unwrap();
+        assert_eq!(x64.setup, Some((format!("{base}-x64-setup.exe"), format!("{base}-x64-setup.exe.sha256"))));
+        assert_eq!(from_tag_page(page, "x64", |_| false).unwrap().setup, None);
+        assert_eq!(from_tag_page(RELEASES_PAGE, "x64", |_| true), None, "not a tag's page");
+        assert_eq!(from_tag_page("https://github.com/x/releases/tag/nightly", "x64", |_| true), None, "not a version");
+    }
+
+    /// Asks GitHub for real, so it is left out of a normal run.
+    #[test]
+    #[ignore]
+    fn finds_the_latest_release_on_its_page() {
+        let r = latest_from_page().unwrap();
+        println!("{r:?}");
+        assert!(is_newer(&r.version, "0.0.1"));
+        assert!(cfg!(not(windows)) || r.setup.is_some(), "the installer is found by its name");
     }
 }
