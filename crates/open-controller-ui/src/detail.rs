@@ -154,6 +154,7 @@ fn hint_text(text: &Text, h: Hint) -> &'static str {
         Hint::SteamInput => text.hint_steam,
         Hint::FlydigiThirdParty => text.hint_flydigi,
         Hint::Switch2Unsupported => text.hint_switch2,
+        Hint::PlayStationInXboxMode => text.hint_ps_xbox_mode,
     }
 }
 

@@ -225,6 +225,7 @@ pub const ZH: Text = Text {
     project_page: "项目主页",
     hint_8bitdo_2c: "使用接收器时无法读取 L4 和 R4，请通过蓝牙连接以使用这些按键。",
     hint_8bitdo_xbox: "此型号的额外按键只能通过八位堂应用映射为其他按键，程序无法单独读取。",
+    hint_ps_xbox_mode: "在 Xbox 模式下，此手柄只发送 Xbox 按键，程序无法读取其他部分。",
     hint_steam: "Steam 运行时会占用此手柄。请关闭 Steam 或停用此手柄的 Steam Input，以便 OpenController 读取。",
     hint_flydigi: "要读取 M1 至 M4，请在飞智空间站中开启“允许第三方应用接管映射”。",
     hint_switch2: "暂不支持 Switch 2 手柄：当前 SDL 版本只能通过 libusb 读取。",

@@ -312,6 +312,9 @@ pub enum Hint {
     FlydigiThirdParty,
     /// Switch 2 controllers need libusb, which this build of SDL leaves out.
     Switch2Unsupported,
+    /// A PlayStation-style pad in its Xbox/PC mode (SDL's `XInputPS4Controller`): it speaks
+    /// XInput there, which carries only the Xbox buttons.
+    PlayStationInXboxMode,
 }
 
 pub fn hint(vendor: u16, product: u16, family: Family) -> Option<Hint> {
@@ -321,6 +324,9 @@ pub fn hint(vendor: u16, product: u16, family: Family) -> Option<Hint> {
         (0x2DC8, 0x310A, _) => Some(Hint::EightBitDo2CBluetooth),
         (0x2DC8, 0x2000 | 0x2002 | 0x200F | 0x2003 | 0x2015 | 0x2019 | 0x201B | 0x201E | 0x2025 | 0x2027 | 0x2030 | 0x901B, _) => {
             Some(Hint::EightBitDoForXbox)
+        }
+        (0x0F0D, 0x00ED | 0x0164, _) | (0x146B, 0x0603..=0x0606 | 0x0609, _) | (0x2C22, 0x2303 | 0x2503, _) | (0x9886, 0x0024, _) => {
+            Some(Hint::PlayStationInXboxMode)
         }
         (_, _, Family::XboxElite) => Some(Hint::XboxPaddlesHidden),
         (_, _, Family::SteamController | Family::SteamDeck) => Some(Hint::SteamInput),
@@ -419,5 +425,10 @@ mod tests {
         // Pro 2 Wired for Xbox, both ids: P1 and P2 only copy other buttons.
         assert_eq!(hint(0x2DC8, 0x2000, Family::EightBitDoPro2), Some(Hint::EightBitDoForXbox));
         assert_eq!(hint(0x2DC8, 0x201E, Family::EightBitDoPro2), Some(Hint::EightBitDoForXbox));
+        // PS4-style pads: only their Xbox/PC mode ids get it, not the PS4 mode ones.
+        assert_eq!(hint(0x0F0D, 0x0164, Family::DualShock4), Some(Hint::PlayStationInXboxMode));
+        assert_eq!(hint(0x0F0D, 0x00ED, Family::DualShock4), Some(Hint::PlayStationInXboxMode));
+        assert_eq!(hint(0x146B, 0x0609, Family::DualShock4), Some(Hint::PlayStationInXboxMode));
+        assert_eq!(hint(0x0F0D, 0x0162, Family::DualShock4), None);
     }
 }

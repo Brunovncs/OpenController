@@ -6706,10 +6706,10 @@
   {
    "id": "37d7:2801",
    "name": "Flydigi Vader 5S",
-   "family": "Flydigi",
+   "family": "Xbox",
    "layout": null,
    "models": [
-    "Flydigi Vader 5S (wired, Xbox-licensed)"
+    "Flydigi Vader 5S (wired, Xbox-licensed, GIP; on Windows XInput shows it as 045e:02ff)"
    ],
    "reported": [],
    "modes": [
@@ -6719,7 +6719,8 @@
     "confirmed"
    ],
    "sources": [
-    "https://github.com/dlundqvist/xone/issues/203"
+    "https://github.com/dlundqvist/xone/issues/203",
+    "https://shops.flydigi.com/products/vader5s"
    ]
   },
   {
