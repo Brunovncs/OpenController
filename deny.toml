@@ -23,6 +23,7 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant, unmaintained as a crate of its own: through GPUI's accesskit and portals on Linux" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names, unmaintained as a crate of its own: through GPUI's accesskit and portals on Linux" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, unmaintained as a crate of its own: through GPUI's accesskit and portals on Linux" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono, unmaintained: through GPUI itself, its scheduler and zlog (gpui-pre 0.3.13 still needs it)" },
 ]
 
 [licenses]
