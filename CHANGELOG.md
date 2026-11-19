@@ -3,6 +3,21 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.1
+
+Report a problem tells more about your controller. If you send it without pressing anything, it
+asks you once to press the buttons that don't work. It also notes buttons the controller sends
+that OpenController doesn't use yet, and for controllers made for Xbox it lists the Xbox devices
+connected, so the real model can be found.
+
+PlayStation style pads in their Xbox/PC mode, like the HORI Fighting Commander OCTA, Nacon's
+Revolution Unlimited Pro and Asymmetric and the Astro C40, now say that only the Xbox buttons
+reach programs in that mode. Some Nacon pads also show their real names.
+
+Joy-Cons, as a pair or alone, are now verified: tested on the controllers themselves.
+
+Settings carry over.
+
 ## 0.9.0
 
 Each controller has a new Lab page with optional tools, all off until you turn them on. A
