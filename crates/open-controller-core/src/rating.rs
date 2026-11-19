@@ -28,6 +28,9 @@ pub static VERIFIED: &[(u16, u16, &str)] = &[
     (0x2dc8, 0x6012, "8BitDo Ultimate 2 Wireless, in D-input mode"),
     (0x054c, 0x05c4, "DualShock 4"),
     (0x054c, 0x09cc, "DualShock 4 (second model)"),
+    (0x057e, 0x2006, "Joy-Con (L), alone and in a pair"),
+    (0x057e, 0x2007, "Joy-Con (R), alone and in a pair"),
+    (0x057e, 0x2008, "Joy-Con pair, combined"),
 ];
 
 pub fn is_verified(vendor: u16, product: u16) -> bool {
@@ -63,6 +66,8 @@ mod tests {
         assert_eq!(of(0x054c, 0x05c4), Rating::Verified);
         assert_eq!(of(0x2dc8, 0x310b), Rating::Verified, "tested, though its extras need D-input");
         assert_eq!(of(0x054c, 0x0ce6), Rating::Compatible, "DualSense");
+        assert_eq!(of(0x057e, 0x2008), Rating::Verified, "Joy-Con pair");
+        assert_eq!(of(0x057e, 0x200e), Rating::Compatible, "charging grip, not tested");
         assert_eq!(of(0x045e, 0x0b00), Rating::Caveats, "Elite Series 2: paddles hidden");
         assert_eq!(of(0x1234, 0x5678), Rating::Unknown);
     }
