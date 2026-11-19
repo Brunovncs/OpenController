@@ -140,6 +140,11 @@ pub mod devnode {
     pub fn ancestry(_: &str) -> Vec<String> {
         Vec::new()
     }
+
+    /// Only Windows reads controllers through XInput.
+    pub fn xinput_devices() -> Vec<String> {
+        Vec::new()
+    }
 }
 
 pub mod bluetooth {

@@ -154,6 +154,9 @@ pub enum Command {
     /// What SDL says about a controller and what happened lately, for a report on it, with its
     /// device path for the caller to look up in the device tree away from the input thread.
     Diagnose(PadKey, Sender<Option<(Diagnosis, String)>>),
+    /// The controller whose joystick is read by its own numbering while a report on it is open,
+    /// or none.
+    RawInput(Option<PadKey>),
     /// Makes the virtual controllers again with this driver, the one in use too. Choosing VIIPER
     /// again after it failed tries it again.
     SetVirtualDriver(VirtualDriver),
@@ -346,6 +349,9 @@ impl Engine {
         self.send(Command::Diagnose(key, tx));
         let (mut d, path) = rx.recv_timeout(Duration::from_secs(2)).ok()??;
         d.facts.devices = devnode::ancestry(&path);
+        if d.facts.devices.is_empty() && device::is_xinput_path(&path) {
+            d.facts.xinput_devices = devnode::xinput_devices();
+        }
         Some(d)
     }
 
@@ -424,6 +430,8 @@ struct Phys {
     /// failed, for reports.
     rate: Option<[f32; 3]>,
     gyro_error: Option<String>,
+    /// Its joystick by its own numbering, read only while a report on it is open.
+    raw: RawInput,
     /// The gyro reading the window was last told of, which noise does not move.
     rate_shown: Option<[f32; 3]>,
     /// Whether its accelerometer's reports are on, for a virtual DualShock 4, and their last
@@ -667,6 +675,8 @@ struct Core {
     log: VecDeque<String>,
     changed: bool,
     input_changed: bool,
+    /// The controller a report is open on, whose joystick is read by its own numbering.
+    raw_watch: Option<PadKey>,
     /// Last, so it is dropped last: SDL_Quit must come after every gamepad is closed.
     sdl: Sdl,
 }
@@ -753,6 +763,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         log: VecDeque::new(),
         changed: true,
         input_changed: false,
+        raw_watch: None,
         sdl,
     };
     // Before the first events are read: a joystick one of these maps comes as a gamepad.
@@ -772,6 +783,9 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
                 Msg::Quit => break 'run,
                 Msg::Command(Command::Watch(on)) => {
                     watching = on;
+                    if !on {
+                        core.raw_watch = None;
+                    }
                     focused = true;
                     core.changed = true;
                 }
@@ -782,6 +796,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         core.pump(now);
         if watching {
             core.read_unmapped();
+            core.read_watched();
         }
         core.handheld_buttons();
         core.poll_sixaxis(now);
@@ -970,6 +985,14 @@ impl Core {
             }
             Command::SwapPlayers(PadKey::Slot(a), PadKey::Slot(b)) if a != b => self.swap(SlotId(a), SlotId(b)),
             Command::SwapPlayers(..) => {}
+            Command::RawInput(key) => {
+                // What it held when last looked at must not show as pressed now.
+                if let Some(p) = key.and_then(|k| self.device_for(k)).and_then(|d| self.phys.get_mut(&d)) {
+                    p.raw = RawInput::default();
+                }
+                self.raw_watch = key;
+                self.changed = true;
+            }
             Command::Diagnose(key, reply) => {
                 let found = self.device_for(key).and_then(|d| match self.phys.get(&d) {
                     Some(p) => {
@@ -1089,6 +1112,14 @@ impl Core {
     /// What the controllers kept under `store` are made for, from one connected or remembered.
     fn form_of(&self, store: &str) -> Form {
         self.phys.values().map(|p| &p.model).chain(self.memo.values()).find(|m| m.store == store).map_or(Form::Gamepad, |m| m.form)
+    }
+
+    /// What the joystick of the controller a report is open on sends, by its own numbering.
+    fn read_watched(&mut self) {
+        let Some(d) = self.raw_watch.and_then(|k| self.device_for(k)) else { return };
+        if let Some(p) = self.phys.get_mut(&d) {
+            self.input_changed |= p.pad.read_raw(&mut p.raw);
+        }
     }
 
     /// What the joysticks without a gamepad layout send, while the window looks.
@@ -1458,6 +1489,7 @@ impl Core {
             aim_at: None,
             rate: None,
             gyro_error: None,
+            raw: RawInput::default(),
             rate_shown: None,
             accel_on: false,
             accel: None,
@@ -2450,6 +2482,7 @@ impl Core {
             view.role = role;
             view.hidden = slot.devices.iter().any(|d| self.is_hidden(*d));
             view.input = source.map(|p| p.state).unwrap_or_default();
+            view.raw = source.filter(|_| self.raw_watch == Some(PadKey::Slot(slot.id.0))).map(|p| p.raw.clone());
             view.lab_status = source
                 .map(|p| crate::lab::Status {
                     testing: p.tools.trial.is_some(),
@@ -2476,6 +2509,7 @@ impl Core {
             let player = device::xinput_slot(&p.path).or_else(|| if VIRTUAL_PADS { None } else { p.pad.player() });
             view.role = Role::Native { player };
             view.input = p.state;
+            view.raw = (self.raw_watch == Some(PadKey::Device(id))).then(|| p.raw.clone());
             view.lab_status = crate::lab::Status {
                 testing: p.tools.trial.is_some(),
                 trigger_error: p.tools.error.clone(),

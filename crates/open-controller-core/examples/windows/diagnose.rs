@@ -41,6 +41,12 @@ fn list(sdl: &Sdl, wait: Duration) -> Vec<Gamepad> {
             let t = Instant::now();
             let name = devnode::usb_product_name(p.vendor(), p.product());
             println!("     usb product name={name:?} (looked up in {:?})", t.elapsed());
+            let t = Instant::now();
+            let devices = devnode::xinput_devices();
+            println!("     devices XInput's drivers run (listed in {:?}):", t.elapsed());
+            for d in devices {
+                println!("       {d}");
+            }
         }
         open.push(p);
     }

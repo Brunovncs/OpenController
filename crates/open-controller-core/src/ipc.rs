@@ -18,7 +18,7 @@ pub use pipe::{Pipe, Reader, is_disconnect, remove_socket};
 
 /// The version of these messages. Raised whenever either side would misread the other's, so a
 /// window from one release meeting a resident process from another can tell.
-pub const PROTO: u32 = 2;
+pub const PROTO: u32 = 3;
 
 /// What the resident process tells the window.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -72,6 +72,9 @@ pub enum ToTray {
     SwapPlayers(PadKey, PadKey),
     /// What is known about a controller, for a report on it.
     Diagnose(PadKey),
+    /// A report is open on this controller, or none is: its joystick is then read by its own
+    /// numbering, so the report can name buttons its mapping leaves out.
+    RawInput(Option<PadKey>),
     /// The driver that makes the virtual controllers (Windows).
     SetVirtualDriver(VirtualDriver),
     /// Each Joy-Con a controller of its own, or left and right ones joined in pairs.

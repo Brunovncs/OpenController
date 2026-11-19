@@ -9,7 +9,7 @@ use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
 };
 use windows_sys::Win32::Devices::Properties::{
     DEVPKEY_Device_BusReportedDeviceDesc, DEVPKEY_Device_DriverVersion, DEVPKEY_Device_HardwareIds, DEVPKEY_Device_InstanceId,
-    DEVPKEY_Device_Service,
+    DEVPKEY_Device_LowerFilters, DEVPKEY_Device_Service, DEVPKEY_Device_UpperFilters,
 };
 use windows_sys::Win32::Foundation::DEVPROPKEY;
 
@@ -103,19 +103,29 @@ pub fn driver_version(interface_path: &str) -> Option<String> {
     string_property(node, &DEVPKEY_Device_DriverVersion).filter(|v| !v.is_empty())
 }
 
-/// Instance ids of the present devices an enumerator (`USB`, `HID`, ...) created.
-fn present_ids(enumerator: &str) -> Vec<String> {
-    let filter = wide(enumerator);
-    let flags = CM_GETIDLIST_FILTER_ENUMERATOR | CM_GETIDLIST_FILTER_PRESENT;
+/// Instance ids of the present devices an enumerator (`USB`, `HID`, ...) created, or of every
+/// present device.
+fn present_ids(enumerator: Option<&str>) -> Vec<String> {
+    let filter = enumerator.map(wide);
+    let filter_ptr = filter.as_ref().map_or(std::ptr::null(), |f| f.as_ptr());
+    let flags = if filter.is_some() { CM_GETIDLIST_FILTER_ENUMERATOR | CM_GETIDLIST_FILTER_PRESENT } else { CM_GETIDLIST_FILTER_PRESENT };
     let mut len = 0u32;
-    if unsafe { CM_Get_Device_ID_List_SizeW(&mut len, filter.as_ptr(), flags) } != CR_SUCCESS {
+    if unsafe { CM_Get_Device_ID_List_SizeW(&mut len, filter_ptr, flags) } != CR_SUCCESS {
         return Vec::new();
     }
     let mut buf = vec![0u16; len as usize];
-    if unsafe { CM_Get_Device_ID_ListW(filter.as_ptr(), buf.as_mut_ptr(), len, flags) } != CR_SUCCESS {
+    if unsafe { CM_Get_Device_ID_ListW(filter_ptr, buf.as_mut_ptr(), len, flags) } != CR_SUCCESS {
         return Vec::new();
     }
     from_multi_sz(&buf)
+}
+
+fn multi_sz_property(node: u32, key: &DEVPROPKEY) -> Vec<String> {
+    let mut buf = [0u16; 512];
+    let mut size = size_of_val(&buf) as u32;
+    let mut ty = 0u32;
+    let ok = unsafe { CM_Get_DevNode_PropertyW(node, key, &mut ty, buf.as_mut_ptr().cast(), &mut size, 0) };
+    if ok == CR_SUCCESS { from_multi_sz(&buf) } else { Vec::new() }
 }
 
 /// The name a USB controller gives itself (its product string, as Device Manager shows it under
@@ -124,7 +134,7 @@ fn present_ids(enumerator: &str) -> Vec<String> {
 /// Controller for PC" instead of "XInput Controller". Virtual controllers are skipped.
 pub fn usb_product_name(vendor: u16, product: u16) -> Option<String> {
     let prefix = format!(r"USB\VID_{vendor:04X}&PID_{product:04X}");
-    present_ids("USB")
+    present_ids(Some("USB"))
         .into_iter()
         .filter(|id| id.to_ascii_uppercase().starts_with(&prefix))
         .filter(|id| !is_virtual_instance(id))
@@ -152,21 +162,7 @@ pub fn ancestry(interface_path: &str) -> Vec<String> {
         if out.len() == 6 || upper.starts_with("USB\\ROOT_HUB") || upper.starts_with("PCI\\") || upper.starts_with("ACPI\\") {
             break;
         }
-        let mut hw = [0u16; 512];
-        let mut size = size_of_val(&hw) as u32;
-        let mut ty = 0u32;
-        let first_hw = (unsafe { CM_Get_DevNode_PropertyW(n, &DEVPKEY_Device_HardwareIds, &mut ty, hw.as_mut_ptr().cast(), &mut size, 0) }
-            == CR_SUCCESS)
-            .then(|| from_multi_sz(&hw).into_iter().next())
-            .flatten();
-        let mut line = crate::report::without_address(&first_hw.unwrap_or_else(|| model_part(&id)));
-        if let Some(d) = string_property(n, &DEVPKEY_Device_BusReportedDeviceDesc).filter(|d| !d.trim().is_empty()) {
-            line.push_str(&format!(" \"{}\"", d.trim()));
-        }
-        if let Some(s) = string_property(n, &DEVPKEY_Device_Service).filter(|s| !s.is_empty()) {
-            line.push_str(&format!(" [{s}]"));
-        }
-        out.push(line);
+        out.push(describe(n, &id));
         // A composite device's interface (`&MI_`) sits under the device itself, which says more.
         if (upper.starts_with("USB\\") && !upper.contains("&MI_")) || upper.starts_with("BTH") {
             break;
@@ -174,4 +170,65 @@ pub fn ancestry(interface_path: &str) -> Vec<String> {
         node = parent(n);
     }
     out
+}
+
+/// One device as a report shows it: its first hardware id (with the revision), the name the
+/// device gives itself and its driver. Nothing that tells one unit from another.
+fn describe(node: u32, id: &str) -> String {
+    let first_hw = multi_sz_property(node, &DEVPKEY_Device_HardwareIds).into_iter().next();
+    let mut line = crate::report::without_address(&first_hw.unwrap_or_else(|| model_part(id)));
+    if let Some(d) = string_property(node, &DEVPKEY_Device_BusReportedDeviceDesc).filter(|d| !d.trim().is_empty()) {
+        line.push_str(&format!(" \"{}\"", d.trim()));
+    }
+    if let Some(s) = string_property(node, &DEVPKEY_Device_Service).filter(|s| !s.is_empty()) {
+        line.push_str(&format!(" [{s}]"));
+    }
+    line
+}
+
+/// The drivers behind XInput: Xbox One and Series controllers and the pads licensed for them
+/// (`xboxgip`), Xbox 360 style pads and receivers (`xusb22`), and the filter Xbox controllers on
+/// Bluetooth go through (`xinputhid`).
+const XINPUT_DRIVERS: [&str; 3] = ["xboxgip", "xusb22", "xinputhid"];
+
+/// The most devices [`xinput_devices`] lists.
+const XINPUT_DEVICES_MAX: usize = 8;
+
+/// The present devices that XInput's drivers run, virtual controllers left out, for a report on
+/// a controller read through XInput: XInput gives no device path to look up and, for many pads
+/// licensed for Xbox, not even their ids (`045e:02ff`). One of these is that controller.
+pub fn xinput_devices() -> Vec<String> {
+    let drives = |node: u32| {
+        let service = string_property(node, &DEVPKEY_Device_Service).unwrap_or_default();
+        let filters = [multi_sz_property(node, &DEVPKEY_Device_UpperFilters), multi_sz_property(node, &DEVPKEY_Device_LowerFilters)];
+        XINPUT_DRIVERS.iter().any(|d| service.eq_ignore_ascii_case(d) || filters.iter().flatten().any(|f| f.eq_ignore_ascii_case(d)))
+    };
+    let mut out: Vec<String> = present_ids(None)
+        .into_iter()
+        .filter_map(|id| Some((locate(&id)?, id)))
+        .filter(|(node, _)| drives(*node))
+        .filter(|(_, id)| !is_virtual_instance(id))
+        .map(|(node, id)| describe(node, &id))
+        .collect();
+    out.sort();
+    out.dedup();
+    out.truncate(XINPUT_DEVICES_MAX);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xinput_devices_say_nothing_of_the_unit() {
+        let t = std::time::Instant::now();
+        let devices = xinput_devices();
+        println!("{} in {:?}: {devices:#?}", devices.len(), t.elapsed());
+        assert!(devices.len() <= XINPUT_DEVICES_MAX);
+        for d in &devices {
+            assert_eq!(*d, crate::report::without_address(d), "a Bluetooth address left in {d}");
+            assert!(!d.contains("ViGEm"), "a virtual controller in {d}");
+        }
+    }
 }

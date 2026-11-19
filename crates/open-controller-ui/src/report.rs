@@ -95,6 +95,8 @@ pub struct Report {
     pub bad_email: bool,
     /// Asked once to say what goes wrong, on sending a problem with nothing written.
     pub asked_message: bool,
+    /// Asked once to press the buttons that misbehave, on sending with nothing pressed.
+    pub asked_press: bool,
     /// The system's name, read away from the interface thread when the dialog opens.
     pub system: Option<String>,
     /// The controller as it was when the dialog opened, kept should it disconnect.
@@ -159,15 +161,65 @@ impl Report {
         }
     }
 
-    fn arrived(&self) -> Vec<String> {
+    /// What arrived, by the gamepad's names, then by the joystick's own numbering. For a
+    /// controller with a gamepad mapping (`mapping`), only the joystick's parts the mapping leaves
+    /// out: the rest already arrived under their gamepad names.
+    fn arrived(&self, mapping: Option<&str>) -> Vec<String> {
         let mut out: Vec<String> =
             (0..BUTTON_NAMES.len()).filter(|&b| self.seen & 1 << b != 0).map(|b| BUTTON_NAMES[b].to_string()).collect();
         out.extend(self.axes.iter().zip(AXIS_NAMES).filter(|((lo, hi), _)| moved(*lo, *hi)).map(|(_, n)| n.to_string()));
         if turned(self.gyro_peak) {
             out.push("gyro".into());
         }
-        out.extend(raw_arrived(self.raw_buttons, &self.raw_axes, &self.raw_hats));
+        out.extend(self.raw_left_out(mapping.map(Parts::of).as_ref()));
         out
+    }
+
+    fn raw_left_out(&self, mapped: Option<&Parts>) -> Vec<String> {
+        left_out(self.raw_buttons, &self.raw_axes, &self.raw_hats, mapped)
+    }
+}
+
+/// A joystick's parts that moved, without those `mapped` names.
+fn left_out(buttons: u64, axes: &[(i16, i16)], hats: &[u8], mapped: Option<&Parts>) -> Vec<String> {
+    let Some(m) = mapped else { return raw_arrived(buttons, axes, hats) };
+    let axes: Vec<(i16, i16)> = axes.iter().enumerate().map(|(i, &a)| if m.axes & 1 << i != 0 { (0, 0) } else { a }).collect();
+    let hats: Vec<u8> = hats.iter().enumerate().map(|(i, &h)| h & !m.hats.get(i).copied().unwrap_or(0)).collect();
+    raw_arrived(buttons & !m.buttons, &axes, &hats)
+}
+
+/// The joystick parts a gamepad mapping names (`a:b0,lefttrigger:a2,dpup:h0.1,...`): buttons and
+/// axes by bit, and each hat's directions.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Parts {
+    buttons: u64,
+    axes: u64,
+    hats: Vec<u8>,
+}
+
+impl Parts {
+    fn of(mapping: &str) -> Parts {
+        let mut p = Parts::default();
+        // The GUID and the name come first; `platform:` and the like are not parts.
+        for field in mapping.split(',').skip(2) {
+            let Some((_, v)) = field.split_once(':') else { continue };
+            let v = v.trim_start_matches(['+', '-']).trim_end_matches('~');
+            let num = |s: &str| s.parse::<u32>().ok().filter(|&n| n < 64);
+            if let Some(n) = v.strip_prefix('b').and_then(num) {
+                p.buttons |= 1 << n;
+            } else if let Some(n) = v.strip_prefix('a').and_then(num) {
+                p.axes |= 1 << n;
+            } else if let Some((h, bit)) = v.strip_prefix('h').and_then(|h| h.split_once('.'))
+                && let (Ok(h), Ok(bit)) = (h.parse::<usize>(), bit.parse::<u8>())
+                && h < mapping::RAW_HATS
+            {
+                if p.hats.len() <= h {
+                    p.hats.resize(h + 1, 0);
+                }
+                p.hats[h] |= bit;
+            }
+        }
+        p
     }
 }
 
@@ -374,13 +426,20 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
                     let _ = writeln!(s, "{line}");
                 }
             }
+            if !f.xinput_devices.is_empty() {
+                let _ = writeln!(s, "\n== Devices XInput's drivers run (this controller is one of them)");
+                for line in &f.xinput_devices {
+                    let _ = writeln!(s, "{line}");
+                }
+            }
         }
         None => {
             let _ = writeln!(s, "\n(The resident process gave no details: the controller had left, or the window ran without it.)");
         }
     }
     let _ = writeln!(s, "\n== Input while this report was open");
-    let arrived = r.arrived();
+    let mapping = diagnosis.and_then(|d| d.facts.mapping.as_deref()).filter(|_| p.role != Role::Unmapped);
+    let arrived = r.arrived(mapping);
     let unread = p.role == Role::Unmapped && p.raw.is_none();
     let nothing = if unread { "not read: SDL has no gamepad mapping for it and could not open it" } else { "nothing" };
     let _ = writeln!(s, "{}", if arrived.is_empty() { nothing.to_string() } else { arrived.join(", ") });
@@ -389,7 +448,16 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
             let _ = writeln!(s, "{name}: {lo} to {hi}");
         }
     }
-    if p.raw.is_some() {
+    if let Some(m) = mapping.filter(|_| p.raw.is_some()) {
+        let all = raw_arrived(r.raw_buttons, &r.raw_axes, &r.raw_hats);
+        let left_out = r.raw_left_out(Some(&Parts::of(m)));
+        let _ = writeln!(s, "By the joystick's own numbering: {}", if all.is_empty() { "nothing".to_string() } else { all.join(", ") });
+        let _ = writeln!(
+            s,
+            "Of those, left out of its mapping: {}",
+            if left_out.is_empty() { "none".to_string() } else { left_out.join(", ") }
+        );
+    } else if p.raw.is_some() {
         let _ = writeln!(s, "By the joystick's own numbering, as a mapping names it:");
         for (i, (lo, hi)) in r.raw_axes.iter().enumerate() {
             let _ = writeln!(s, "a{i}: {lo} to {hi}");
@@ -473,6 +541,7 @@ impl MainView {
             copied: false,
             bad_email: false,
             asked_message: false,
+            asked_press: false,
             system: None,
             pad,
             seen: 0,
@@ -498,6 +567,7 @@ impl MainView {
         }
         self.model.update(cx, |m, _| m.diagnosis = None);
         self.send(ToTray::Diagnose(key), cx);
+        self.send(ToTray::RawInput(Some(key)), cx);
         cx.spawn(async move |this, cx| {
             let system = cx.background_executor().spawn(async { report::system() }).await;
             let _ = this.update(cx, |this, cx| {
@@ -516,6 +586,7 @@ impl MainView {
             return;
         }
         self.report = None;
+        self.send(ToTray::RawInput(None), cx);
         self.focus.focus(window, cx);
         cx.notify();
     }
@@ -533,6 +604,14 @@ impl MainView {
         fields[next].focus(window, cx);
     }
 
+    /// The gamepad mapping of the controller a report is on, once the resident process told it;
+    /// `None` for a joystick without one, whose parts all go by its own numbering.
+    fn mapping_of(&self, key: PadKey, pad: &PadView, cx: &Context<Self>) -> Option<String> {
+        let m = self.model.read(cx);
+        let d = m.diagnosis.as_ref().filter(|(k, _)| *k == key).and_then(|(_, d)| d.as_deref())?;
+        d.facts.mapping.clone().filter(|_| pad.role != Role::Unmapped)
+    }
+
     fn report_text(&self, cx: &Context<Self>) -> String {
         let Some(r) = &self.report else { return String::new() };
         let m = self.model.read(cx);
@@ -542,6 +621,7 @@ impl MainView {
 
     fn send_report(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let report_text = self.report_text(cx);
+        let mapping = self.report.as_ref().and_then(|r| self.mapping_of(r.key, &r.pad, cx));
         let Some(r) = self.report.as_mut() else { return };
         let email = r.email.read(cx).text().trim().to_string();
         r.bad_email = !email.is_empty() && !plausible_email(&email);
@@ -554,6 +634,14 @@ impl MainView {
         if !r.unknown && !r.asked_message && r.message.read(cx).text().trim().is_empty() {
             r.asked_message = true;
             r.message.focus_handle(cx).focus(window, cx);
+            cx.notify();
+            return;
+        }
+        // Without a press the report cannot tell a button that sends nothing from one the app
+        // ignores: asked for once, and sent as it is on the second try.
+        let readable = !(r.pad.role == Role::Unmapped && r.pad.raw.is_none());
+        if readable && !r.asked_press && r.arrived(mapping.as_deref()).is_empty() {
+            r.asked_press = true;
             cx.notify();
             return;
         }
@@ -670,7 +758,7 @@ impl MainView {
                 .into_any_element(),
             state => {
                 let sending = *state == Stage::Sending;
-                let arrived = r.arrived();
+                let arrived = r.arrived(self.mapping_of(r.key, &r.pad, cx).as_deref());
                 let arrived_text = if arrived.is_empty() { text.report_nothing_pressed.to_string() } else { arrived.join(", ") };
                 let failure = match state {
                     Stage::Failed(e) if e == "rate" => Some(text.report_rate.to_string()),
@@ -731,7 +819,8 @@ impl MainView {
                                         .min_w(px(0.)),
                                 ),
                             )
-                            .child(caption(fill(text.report_pressed, arrived_text), t.text2)),
+                            .child(caption(fill(text.report_pressed, arrived_text), t.text2))
+                            .when(r.asked_press && arrived.is_empty(), |d| d.child(caption(text.report_press_empty, t.caution))),
                     )
                     .child(
                         div()
@@ -883,6 +972,20 @@ mod tests {
         let got = raw_arrived(0b101, &[(0, 0), (-32768, 32767), (-500, 400)], &[0b0011]);
         assert_eq!(got, ["b0", "b2", "a1", "h0 up", "h0 right"], "drift is not a moved axis");
         assert_eq!(or_none(""), "none");
+    }
+
+    #[test]
+    fn parts_a_mapping_leaves_out() {
+        // The Vader 5S report's mapping, with a made-up extra button on b12 and a second hat.
+        let line = "0300fa675e040000ff02000000007801,XInput Controller,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b10,leftshoulder:b4,leftstick:b8,lefttrigger:a2,leftx:a0,lefty:a1,rightshoulder:b5,rightstick:b9,righttrigger:+a5,rightx:a3,righty:-a4~,start:b7,x:b2,y:b3,platform:Windows,";
+        let parts = Parts::of(line);
+        assert_eq!(parts.buttons, 0b111_1111_1111);
+        assert_eq!(parts.axes, 0b11_1111);
+        assert_eq!(parts.hats, [0b1111]);
+        let full = (-32768, 32767);
+        let got = left_out(1 << 0 | 1 << 12, &[full; 7], &[0b0001, 0b0100], Some(&parts));
+        assert_eq!(got, ["b12", "a6", "h1 down"], "only what the mapping does not name");
+        assert_eq!(left_out(1, &[], &[], None), ["b0"], "without a mapping, everything");
     }
 
     #[test]

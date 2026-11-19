@@ -272,10 +272,11 @@ impl MainView {
     pub fn linked(&self, window: &Window, cx: &mut Context<Self>) {
         self.send(ToTray::Focused(window.is_window_active()), cx);
         let m = self.model.read(cx);
-        if let Some(r) = &self.report
-            && !m.diagnosis.as_ref().is_some_and(|(k, _)| *k == r.key)
-        {
-            self.send(ToTray::Diagnose(r.key), cx);
+        if let Some(r) = &self.report {
+            if !m.diagnosis.as_ref().is_some_and(|(k, _)| *k == r.key) {
+                self.send(ToTray::Diagnose(r.key), cx);
+            }
+            self.send(ToTray::RawInput(Some(r.key)), cx);
         }
     }
 

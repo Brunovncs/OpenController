@@ -437,6 +437,7 @@ pub const ZH: Text = Text {
     report_press_gyro: "保持此页面打开，按下有问题的按键并轻轻转动手柄，报告会显示收到的输入。",
     report_pressed: "已收到：{}",
     report_nothing_pressed: "暂无输入",
+    report_press_empty: "还没有收到任何输入。请按下不正常的按键再发送，或者直接发送。",
     report_show: "查看将要发送的内容",
     report_hide: "收起设备信息",
     report_send: "发送",

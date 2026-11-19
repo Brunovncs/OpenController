@@ -519,17 +519,23 @@ pub struct Joystick {
 impl Joystick {
     /// Reads its buttons, axes and hats into `out`, from SDL's cache. Returns whether any changed.
     pub fn read(&self, out: &mut RawInput) -> bool {
-        unsafe {
-            let buttons = SDL_GetNumJoystickButtons(self.js).clamp(0, 64);
-            let held = (0..buttons).filter(|&i| SDL_GetJoystickButton(self.js, i)).fold(0, |b, i| b | 1 << i);
-            let mut changed = held != out.buttons;
-            out.buttons = held;
-            let axes = SDL_GetNumJoystickAxes(self.js).clamp(0, RAW_AXES as i32);
-            changed |= set_all(&mut out.axes, (0..axes).map(|i| SDL_GetJoystickAxis(self.js, i)));
-            let hats = SDL_GetNumJoystickHats(self.js).clamp(0, RAW_HATS as i32);
-            changed |= set_all(&mut out.hats, (0..hats).map(|i| SDL_GetJoystickHat(self.js, i)));
-            changed
-        }
+        unsafe { read_joystick(self.js, out) }
+    }
+}
+
+/// A joystick's buttons, axes and hats by its own numbering, into `out`, from SDL's cache.
+/// Returns whether any changed.
+unsafe fn read_joystick(js: *mut SDL_Joystick, out: &mut RawInput) -> bool {
+    unsafe {
+        let buttons = SDL_GetNumJoystickButtons(js).clamp(0, 64);
+        let held = (0..buttons).filter(|&i| SDL_GetJoystickButton(js, i)).fold(0, |b, i| b | 1 << i);
+        let mut changed = held != out.buttons;
+        out.buttons = held;
+        let axes = SDL_GetNumJoystickAxes(js).clamp(0, RAW_AXES as i32);
+        changed |= set_all(&mut out.axes, (0..axes).map(|i| SDL_GetJoystickAxis(js, i)));
+        let hats = SDL_GetNumJoystickHats(js).clamp(0, RAW_HATS as i32);
+        changed |= set_all(&mut out.hats, (0..hats).map(|i| SDL_GetJoystickHat(js, i)));
+        changed
     }
 }
 
@@ -606,6 +612,13 @@ unsafe fn wii_dpad_as_buttons(gp: *mut SDL_Gamepad) -> bool {
 }
 
 impl Gamepad {
+    /// Its joystick's own buttons, axes and hats, under the gamepad mapping: what a report needs
+    /// to find buttons SDL reads but the mapping leaves out. Returns whether any changed.
+    pub fn read_raw(&self, out: &mut RawInput) -> bool {
+        let js = unsafe { SDL_GetGamepadJoystick(self.gp) };
+        !js.is_null() && unsafe { read_joystick(js, out) }
+    }
+
     pub fn name(&self) -> String {
         text(unsafe { SDL_GetGamepadName(self.gp) }).map(display_name).unwrap_or_else(|| "Controller".into())
     }

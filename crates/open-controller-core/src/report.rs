@@ -46,6 +46,10 @@ pub struct Facts {
     pub capabilities: Vec<String>,
     /// The device and its parents up to the USB or Bluetooth device, as Device Manager names them.
     pub devices: Vec<String>,
+    /// For a controller read through XInput, which gives no device to look up: the devices
+    /// XInput's drivers run, one of which is this controller.
+    #[serde(default)]
+    pub xinput_devices: Vec<String>,
 }
 
 /// A controller's facts and what the resident process saw happen lately, as it hands them to

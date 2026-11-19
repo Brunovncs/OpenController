@@ -136,7 +136,7 @@ impl Model {
             }
             return self.refresh_demo(cx);
         }
-        if self.demo && matches!(req, ToTray::SetVirtualDriver(_) | ToTray::SplitJoyCons(_)) {
+        if self.demo && matches!(req, ToTray::SetVirtualDriver(_) | ToTray::SplitJoyCons(_) | ToTray::RawInput(_)) {
             // Shown in the window only: the resident process's controllers stay as they are.
             return;
         }

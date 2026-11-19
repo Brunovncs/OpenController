@@ -72,6 +72,11 @@ pub fn ancestry(_: &str) -> Vec<String> {
     Vec::new()
 }
 
+/// Only Windows reads controllers through XInput.
+pub fn xinput_devices() -> Vec<String> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
