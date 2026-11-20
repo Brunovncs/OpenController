@@ -594,7 +594,7 @@ impl MainView {
             .when(framed, |d| d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
             .child(mark)
             .child(strong("OpenController", t.text))
-            // Left out of the README's screenshot, so it needs no new one each release.
+            // Left out of the screenshots, so a release needs no new ones.
             .when(std::env::var_os("OPEN_CONTROLLER_NO_VERSION").is_none(), |d| {
                 d.child(caption(concat!("v", env!("CARGO_PKG_VERSION")), t.text2))
             });

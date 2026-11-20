@@ -1,8 +1,7 @@
-# Takes the window's screenshots from the example controllers (`--demo`), dark theme:
-# docs/controller.png (a controller's page, without the version) for the README and, when the site
-# sits next to this repository, public/window.png and public/window-pt.png, in English and
-# Portuguese, for its home page. Run it after any change to the window, so the site's pictures show
-# the version that is out.
+# Takes the window's screenshots from the example controllers (`--demo`), dark theme and without the
+# version, so a release needs none: docs/controller.png (a controller's page) for the README and,
+# when the site sits next to this repository, public/window.png and public/window-pt.png, in English
+# and Portuguese, for its share images. Run it after a visible change to the window.
 #
 #     .\scripts\screenshot.ps1 [-Site ..\open-controller-site]
 #
@@ -68,8 +67,10 @@ function Shot([string]$lang, [string[]]$outs, [int]$w = $Width, [int]$hh = $Heig
 }
 
 $env:OPEN_CONTROLLER_NO_VERSION = "1"
-try { Shot "en" @(Join-Path $root "docs\controller.png") 1100 840 -Page } finally { Remove-Item Env:OPEN_CONTROLLER_NO_VERSION }
-if (Test-Path (Join-Path $Site "public")) {
-    Shot "en" @(Join-Path $Site "public\window.png")
-    Shot "pt" @(Join-Path $Site "public\window-pt.png")
-}
+try {
+    Shot "en" @(Join-Path $root "docs\controller.png") 1100 840 -Page
+    if (Test-Path (Join-Path $Site "public")) {
+        Shot "en" @(Join-Path $Site "public\window.png")
+        Shot "pt" @(Join-Path $Site "public\window-pt.png")
+    }
+} finally { Remove-Item Env:OPEN_CONTROLLER_NO_VERSION }
