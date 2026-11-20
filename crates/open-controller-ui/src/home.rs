@@ -102,10 +102,11 @@ pub fn link_line(pad: &PadView, text: &Text) -> String {
     pad.links.iter().map(|&l| link_name(text, l)).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" + ")
 }
 
-/// The connections as chips: USB, Bluetooth, Receiver.
+/// The connections as chips: USB, Bluetooth, Receiver. They sit on the page, not on a card: raised
+/// like a card, so they show on the light page too.
 pub fn links(pad: &PadView, text: &Text, t: &Theme) -> Div {
     let names = pad.links.iter().map(|&l| link_name(text, l)).filter(|s| !s.is_empty());
-    div().flex().flex_wrap().gap(px(6.)).children(names.map(|n| chip(n, t.text2, t.control)))
+    div().flex().flex_wrap().gap(px(6.)).children(names.map(|n| chip(n, t.text2, t.layer).border_1().border_color(t.stroke)))
 }
 
 pub fn banner(message: String, action: Option<AnyElement>, t: &Theme) -> Div {
@@ -339,11 +340,6 @@ impl MainView {
         };
         let banner = problem.map(|(message, action)| banner(message, action, &t));
 
-        let count = match snap.pads.len() {
-            0 => String::new(),
-            1 => text.controllers_one.to_string(),
-            n => format!("{n} {}", text.controllers_many),
-        };
         // As many columns as fit, the tiles stretched to fill the row.
         let width = (crate::frame::inner_width(window) - 2. * layout::GUTTER).min(layout::MAX_W - 2. * layout::GUTTER);
         let cols = ((width + GAP) / (TILE_MIN_W + GAP)).floor().max(1.);
@@ -374,7 +370,6 @@ impl MainView {
                             .flex_1()
                             .min_w(px(0.))
                             .child(display(text.controllers, t.text))
-                            .child(caption(count, t.text3).pb(px(6.)))
                             .when(swap_hint, |d| d.child(info_tip("swap-tip", text.swap_hint, &t).mb(px(7.)))),
                     )
                     .children(connect),

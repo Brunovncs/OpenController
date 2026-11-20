@@ -250,7 +250,7 @@ impl MainView {
                     )
                     .when(pause_shown, |d| d.child(setting(text.gyro_pause, text.gyro_pause_desc, &t, pause)))
                     .child(advanced)
-                    .when(open, |d| d.child(self.gyro_advanced_settings(g, key, text, cx)))
+                    .when(open, |d| d.child(crate::motion::enter(self.gyro_advanced_settings(g, key, text, cx), "gyro-advanced")))
             })
             .into_any_element()
     }

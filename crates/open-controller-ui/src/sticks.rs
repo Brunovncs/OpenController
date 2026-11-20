@@ -263,6 +263,7 @@ fn other_choice(id: &'static str, label: impl Into<SharedString>, on: bool, t: &
         .rounded(px(radius::CHIP))
         .cursor_pointer()
         .when(on, |d| d.bg(t.layer).border_1().border_color(t.stroke_strong))
+        .when(!on, |d| d.hover(move |s| s.bg(t.layer.opacity(0.5))))
         .child(caption(label.into(), if on { t.text } else { t.text2 }))
 }
 
@@ -464,7 +465,7 @@ impl MainView {
         let picked = if other || open.is_some() { OTHER } else { v };
         let choices = presets.iter().map(|&p| (p, knob.label(p, text).into())).collect();
         let label = if other { fill(text.custom_value_is, knob.label(v, text)) } else { text.custom_value.to_string() };
-        let row = widgets::segmented(knob.id(), choices, picked, &t, cx, move |this, v, cx| {
+        let row = widgets::segmented_track(knob.id(), choices, picked, &t, cx, move |this, v, cx| {
             this.custom = None;
             this.set_knob(key, knob, right, v, cx);
         })
@@ -475,7 +476,7 @@ impl MainView {
         let (lo, hi) = knob.range();
         let unit = |v: u16| if knob == Knob::Curve { power(v, text) } else { format!("{v} %") };
         let hint = fill(&fill(text.custom_range, unit(lo)), unit(hi));
-        div().flex().flex_col().gap(px(8.)).child(row).when_some(open, |d, c| {
+        div().flex().flex_col().gap(px(8.)).child(div().flex().min_w(px(0.)).child(row)).when_some(open, |d, c| {
             d.child(div().flex().items_center().gap(px(12.)).child(div().w(px(96.)).child(c.field.clone())).child(caption(hint, t.text2)))
         })
     }

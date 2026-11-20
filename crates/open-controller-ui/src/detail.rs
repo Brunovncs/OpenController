@@ -12,7 +12,7 @@ use crate::theme::{Theme, icon as glyph, radius};
 use crate::ui::{MainView, Screen, Section, Tab};
 use crate::widgets::{
     Kind, body, button, caption, card, chip, display, group, icon, icon_button, keycap, labelled, row, segmented, stage, strong, switch,
-    title,
+    title, with_tip,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -186,6 +186,14 @@ pub fn profile_label(text: &Text, pad: &PadView, i: usize) -> String {
     profile_name(text, pad.profiles.list.get(i).map_or("", |p| p.name.as_str()), i)
 }
 
+/// The profile menu, open: a profile's name being typed, and the open programs offered for the
+/// profile in use to switch on with. Closing the menu drops both.
+#[derive(Default)]
+pub struct ProfileMenu {
+    pub renaming: Option<Rename>,
+    pub picker: Option<Vec<String>>,
+}
+
 /// A profile being renamed: the box its name is typed into, in its place in the list.
 pub struct Rename {
     pub profile: usize,
@@ -280,7 +288,9 @@ impl MainView {
             }
         });
         field.focus_handle(cx).focus(window, cx);
-        self.renaming = Some(Rename { profile: i, field, _events: events });
+        if let Some(m) = self.profile_menu.as_mut() {
+            m.renaming = Some(Rename { profile: i, field, _events: events });
+        }
         cx.notify();
     }
 
@@ -291,8 +301,8 @@ impl MainView {
             let open = cx.background_executor().spawn(async { crate::programs::open() }).await;
             let _ = this.update(cx, |this, cx| {
                 // Not when the menu it is in closed meanwhile.
-                if this.profile_menu {
-                    this.picker = Some(open);
+                if let Some(m) = this.profile_menu.as_mut() {
+                    m.picker = Some(open);
                     cx.notify();
                 }
             });
@@ -301,7 +311,7 @@ impl MainView {
     }
 
     pub fn stop_renaming(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.renaming.take().is_some() {
+        if self.profile_menu.as_mut().and_then(|m| m.renaming.take()).is_some() {
             self.focus.focus(window, cx);
         }
         cx.notify();
@@ -331,13 +341,11 @@ impl MainView {
                         .child(caption(status(pad, text), t.text2))
                         .child(links(pad, text, &t))
                         .children(power(pad, text, &t))
-                        .child(
-                            div()
-                                .id("rating")
-                                .cursor_pointer()
-                                .child(report::rating_chip(text, pad, &t))
-                                .on_click(cx.listener(|this, _, _, cx| this.show(Section::Info, cx))),
-                        ),
+                        .child(with_tip(
+                            div().id("rating").child(report::rating_chip(text, pad, &t)),
+                            report::rating_hint(text, report::rating_of(pad)),
+                            &t,
+                        )),
                 ),
             )
             .when(assignable, |d| d.child(self.profile_button(pad, text, cx)))
@@ -468,7 +476,9 @@ impl MainView {
                         ),
                 )
             })
-            .when(self.profile_menu && assignable, |d| d.child(self.profile_menu(pad, text, cx)))
+            .when(self.profile_menu.is_some() && assignable, |d| {
+                d.child(crate::motion::enter(div().child(self.profile_menu(pad, text, cx)), "profile-menu"))
+            })
             .when(pad.in_use != pad.profiles.active && !kept, |d| {
                 d.child(
                     div()
@@ -484,7 +494,14 @@ impl MainView {
                         .child(body(fill(text.in_use_auto, profile_label(text, pad, pad.in_use)), t.text)),
                 )
             })
-            .child(div().flex().items_start().gap(px(24.)).child(rail).child(div().flex_1().min_w(px(0.)).child(content)))
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(px(24.))
+                    .child(rail)
+                    .child(crate::motion::enter(div().flex_1().min_w(px(0.)).child(content), ("section", self.shown.1))),
+            )
             .into_any_element()
     }
 
@@ -529,12 +546,17 @@ impl MainView {
             .rounded(px(radius::CONTROL))
             .bg(t.control)
             .border_1()
-            .border_color(if self.profile_menu { t.accent } else { t.stroke })
+            .border_color(if self.profile_menu.is_some() { t.accent } else { t.stroke })
             .cursor_pointer()
             .hover(move |s| s.bg(t.control_hover))
             .on_click(cx.listener(|this, _, window, cx| {
-                this.profile_menu = !this.profile_menu;
-                this.stop_renaming(window, cx);
+                if this.profile_menu.is_some() {
+                    this.stop_renaming(window, cx);
+                    this.profile_menu = None;
+                } else {
+                    this.profile_menu = Some(ProfileMenu::default());
+                }
+                cx.notify();
             }))
             .child(caption(text.profile, t.text3))
             .child(strong(name, t.text))
@@ -549,7 +571,8 @@ impl MainView {
         let mut list = div().flex().flex_col().gap(px(2.));
         for (i, p) in pad.profiles.list.iter().enumerate() {
             let on = i == pad.profiles.active;
-            let name: AnyElement = match self.renaming.as_ref().filter(|r| r.profile == i) {
+            let renaming = self.profile_menu.as_ref().and_then(|m| m.renaming.as_ref());
+            let name: AnyElement = match renaming.filter(|r| r.profile == i) {
                 Some(r) => div().flex_1().min_w(px(0.)).child(r.field.clone()).into_any_element(),
                 None => body(profile_name(text, &p.name, i), t.text).flex_1().into_any_element(),
             };
@@ -566,7 +589,7 @@ impl MainView {
                     .when(on, |d| d.bg(t.accent_soft))
                     .when(!on, |d| d.hover(move |s| s.bg(t.control)))
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.renaming.is_none() {
+                        if this.profile_menu.as_ref().is_none_or(|m| m.renaming.is_none()) {
                             this.editor = None;
                             this.edit_now(key, Edit::Select(i), cx);
                         }
@@ -643,7 +666,7 @@ impl MainView {
                     }))),
             );
         }
-        let picker = self.picker.clone().map(|open| {
+        let picker = self.profile_menu.as_ref().and_then(|m| m.picker.clone()).map(|open| {
             let mut list = div().flex().flex_wrap().gap(px(6.));
             if open.is_empty() {
                 list = list.child(caption(text.no_open_programs, t.text3));
@@ -664,7 +687,9 @@ impl MainView {
                         .hover(move |s| s.bg(t.control))
                         .child(caption(p, t.text))
                         .on_click(cx.listener(move |this, _, _, cx| {
-                            this.picker = None;
+                            if let Some(m) = this.profile_menu.as_mut() {
+                                m.picker = None;
+                            }
                             this.edit_now(key, Edit::AddProgram(i, name.clone()), cx);
                         })),
                 );
@@ -694,7 +719,7 @@ impl MainView {
                     ))
                     .child(button("add-program", text.add_program, Kind::Subtle, &t).text_color(t.accent).on_click(cx.listener(
                         |this, _, _, cx| {
-                            if this.picker.take().is_none() {
+                            if this.profile_menu.as_mut().and_then(|m| m.picker.take()).is_none() {
                                 this.list_programs(cx);
                             }
                             cx.notify();
@@ -702,7 +727,7 @@ impl MainView {
                     ))),
             )
             .when(!programs.is_empty(), |d| d.child(chips))
-            .children(picker)
+            .children(picker.map(|p| crate::motion::enter(p, "picker")))
             .into_any_element()
     }
 
@@ -796,7 +821,7 @@ impl MainView {
             .child(icon(if selected { glyph::CHEVRON_DOWN } else { glyph::CHEVRON_RIGHT }, 12., t.text2));
         let mut g = group().child(row);
         if selected {
-            g = g.child(self.editor_panel(pad, b, text, &t, cx));
+            g = g.child(crate::motion::enter(div().child(self.editor_panel(pad, b, text, &t, cx)), ("editor", b as usize)));
         }
         g
     }
@@ -854,7 +879,7 @@ impl MainView {
         for (i, &b) in binding::NORMAL.iter().enumerate() {
             g = g.child(self.button_row(pad, b, Some(normal_label(pad, b)), text.normal_buttons[i].to_string(), &tt, cx));
         }
-        col.child(g.mt(px(12.)))
+        col.child(crate::motion::enter(g.mt(px(12.)), "all-buttons-list"))
     }
 
     /// Clears every assignment of the profile in use, after a second click.
@@ -989,6 +1014,7 @@ impl MainView {
                     .rounded(px(radius::CHIP))
                     .cursor_pointer()
                     .when(on, |d| d.bg(t.layer).border_1().border_color(t.stroke_strong))
+                    .when(!on, |d| d.hover(move |s| s.bg(t.layer.opacity(0.5))))
                     .child(caption(format!("{level} %"), if on { t.text } else { t.text2 }))
                     .on_click(cx.listener(move |this, _, _, cx| this.edit_now(key, Edit::Brightness(level), cx))),
             );
@@ -1033,7 +1059,7 @@ impl MainView {
                     .child(option("light-player", text.light_player, None, p.light == Light::Player, Light::Player, cx))
                     .child(option("light-color", text.light_color, None, color_on, Light::Color(current_color), cx))
                     .when(color_on, |d| {
-                        d.child(
+                        d.child(crate::motion::enter(
                             div()
                                 .flex()
                                 .flex_col()
@@ -1043,7 +1069,8 @@ impl MainView {
                                 .child(swatches)
                                 .child(caption(text.rgb_hex, t.text2))
                                 .child(div().w(px(140.)).child(color_field)),
-                        )
+                            "colors",
+                        ))
                     })
                     .child(option(
                         "light-battery",
@@ -1131,26 +1158,29 @@ impl MainView {
         };
         // A controller whose ids another model copies: its owner says which one it is.
         let aliases: Vec<&models::Alias> = models::aliases(pad.vendor, pad.product).collect();
+        // Otherwise the model is the name on top of the page, not said again.
         let model = match models::lookup(pad.vendor, pad.product) {
             Some(row) if !aliases.is_empty() && pad.store.is_some() => {
                 let mut choices: Vec<(Option<&'static str>, SharedString)> = vec![(None, row.3.into())];
                 choices.extend(aliases.iter().map(|a| (Some(a.2), a.4.into())));
                 let picked = models::alias(pad.vendor, pad.product, pad.profiles.model.as_deref()).map(|a| a.2);
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_start()
-                    .gap(px(6.))
-                    .child(labelled(
-                        segmented("model", choices, picked, &t, cx, move |this, m: Option<&'static str>, cx| {
-                            this.edit_now(key, Edit::Model(m.map(String::from)), cx)
-                        }),
-                        text.model_alias_hint,
-                        &t,
-                    ))
-                    .into_any_element()
+                Some(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .gap(px(6.))
+                        .child(labelled(
+                            segmented("model", choices, picked, &t, cx, move |this, m: Option<&'static str>, cx| {
+                                this.edit_now(key, Edit::Model(m.map(String::from)), cx)
+                            }),
+                            text.model_alias_hint,
+                            &t,
+                        ))
+                        .into_any_element(),
+                )
             }
-            _ => body(pad.name.clone(), t.text).into_any_element(),
+            _ => None,
         };
         let output = (crate::tuning::can_choose_output(pad) && !kept_native(pad)).then(|| {
             div()
@@ -1177,12 +1207,10 @@ impl MainView {
             .flex_col()
             .max_w(px(720.))
             .overflow_hidden()
-            .child(line(text.info_model, model))
+            .when_some(model, |d, m| d.child(line(text.info_model, m)))
             .when(pad.vendor != 0, |d| {
                 d.child(line(text.info_usb_id, body(format!("{:04X}:{:04X}", pad.vendor, pad.product), t.text).into_any_element()))
             })
-            .child(line(text.info_connection, links(pad, text, &t).into_any_element()))
-            .when_some(power(pad, text, &t), |d, p| d.child(line(text.info_battery, p.into_any_element())))
             .child(line(
                 text.in_games,
                 div()
@@ -1222,10 +1250,6 @@ impl MainView {
                         .into_any_element(),
                 ))
             })
-            .child(line(
-                text.info_rating,
-                labelled(div().flex().child(report::rating_chip(text, pad, &t)), report::rating_hint(text, rating), &t).into_any_element(),
-            ))
             .child(
                 div().flex().justify_end().px(px(16.)).py(px(12.)).child(
                     button("report", text.report_problem, Kind::Standard, &t)
@@ -1255,6 +1279,7 @@ impl MainView {
                 .rounded(px(radius::CHIP))
                 .cursor_pointer()
                 .when(on, |d| d.bg(t.layer).border_1().border_color(t.stroke_strong))
+                .when(!on, |d| d.hover(move |s| s.bg(t.layer.opacity(0.5))))
                 .child(body(label, if on { t.text } else { t.text2 }).when(on, |d| d.font_weight(gpui::FontWeight::SEMIBOLD)))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     let Some(e) = this.editor.as_mut() else { return };

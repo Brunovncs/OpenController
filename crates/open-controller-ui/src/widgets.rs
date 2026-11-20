@@ -153,11 +153,12 @@ fn button_base(id: impl Into<ElementId>, kind: Kind, t: &Theme) -> Stateful<Div>
         .font_family(FONT)
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
+        .active(|s| s.opacity(0.8))
 }
 
 /// A button holding only an icon.
 pub fn icon_button(id: impl Into<ElementId>, glyph: &'static str, t: &Theme) -> Stateful<Div> {
-    let hover = t.control;
+    let (hover, pressed) = (t.control, t.control_hover);
     div()
         .id(id.into())
         .flex()
@@ -168,6 +169,7 @@ pub fn icon_button(id: impl Into<ElementId>, glyph: &'static str, t: &Theme) -> 
         .rounded(px(radius::CONTROL))
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
+        .active(move |s| s.bg(pressed))
         .child(icon(glyph, 16., t.text))
 }
 
@@ -202,7 +204,8 @@ pub fn switch(on: bool, label_on: &'static str, label_off: &'static str, t: &The
     div().flex().flex_none().items_center().gap(px(12.)).child(body(if on { label_on } else { label_off }, t.text2)).child(track)
 }
 
-/// A row of choices, one of them picked.
+/// A row of choices, one of them picked, as wide as its choices: wrapped in a box of its own, so
+/// a column it is in does not stretch its track.
 pub fn segmented<T: Copy + PartialEq + 'static, V: 'static>(
     id: &'static str,
     choices: Vec<(T, SharedString)>,
@@ -211,8 +214,21 @@ pub fn segmented<T: Copy + PartialEq + 'static, V: 'static>(
     cx: &mut Context<V>,
     on_pick: impl Fn(&mut V, T, &mut Context<V>) + 'static,
 ) -> Div {
+    div().flex().min_w(px(0.)).child(segmented_track(id, choices, picked, t, cx, on_pick))
+}
+
+/// The track of [`segmented`] itself, for a choice of one's own to be added at its end.
+pub fn segmented_track<T: Copy + PartialEq + 'static, V: 'static>(
+    id: &'static str,
+    choices: Vec<(T, SharedString)>,
+    picked: T,
+    t: &Theme,
+    cx: &mut Context<V>,
+    on_pick: impl Fn(&mut V, T, &mut Context<V>) + 'static,
+) -> Div {
     let on_pick = std::rc::Rc::new(on_pick);
-    let mut d = div().flex().flex_wrap().gap(px(4.)).p(px(3.)).rounded(px(radius::CONTROL)).bg(t.control);
+    let mut d = div().flex().flex_wrap().min_w(px(0.)).gap(px(4.)).p(px(3.)).rounded(px(radius::CONTROL)).bg(t.control);
+    let idle = t.layer.opacity(0.5);
     for (i, (value, label)) in choices.into_iter().enumerate() {
         let on = value == picked;
         let on_pick = on_pick.clone();
@@ -228,6 +244,7 @@ pub fn segmented<T: Copy + PartialEq + 'static, V: 'static>(
                 .rounded(px(radius::CHIP))
                 .cursor_pointer()
                 .when(on, |d| d.bg(t.layer).border_1().border_color(t.stroke_strong))
+                .when(!on, |d| d.hover(move |s| s.bg(idle)))
                 .child(caption(label, if on { t.text } else { t.text2 }))
                 .on_click(cx.listener(move |this, _, _, cx| on_pick(this, value, cx))),
         );

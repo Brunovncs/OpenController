@@ -23,7 +23,7 @@ controller with a gyro can aim.
 - **Light bar** colours, battery levels and a low battery warning.
 - **Native mode** for games that know a controller on their own, like a DualSense with its
   adaptive triggers.
-- **Light.** The background process uses about 3 MB of memory and adds under a millisecond of
+- **Light.** The background process uses up to 4 MB of memory and adds under a millisecond of
   latency.
 
 It reads [hundreds of controllers](https://opencontroller.com.br/en/controllers): PlayStation,
@@ -66,8 +66,8 @@ files of libudev, xkbcommon, Wayland, fontconfig and Vulkan. How it works is in
 
 ## Reporting a problem
 
-OpenController is in beta, and every report helps. Report a problem, on a controller's Information
-page, sends what it takes to fix it or add the controller. You can also open an
+OpenController is in beta. Report a problem, on a controller's Information page, sends what it
+takes to fix it or add the controller. You can also open an
 [issue](https://github.com/Brunovncs/OpenController/issues) or use the
 [contact form](https://opencontroller.com.br/#contact).
 

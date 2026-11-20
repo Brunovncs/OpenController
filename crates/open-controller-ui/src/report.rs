@@ -908,34 +908,31 @@ impl MainView {
             }
         };
 
-        Some(
-            div()
-                .id("report-scrim")
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .p(px(24.))
-                .bg(gpui::black().opacity(0.45))
-                .occlude()
-                .child(
-                    div()
-                        .id("report-dialog")
-                        .w_full()
-                        .max_w(px(560.))
-                        .max_h_full()
-                        .overflow_y_scroll()
-                        .p(px(24.))
-                        .rounded(px(radius::TILE))
-                        .bg(t.layer)
-                        .border_1()
-                        .border_color(t.stroke_strong)
-                        .shadow_lg()
-                        .child(content),
-                )
-                .into_any_element(),
-        )
+        let dialog = div()
+            .id("report-dialog")
+            .w_full()
+            .max_w(px(560.))
+            .max_h_full()
+            .overflow_y_scroll()
+            .p(px(24.))
+            .rounded(px(radius::TILE))
+            .bg(t.layer)
+            .border_1()
+            .border_color(t.stroke_strong)
+            .shadow_lg()
+            .child(content);
+        let scrim = div()
+            .id("report-scrim")
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(px(24.))
+            .bg(gpui::black().opacity(0.45))
+            .occlude()
+            .child(crate::motion::pop(dialog, "report-pop"));
+        Some(crate::motion::fade(scrim, "report-fade").into_any_element())
     }
 }
 

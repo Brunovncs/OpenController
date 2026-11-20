@@ -4,7 +4,7 @@
 
 use crate::theme::{icon as glyph, radius};
 use crate::ui::MainView;
-use crate::widgets::{caption, chip, icon, row, strong};
+use crate::widgets::{caption, chip, icon, row, strong, with_tip};
 use gpui::prelude::FluentBuilder;
 use gpui::{AnyElement, Div, Hsla, InteractiveElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
 use open_controller_core::i18n::Text;
@@ -46,17 +46,22 @@ impl MainView {
             Need::Optional => (text.optional, t.text3, t.control),
         };
         let link = c.home.map(|home| {
-            div()
-                .id(("home", c.id))
-                .flex()
-                .items_center()
-                .gap(px(4.))
-                .pt(px(2.))
-                .cursor_pointer()
-                .text_color(t.accent)
-                .on_click(move |_, _, cx| cx.open_url(home))
-                .child(caption(text.project_page, t.accent))
-                .child(icon(glyph::OPEN, 10., t.accent))
+            let hover = t.control;
+            with_tip(
+                div()
+                    .id(("home", c.id))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(px(22.))
+                    .rounded(px(radius::CHIP))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(hover))
+                    .on_click(move |_, _, cx| cx.open_url(home))
+                    .child(icon(glyph::OPEN, 12., t.text2)),
+                text.project_page,
+                &t,
+            )
         });
         row(&t)
             .items_start()
@@ -86,11 +91,18 @@ impl MainView {
                     .flex_1()
                     .min_w(px(0.))
                     .gap(px(4.))
-                    .child(div().flex().items_center().gap(px(8.)).child(strong(c.name, t.text)).child(chip(tag, tag_fg, tag_bg)))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(strong(c.name, t.text))
+                            .child(chip(tag, tag_fg, tag_bg))
+                            .children(link),
+                    )
                     .child(caption(c.desc, t.text2))
                     .child(caption(c.status, if c.works { t.text2 } else { t.text3 }))
-                    .when_some(c.note, |d, (n, color)| d.child(caption(n, color)))
-                    .children(link),
+                    .when_some(c.note, |d, (n, color)| d.child(caption(n, color))),
             )
             .children(c.action)
     }

@@ -122,15 +122,13 @@ pub struct MainView {
     pub section: Section,
     pub editor: Option<Editor>,
     pub confirm_reset: bool,
-    pub profile_menu: bool,
-    pub renaming: Option<crate::detail::Rename>,
+    /// The profile menu, while it is open.
+    pub profile_menu: Option<crate::detail::ProfileMenu>,
     pub installs: HashMap<Component, Install>,
     /// What Programs and Features says is installed, read when the settings open.
     pub installed: HashMap<Component, Option<String>>,
     /// Whether a newer version is out, and what is being done about it.
     pub update: crate::updates::Update,
-    /// Open programs offered for a profile to switch on with, while the list is shown.
-    pub picker: Option<Vec<String>>,
     /// The report on a controller, while its dialog is open.
     pub report: Option<crate::report::Report>,
     /// Whether the gyro's advanced settings are shown, and whether its custom acceleration was
@@ -162,6 +160,8 @@ pub struct MainView {
     pub touch_animation: crate::touch_animation::Animation,
     pub lab_tab: u8,
     pub lab_numbers: HashMap<&'static str, crate::lab::Number>,
+    /// Counts the screens and sections shown, so what takes another's place plays its entrance.
+    pub shown: (usize, usize),
     _subscriptions: Vec<Subscription>,
 }
 
@@ -200,12 +200,10 @@ impl MainView {
             section: Section::Buttons,
             editor: None,
             confirm_reset: false,
-            profile_menu: false,
-            renaming: None,
+            profile_menu: None,
             installs: HashMap::new(),
             installed: HashMap::new(),
             update: Default::default(),
-            picker: None,
             report: None,
             gyro_advanced: false,
             gyro_custom: false,
@@ -222,13 +220,19 @@ impl MainView {
             touch_animation: crate::touch_animation::Animation::default(),
             lab_tab: 0,
             lab_numbers: HashMap::new(),
+            shown: (0, 0),
             _subscriptions: vec![observe, theme_change, activation],
         };
         view.read_installed(cx);
         // `--demo` with `OPEN_CONTROLLER_PAGE` set: the first example controller's page, an extra
         // button picked, for the screenshot of a controller's page. A slot's number or `d` and a
-        // device's opens that controller's page instead.
+        // device's opens that controller's page instead, `settings` the settings, and
+        // `OPEN_CONTROLLER_SECTION` (lab, motion, sticks, light, info) one of the page's sections.
         let page = std::env::var("OPEN_CONTROLLER_PAGE").ok().filter(|_| view.model.read(cx).demo);
+        if page.as_deref() == Some("settings") {
+            view.settings(cx);
+            return view;
+        }
         let chosen = page.as_deref().map(|p| match p.strip_prefix('d') {
             Some(d) => d.parse().ok().map(PadKey::Device),
             None => p.parse().ok().filter(|&n| n != 1).map(PadKey::Slot),
@@ -243,6 +247,17 @@ impl MainView {
                     view.edit(&pad, open_controller_core::extras::LEFT_PADDLE1, cx);
                 }
             }
+        }
+        let section = match std::env::var("OPEN_CONTROLLER_SECTION").as_deref() {
+            Ok("lab") => Some(Section::Lab),
+            Ok("motion") => Some(Section::Motion),
+            Ok("sticks") => Some(Section::Sticks),
+            Ok("light") => Some(Section::Light),
+            Ok("info") => Some(Section::Info),
+            _ => None,
+        };
+        if let Some(s) = section.filter(|_| page.is_some()) {
+            view.show(s, cx);
         }
         view
     }
@@ -285,9 +300,7 @@ impl MainView {
         self.lab_numbers.clear();
         self.editor = None;
         self.confirm_reset = false;
-        self.profile_menu = false;
-        self.renaming = None;
-        self.picker = None;
+        self.profile_menu = None;
         self.gyro_custom = false;
         self.all_buttons = None;
         self.custom = None;
@@ -300,6 +313,7 @@ impl MainView {
         self.screen = Screen::Device(key, pad.and_then(|p| p.store.clone()));
         self.section = Section::Buttons;
         self.reset_page();
+        self.shown.0 += 1;
         self.learn = None;
         self.stick_right = false;
         self.held = pad.map(extras_held).unwrap_or(0);
@@ -309,6 +323,7 @@ impl MainView {
     pub fn home(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Home;
         self.reset_page();
+        self.shown.0 += 1;
         self.learn = None;
         self.follow = None;
         cx.notify();
@@ -317,6 +332,7 @@ impl MainView {
     pub fn settings(&mut self, cx: &mut Context<Self>) {
         self.screen = Screen::Settings;
         self.reset_page();
+        self.shown.0 += 1;
         self.learn = None;
         self.follow = None;
         self.read_installed(cx);
@@ -324,6 +340,9 @@ impl MainView {
     }
 
     pub fn show(&mut self, section: Section, cx: &mut Context<Self>) {
+        if self.section != section {
+            self.shown.1 += 1;
+        }
         self.section = section;
         self.reset_page();
         cx.notify();
@@ -465,7 +484,7 @@ impl MainView {
         let listening = self.editor.as_ref().is_some_and(|e| e.recording);
         if let Some(button) = followed_extra(self.section, pad.profile().lab.touch.mode, pressed)
             && !listening
-            && self.renaming.is_none()
+            && self.profile_menu.as_ref().is_none_or(|m| m.renaming.is_none())
             && self.measuring.is_none()
         {
             self.section = Section::Buttons;
@@ -511,7 +530,7 @@ impl MainView {
             self.close_custom(window, cx);
             return;
         }
-        if self.renaming.is_some() {
+        if self.profile_menu.as_ref().is_some_and(|m| m.renaming.is_some()) {
             // The box takes the typing, and Enter; Escape leaves the name as it was.
             if escape {
                 cx.stop_propagation();
@@ -527,8 +546,8 @@ impl MainView {
         };
         let Some(e) = self.editor.as_mut().filter(|e| e.recording) else {
             if escape {
-                if self.profile_menu {
-                    self.profile_menu = false;
+                if self.profile_menu.is_some() {
+                    self.profile_menu = None;
                 } else if self.editor.is_some() {
                     self.editor = None;
                 } else {
@@ -686,15 +705,12 @@ impl Render for MainView {
             .font_family(FONT)
             .child(self.top_bar(window, cx))
             .children(self.update_bar(cx))
-            .child(
-                div().id("scroll").flex_1().min_h(px(0.)).overflow_y_scroll().child(
-                    div()
-                        .flex()
-                        .justify_center()
-                        .w_full()
-                        .child(div().w_full().max_w(px(max_w)).px(px(layout::GUTTER)).pt(px(28.)).pb(px(40.)).child(content)),
+            .child(div().id("scroll").flex_1().min_h(px(0.)).overflow_y_scroll().child(div().flex().justify_center().w_full().child(
+                crate::motion::enter(
+                    div().w_full().max_w(px(max_w)).px(px(layout::GUTTER)).pt(px(28.)).pb(px(40.)).child(content),
+                    ("screen", self.shown.0),
                 ),
-            )
+            )))
             .children(report);
         crate::frame::frame(page.into_any_element(), &t, window)
     }

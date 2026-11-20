@@ -4,7 +4,7 @@
 use super::{Card, Need};
 use crate::theme::icon as glyph;
 use crate::ui::{Install, MainView};
-use crate::widgets::{Kind, body, button, caption, card, group, icon, labelled, title};
+use crate::widgets::{Kind, body, button, card, group, icon, labelled, title};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
 use open_controller_core::drivers;
 pub use open_controller_core::drivers::{Component, Outcome};
@@ -129,7 +129,6 @@ impl MainView {
     }
 
     pub fn render_requirements(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let t = self.theme;
         let model = self.model.read(cx);
         let (text, viiper) = (model.text, model.prefs.virtual_driver == VirtualDriver::Viiper);
         let required = group().child(self.driver_card(Component::ViGEmBus, Need::Required, text.vigem_desc, cx)).child(self.driver_card(
@@ -157,7 +156,6 @@ impl MainView {
             .children(viiper.map(|v| div().pt(px(12.)).child(v)))
             .child(div().h(px(12.)))
             .child(self.driver_group(text.ps3_title, text.ps3_desc, ps3))
-            .child(caption(text.install_note, t.text3).pt(px(10.)))
             .into_any_element()
     }
 }

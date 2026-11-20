@@ -13,6 +13,7 @@ mod icons;
 mod keys;
 mod lab;
 mod learn;
+mod motion;
 mod programs;
 mod report;
 mod requirements;

@@ -217,10 +217,14 @@ fn source(p: &Package) -> &Source {
     p.arm64.as_ref().filter(|_| native_arm64()).unwrap_or(&p.source)
 }
 
-/// Whether this is ARM64 Windows, whichever build of this program is running on it.
+/// Whether this is ARM64 Windows, whichever build of this program is running on it. Asked once:
+/// the settings ask on every frame they draw.
 pub fn native_arm64() -> bool {
-    let (mut process, mut native) = (0, 0);
-    unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) != 0 && native == IMAGE_FILE_MACHINE_ARM64 }
+    static NATIVE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *NATIVE.get_or_init(|| {
+        let (mut process, mut native) = (0, 0);
+        unsafe { IsWow64Process2(GetCurrentProcess(), &mut process, &mut native) != 0 && native == IMAGE_FILE_MACHINE_ARM64 }
+    })
 }
 
 /// Whether `installed` is older than the version this release knows.

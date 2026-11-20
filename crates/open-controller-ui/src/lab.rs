@@ -360,7 +360,8 @@ impl MainView {
                     .into_any_element()
             }
         };
-        div().flex().flex_col().gap(px(16.)).child(div().flex().child(tabs)).child(content).into_any_element()
+        let content = crate::motion::enter(div().child(content), ("lab-tab", usize::from(self.lab_tab)));
+        div().flex().flex_col().gap(px(16.)).child(tabs).child(content).into_any_element()
     }
 
     fn lab_effects(&mut self, pad: &PadView, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
