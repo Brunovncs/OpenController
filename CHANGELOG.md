@@ -3,6 +3,15 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.3
+
+The window moves more smoothly: pages, sections, menus and the report dialog ease in instead of
+appearing at once. A controller's Information page no longer repeats its header, and resting the
+pointer on the grade at the top explains it. The connection label is readable again in the light
+theme.
+
+Settings carry over.
+
 ## 0.9.2
 
 Controllers in Xbox mode (XInput) now show "Extra buttons not showing up?" under Extra buttons.
