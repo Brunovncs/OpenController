@@ -180,6 +180,9 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
         pads.push(twin_shock(mapped));
         pads.push(wheel());
     }
+    if std::env::var_os("OPEN_CONTROLLER_DEMO_HINTS").is_some() {
+        pads.extend(xinput_pads());
+    }
     for p in &mut pads {
         if let Some(edited) = p.store.as_ref().and_then(|k| edits.get(k)) {
             p.profiles = edited.clone();
@@ -240,6 +243,25 @@ fn flight_sticks() -> [PadView; 2] {
     t16000.store = None;
     t16000.raw = Some(RawInput { buttons: 1, axes: vec![1200, -8000, 300, 32767], hats: vec![0] });
     [e3d, t16000]
+}
+
+/// Two pads read through XInput: an 8BitDo with its switch on X, which has a hint of its own, and
+/// a Flydigi on its receiver in X-input mode, which has none.
+fn xinput_pads() -> [PadView; 2] {
+    let mut eightbitdo = pad(PadKey::Device(13), "8BitDo Ultimate 2.4G", Brand::EightBitDo, Family::Xbox, (0x2DC8, 0x3106));
+    eightbitdo.links = vec![Link::Dongle];
+    eightbitdo.role = Role::Native { player: None };
+    eightbitdo.hidden = false;
+    eightbitdo.store = None;
+    eightbitdo.hint = extras::hint(0x2DC8, 0x3106, Family::Xbox);
+
+    let mut flydigi = pad(PadKey::Device(14), "Controller (Flydigi 2.4G x360)", Brand::Other, Family::Xbox, (0x045E, 0x028E));
+    flydigi.power = Power::Wired;
+    flydigi.role = Role::Native { player: None };
+    flydigi.hidden = false;
+    flydigi.store = None;
+    flydigi.features = Features { rumble: true, ..Features::default() };
+    [eightbitdo, flydigi]
 }
 
 /// A Logitech G29, left to racing games as it starts, turned a quarter to the right with the

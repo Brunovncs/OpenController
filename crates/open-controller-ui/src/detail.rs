@@ -158,6 +158,24 @@ fn hint_text(text: &Text, h: Hint) -> &'static str {
     }
 }
 
+/// A question under the extra buttons, for what may be missing or wrong with this controller, and
+/// its answer when the pointer rests on the mark after it. Every pad read through XInput gets one:
+/// XInput carries only the Xbox buttons.
+fn trouble(text: &Text, pad: &PadView) -> Option<(&'static str, &'static str)> {
+    if let Some(h) = pad.hint {
+        let question = match h {
+            Hint::SteamInput => text.steam_question,
+            Hint::Switch2Unsupported => text.switch2_question,
+            _ => text.extras_missing,
+        };
+        return Some((question, hint_text(text, h)));
+    }
+    if read_directly(pad) {
+        return Some((text.twice_question, text.linux_direct_read));
+    }
+    native(pad).then_some((text.extras_missing, text.extras_missing_xinput))
+}
+
 /// On Linux, games may read PlayStation and Nintendo controllers through `hidraw` (the device rule
 /// lets them, as Steam's does), which hiding cannot reach.
 fn read_directly(pad: &PadView) -> bool {
@@ -710,22 +728,9 @@ impl MainView {
             .flex_none()
             .overflow_hidden()
             .child(stage(&t).flex().justify_center().px(px(20.)).pt(px(28.)).pb(px(20.)).child(controller));
-        let hint = pad.hint.map(|h| hint_text(text, h)).or_else(|| read_directly(pad).then_some(text.linux_direct_read)).map(|h| {
-            div()
-                .flex()
-                .items_start()
-                .gap(px(12.))
-                .p(px(14.))
-                .mb(px(16.))
-                .rounded(px(radius::CARD))
-                .bg(t.accent_soft)
-                .child(icon(glyph::INFO, 16., t.accent).mt(px(2.)))
-                .child(body(h, t.text).flex_1().min_w(px(0.)))
-        });
         div()
             .flex()
             .flex_col()
-            .children(hint)
             .child(
                 div().flex().flex_wrap().items_start().gap(px(20.)).child(drawing).child(
                     div()
@@ -799,16 +804,17 @@ impl MainView {
     fn extras_column(&self, pad: &PadView, text: &'static Text, t: &Theme, cx: &mut Context<Self>) -> Div {
         let tip = if pad.extras.is_empty() || kept_native(pad) { "" } else { text.extras_hint };
         let col = div().flex().flex_col().child(labelled(title(text.extra_buttons, t.text), tip, t).pb(px(12.)));
+        let trouble = trouble(text, pad).map(|(question, answer)| labelled(caption(question, t.text2), answer, t).pt(px(8.)));
         if pad.extras.is_empty() || kept_native(pad) {
             let direct = matches!(pad.role, Role::Native { .. } | Role::KeptNative | Role::Unmapped);
             let message = if direct { text.no_extras_native } else { text.no_extras };
-            return col.child(caption(message, t.text2));
+            return col.child(caption(message, t.text2)).children(trouble);
         }
         let mut g = group();
         for &b in &pad.extras {
             g = g.child(self.button_row(pad, b, printed_name(pad, b), place_name(text, pad, b), t, cx));
         }
-        col.child(g)
+        col.child(g).children(trouble)
     }
 
     /// The buttons every gamepad has, folded away until asked for: most people never change them.
@@ -1515,5 +1521,33 @@ mod color_tests {
         for s in ["", "#", "#12345", "#1234567", "#GG0000", "汉字"] {
             assert_eq!(parse_rgb(s), None, "{s}");
         }
+    }
+}
+
+#[cfg(test)]
+mod trouble_tests {
+    use super::trouble;
+    use crate::demo::pad;
+    use open_controller_core::PadKey;
+    use open_controller_core::Role;
+    use open_controller_core::device::Brand;
+    use open_controller_core::extras::{Family, Hint};
+    use open_controller_core::i18n::{self, Lang};
+
+    #[test]
+    fn every_xinput_pad_and_every_hint_gets_a_question() {
+        let text = i18n::text(Lang::En);
+        let mut p = pad(PadKey::Device(1), "Controller (Flydigi 2.4G x360)", Brand::Other, Family::Xbox, (0x045E, 0x028E));
+        assert_eq!(trouble(text, &p), None, "a virtual controller without a hint");
+        p.role = Role::Native { player: None };
+        assert_eq!(trouble(text, &p), Some((text.extras_missing, text.extras_missing_xinput)));
+        p.hint = Some(Hint::EightBitDoSwitchD);
+        assert_eq!(trouble(text, &p), Some((text.extras_missing, text.hint_8bitdo_switch)));
+        p.hint = Some(Hint::SteamInput);
+        assert_eq!(trouble(text, &p), Some((text.steam_question, text.hint_steam)));
+        p.hint = Some(Hint::Switch2Unsupported);
+        assert_eq!(trouble(text, &p), Some((text.switch2_question, text.hint_switch2)));
+        p.hint = Some(Hint::FlydigiThirdParty);
+        assert_eq!(trouble(text, &p), Some((text.extras_missing, text.hint_flydigi)));
     }
 }
