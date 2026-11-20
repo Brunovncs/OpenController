@@ -594,7 +594,10 @@ impl MainView {
             .when(framed, |d| d.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()))
             .child(mark)
             .child(strong("OpenController", t.text))
-            .child(caption(concat!("v", env!("CARGO_PKG_VERSION")), t.text2));
+            // Left out of the README's screenshot, so it needs no new one each release.
+            .when(std::env::var_os("OPEN_CONTROLLER_NO_VERSION").is_none(), |d| {
+                d.child(caption(concat!("v", env!("CARGO_PKG_VERSION")), t.text2))
+            });
         let gear =
             div()
                 .relative()
