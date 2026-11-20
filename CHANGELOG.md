@@ -3,10 +3,17 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.9.2
+
+Controllers in Xbox mode (XInput) now show "Extra buttons not showing up?" under Extra buttons.
+Rest the pointer on it to see why: that mode only sends the Xbox buttons, and the controller's
+manual or app usually has another mode that sends the rest. The tips for specific controllers
+moved to the same small line, so the page no longer opens with a box on top.
 
 New versions are found even on a VPN or a shared network, where GitHub sometimes turned the
 question away and the update never showed. A window left open also checks again every few hours.
+
+Settings carry over.
 
 ## 0.9.1
 
