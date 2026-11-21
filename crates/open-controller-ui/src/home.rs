@@ -97,9 +97,19 @@ pub fn power(pad: &PadView, text: &Text, t: &Theme) -> Option<Div> {
     )
 }
 
-/// The connections in a line: "USB + Bluetooth".
-pub fn link_line(pad: &PadView, text: &Text) -> String {
-    pad.links.iter().map(|&l| link_name(text, l)).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" + ")
+/// The connections in a line, Bluetooth by its symbol: "USB + ᛒ".
+pub fn link_line(pad: &PadView, text: &Text, t: &Theme) -> Div {
+    let mut line = div().flex().items_center().gap(px(4.)).min_w(px(0.));
+    for (i, &l) in pad.links.iter().filter(|&&l| !link_name(text, l).is_empty()).enumerate() {
+        if i > 0 {
+            line = line.child(caption("+", t.text3));
+        }
+        line = match l {
+            Link::Bluetooth => line.child(icon(glyph::BLUETOOTH, 14., t.text3)),
+            _ => line.child(caption(link_name(text, l), t.text3).truncate()),
+        };
+    }
+    line
 }
 
 /// The connections as chips: USB, Bluetooth, Receiver. They sit on the page, not on a card: raised
@@ -264,7 +274,7 @@ impl MainView {
                             .items_center()
                             .justify_between()
                             .gap(px(8.))
-                            .child(caption(link_line(pad, text), t.text3).min_w(px(0.)).truncate())
+                            .child(link_line(pad, text, &t))
                             .children(power(pad, text, &t)),
                     ),
             )

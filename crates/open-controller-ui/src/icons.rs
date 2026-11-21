@@ -53,6 +53,7 @@ fn shapes(name: &str) -> String {
         "motion" => {
             r#"<path d="M4.5 11a7.5 7.5 0 0 1 13.3-4.2M18 3.6v3.6h-3.6M19.5 13a7.5 7.5 0 0 1-13.3 4.2M6 20.4v-3.6h3.6"/><circle cx="12" cy="12" r="1.6"/>"#
         }
+        "bluetooth" => r#"<path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/>"#,
         "sticks" => r#"<circle cx="12" cy="8" r="4"/><path d="M12 12v5M5.5 17h13a2 2 0 0 1 0 4h-13a2 2 0 0 1 0-4Z"/>"#,
         _ => r#"<circle cx="12" cy="12" r="2"/>"#,
     };
@@ -116,6 +117,7 @@ mod tests {
             "open",
             "motion",
             "sticks",
+            "bluetooth",
         ] {
             assert!(!shapes(name).contains(r#"r="2"/>"#) || name == "settings", "{name} has no drawing");
         }

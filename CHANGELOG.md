@@ -3,6 +3,14 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.5
+
+A DualShock 4 is called DualShock 4 and an 8BitDo Ultimate 2 by its own name, and one set to show
+itself to games as a DualShock 4 says just that on its card. Bluetooth shows as its symbol on the
+cards.
+
+Settings carry over.
+
 ## 0.9.4
 
 A button can now press Esc: pick it under "Keys you can't press here", since pressing Esc stops

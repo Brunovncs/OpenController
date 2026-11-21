@@ -1450,6 +1450,7 @@ impl Core {
         {
             name = row.3.to_string();
         }
+        name = models::display_name(vendor, product, &name);
         if let Some(fields) = extras::missing_mapping(vendor, product) {
             pad.extend_mapping(fields);
         }

@@ -40,6 +40,25 @@ pub fn alias(vendor: u16, product: u16, key: Option<&str>) -> Option<&'static Al
 }
 
 /// Names SDL gives when it knows nothing better, which the table's name replaces.
+/// What the window calls a controller whose own name is clumsy: SDL names a DualShock 4 "PS4
+/// Controller", and 8BitDo's pads name themselves "8Bitdo ... Controller".
+pub static DISPLAY_NAMES: &[(u16, u16, &str)] = &[
+    (0x054c, 0x0268, "DualShock 3"),
+    (0x054c, 0x05c4, "DualShock 4"),
+    (0x054c, 0x09cc, "DualShock 4"),
+    (0x054c, 0x0ba0, "DualShock 4"),
+    (0x2dc8, 0x6012, "8BitDo Ultimate 2 Wireless"),
+    (0x2dc8, 0x6013, "8BitDo Ultimate 2 Wireless"),
+];
+
+/// The name to show for a controller SDL or its USB device calls `name`.
+pub fn display_name(vendor: u16, product: u16, name: &str) -> String {
+    match DISPLAY_NAMES.iter().find(|&&(v, p, _)| (v, p) == (vendor, product)) {
+        Some(&(.., shown)) => shown.to_string(),
+        None => name.replacen("8Bitdo", "8BitDo", 1),
+    }
+}
+
 pub fn is_generic_name(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n.starts_with("xinput ")
@@ -1227,6 +1246,14 @@ pub static LAYOUTS: &[(u16, u16, Art)] = &[
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn display_names() {
+        assert_eq!(super::display_name(0x054c, 0x09cc, "PS4 Controller"), "DualShock 4");
+        assert_eq!(super::display_name(0x2dc8, 0x6012, "8Bitdo Ultimate 2 Wireless Controller"), "8BitDo Ultimate 2 Wireless");
+        assert_eq!(super::display_name(0x2dc8, 0x6009, "8Bitdo Pro 3"), "8BitDo Pro 3");
+        assert_eq!(super::display_name(0x054c, 0x0ce6, "DualSense Wireless Controller"), "DualSense Wireless Controller");
+    }
+
     use super::*;
 
     #[test]

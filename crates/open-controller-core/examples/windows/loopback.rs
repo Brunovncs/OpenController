@@ -248,7 +248,8 @@ fn main() {
 
     let (id, joy) = attach();
     let slot = wait_for("a virtual Xbox controller", Duration::from_secs(10), || {
-        engine.snapshot().pads.iter().find_map(|p| match p.role {
+        // Its own controller, not one of the real ones plugged into this machine.
+        engine.snapshot().pads.iter().find(|p| p.store.as_deref() == Some(PROFILE)).and_then(|p| match p.role {
             Role::Virtual { player: Some(i) } => Some(i as u32),
             _ => None,
         })
@@ -517,6 +518,8 @@ fn main() {
             .snapshot()
             .pads
             .iter()
+            // The two test controllers, whatever real ones are plugged in.
+            .filter(|p| p.store.as_deref().is_some_and(|s| s.starts_with("model:1209:0c0")))
             .filter_map(|p| match p.role {
                 Role::Virtual { player: Some(n) } => Some((p.key, n)),
                 _ => None,

@@ -58,6 +58,7 @@ pub mod icon {
     pub const BUTTONS: &str = "buttons";
     pub const CHECK: &str = "check";
     pub const BOLT: &str = "bolt";
+    pub const BLUETOOTH: &str = "bluetooth";
     pub const CLOSE: &str = "close";
     pub const MINIMIZE: &str = "minimize";
     pub const MAXIMIZE: &str = "maximize";

@@ -343,7 +343,7 @@ pub const ZH: Text = Text {
     output_ds4: "DualShock 4",
     output_desc: "DualShock 4 会向游戏发送体感，但仅支持 Xbox 手柄的游戏无法识别它。实验性功能。切换前请关闭游戏。",
     as_ds4: "DualShock 4（XInput 游戏无法识别）",
-    status_ds4: "模拟为 DualShock 4",
+    status_ds4: "DualShock 4",
     low_battery_flash: "低电量时闪烁",
     low_battery_flash_desc: "电量低于 15% 时。",
     programs_title: "自动切换的应用",
