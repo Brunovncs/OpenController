@@ -1,4 +1,4 @@
-use open_controller_core::binding::{Action, Chord, XboxButton};
+use open_controller_core::binding::{Action, Buttons, Chord, XboxButton};
 use open_controller_core::extras::{LEFT_PADDLE1, RIGHT_PADDLE1, TOUCH_LEFT, TOUCHPAD};
 use open_controller_core::profile::{Edit, Gyro, GyroMode, Profiles, Shape, Sticks};
 use open_controller_core::{Command, Config, Engine, PadKey, Role};
@@ -310,6 +310,19 @@ fn main() {
     let s = wait_for("LB as LT", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.bLeftTrigger == 255));
     unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER.0, false) };
     check(s.Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER == 0, "the left bumper made into the left trigger pulls it, and is not LB");
+    // Set to nothing, a button reaches games as nothing at all; the others still work.
+    let mut off = profiles.clone();
+    off.apply(Edit::Bind { button: south, action: Some(Action::Off) });
+    engine.send(Command::SetProfiles(PROFILE.into(), off));
+    std::thread::sleep(Duration::from_millis(50));
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, true) };
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_WEST.0, true) };
+    let s = wait_for("X still X", Duration::from_millis(500), || xinput(slot).filter(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_X != 0));
+    std::thread::sleep(Duration::from_millis(30));
+    let s = xinput(slot).unwrap_or(s);
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_SOUTH.0, false) };
+    unsafe { SDL_SetJoystickVirtualButton(joy, SDL_GAMEPAD_BUTTON_WEST.0, false) };
+    check(s.Gamepad.wButtons == XINPUT_GAMEPAD_X, "a button set to nothing presses nothing, and the others still work");
     engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
     wait_for("everything let go", Duration::from_millis(500), || {
         xinput(slot).filter(|s| s.Gamepad.wButtons == 0 && s.Gamepad.bLeftTrigger == 0)
@@ -331,6 +344,25 @@ fn main() {
     paddle(RIGHT_PADDLE1, false);
     wait_for("Y to be let go", Duration::from_millis(500), y(false));
     check(true, "a paddle assigned to Y presses Y, and lets it go");
+    // Set to repeat, it presses Y again and again while held, and lets it go when let go.
+    let mut repeat = profiles.clone();
+    repeat.apply(Edit::Bind { button: RIGHT_PADDLE1, action: Some(Action::Repeat(Buttons::of(&[XboxButton::Y]))) });
+    engine.send(Command::SetProfiles(PROFILE.into(), repeat));
+    std::thread::sleep(Duration::from_millis(50));
+    paddle(RIGHT_PADDLE1, true);
+    let held = Instant::now();
+    let (mut presses, mut was) = (0, false);
+    while held.elapsed() < Duration::from_millis(1000) {
+        let down = xinput(slot).is_some_and(|s| s.Gamepad.wButtons & XINPUT_GAMEPAD_Y != 0);
+        presses += usize::from(down && !was);
+        was = down;
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    paddle(RIGHT_PADDLE1, false);
+    wait_for("Y let go after repeating", Duration::from_millis(500), y(false));
+    check((8..=12).contains(&presses), &format!("a paddle set to repeat Y presses it {presses} times in a second, and lets it go"));
+    engine.send(Command::SetProfiles(PROFILE.into(), profiles.clone()));
+    std::thread::sleep(Duration::from_millis(50));
     let f24 = |down: bool| move || ((unsafe { GetAsyncKeyState(VK_F24 as i32) } as u16 & 0x8000 != 0) == down).then_some(());
     paddle(LEFT_PADDLE1, true);
     wait_for("F24 down", Duration::from_millis(500), f24(true));

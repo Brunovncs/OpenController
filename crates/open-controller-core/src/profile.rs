@@ -381,6 +381,28 @@ impl<'de> Deserialize<'de> for Output {
     }
 }
 
+/// What a profile file says it is, so another JSON file is not taken for one.
+const FILE_KIND: &str = "OpenController profile";
+
+/// A profile as a file to share: everything but the programs that switch it on, which are the
+/// ones on this computer.
+pub fn export(p: &Profile) -> String {
+    let shared = Profile { programs: Vec::new(), ..p.clone() };
+    let file = serde_json::json!({ "kind": FILE_KIND, "profile": shared });
+    serde_json::to_string_pretty(&file).unwrap_or_default()
+}
+
+/// The profile in a file [`export`] wrote, or why it cannot be read. What this version does not
+/// know is kept, as it is in the settings.
+pub fn import(text: &str) -> Result<Profile, String> {
+    let v: Value = serde_json::from_str(text).map_err(|_| "it is not a profile file".to_string())?;
+    if v.get("kind").and_then(Value::as_str) != Some(FILE_KIND) {
+        return Err("it is not a profile file".into());
+    }
+    let profile = v.get("profile").cloned().ok_or("it holds no profile")?;
+    serde_json::from_value(profile).map_err(|e| format!("its profile cannot be read: {e}"))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Profiles {
@@ -399,6 +421,8 @@ pub struct Profiles {
     /// Which model it is, for a controller whose ids another one copies: a key of
     /// `models::ALIASES`. `None` is the model its ids name.
     pub model: Option<String>,
+    /// The name its owner gave it, shown in place of its model's.
+    pub name: Option<String>,
     /// What games see it as. Kept for the controller rather than per profile: changing it makes
     /// the virtual controller again, which a game would see as one leaving and another arriving.
     pub output: Output,
@@ -424,6 +448,8 @@ pub enum Edit {
     },
     /// Clears every assignment of the profile in use.
     ClearBindings,
+    /// Puts the profile in use's assignments back as they were, as Undo does.
+    SetBindings(crate::binding::Bindings),
     /// Makes a Nintendo controller's face buttons follow their letters rather than their places
     /// (see [`binding::letters`]), or puts them back.
     Letters(bool),
@@ -440,6 +466,8 @@ pub enum Edit {
     RemoveProgram(usize, String),
     /// A new profile, a copy of the one in use, which it replaces as the one in use.
     Add(String),
+    /// A profile read from a file (see [`import`]), added as the one in use.
+    Import(Box<Profile>),
     Rename(usize, String),
     Delete(usize),
     Select(usize),
@@ -451,6 +479,9 @@ pub enum Edit {
     Xbox(bool),
     /// Says which model the controller is (see [`Profiles::model`]).
     Model(Option<String>),
+    /// Names the controller (see [`Profiles::name`]); `None` or nothing typed goes back to its
+    /// model's name.
+    Name(Option<String>),
 }
 
 impl Profiles {
@@ -463,6 +494,7 @@ impl Profiles {
             mic_control: false,
             xbox: false,
             model: None,
+            name: None,
             output: Output::Xbox360,
             extra: Map::new(),
         }
@@ -547,6 +579,9 @@ impl Profiles {
                 };
             }
             Edit::ClearBindings => self.active_mut().bindings.clear(),
+            Edit::SetBindings(all) => {
+                self.active_mut().bindings = all.into_iter().filter_map(|(b, a)| a.sanitised().map(|a| (b, a))).collect();
+            }
             Edit::Letters(on) => {
                 let b = &mut self.active_mut().bindings;
                 for (button, action) in binding::letters() {
@@ -606,6 +641,12 @@ impl Profiles {
                 self.active = self.list.len() - 1;
             }
             Edit::Add(_) => {}
+            Edit::Import(p) if self.list.len() < MAX_PROFILES => {
+                let name = clean_name(&p.name);
+                self.list.push(Profile { name, programs: Vec::new(), ..*p });
+                self.active = self.list.len() - 1;
+            }
+            Edit::Import(_) => {}
             Edit::Rename(i, name) => {
                 if let Some(p) = self.list.get_mut(i) {
                     p.name = clean_name(&name);
@@ -625,6 +666,9 @@ impl Profiles {
             Edit::MicControl(on) => self.mic_control = on,
             Edit::Xbox(on) => (self.xbox, self.native) = (on, false),
             Edit::Model(key) => self.model = key.filter(|k| !k.is_empty() && k.len() <= 40),
+            Edit::Name(name) => {
+                self.name = name.map(|n| n.trim().chars().take(MAX_NAME).collect::<String>()).filter(|n| !n.is_empty());
+            }
         }
     }
 
@@ -774,6 +818,52 @@ pub fn light_color(light: Light, brightness: u8, player: Option<u8>, battery: Op
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_profile_goes_to_a_file_and_comes_back_as_a_new_one() {
+        use crate::binding::{Action, XboxButton};
+        let mut p = Profiles::new("Default".into());
+        p.apply(Edit::Bind { button: 0, action: Some(Action::Xbox(XboxButton::X)) });
+        p.apply(Edit::Rename(0, "Racing".into()));
+        p.apply(Edit::AddProgram(0, "forza.exe".into()));
+        let file = export(p.active());
+        assert!(!file.contains("forza.exe"), "the programs stay on this computer");
+        let back = import(&file).unwrap();
+        assert_eq!(back.bindings, p.active().bindings);
+        let mut other = Profiles::new("Default".into());
+        other.apply(Edit::Import(Box::new(back)));
+        assert_eq!((other.list.len(), other.active), (2, 1));
+        assert_eq!(other.active().name, "Racing");
+        assert_eq!(other.active().bindings, p.active().bindings);
+        assert!(import("{}").is_err() && import("not json").is_err() && import(r#"{"kind":"something else"}"#).is_err());
+    }
+
+    #[test]
+    fn a_controller_keeps_the_name_it_is_given_and_loses_it_when_cleared() {
+        let mut p = Profiles::new("Default".into());
+        p.apply(Edit::Name(Some("  Bruno's pad  ".into())));
+        assert_eq!(p.name.as_deref(), Some("Bruno's pad"));
+        p.apply(Edit::Name(Some("x".repeat(100))));
+        assert_eq!(p.name.as_ref().map(|n| n.chars().count()), Some(MAX_NAME));
+        p.apply(Edit::Name(Some("   ".into())));
+        assert_eq!(p.name, None);
+        // A file from before names existed reads without one.
+        let old: Profiles = serde_json::from_str(r#"{"list":[{"name":"Default"}],"active":0}"#).unwrap();
+        assert_eq!(old.name, None);
+    }
+
+    #[test]
+    fn undoing_a_reset_brings_the_assignments_back() {
+        use crate::binding::{Action, XboxButton};
+        let mut p = Profiles::new("Default".into());
+        p.apply(Edit::Bind { button: 0, action: Some(Action::Xbox(XboxButton::X)) });
+        p.apply(Edit::Bind { button: 1, action: Some(Action::Off) });
+        let before = p.active().bindings.clone();
+        p.apply(Edit::ClearBindings);
+        assert!(p.active().bindings.is_empty());
+        p.apply(Edit::SetBindings(before.clone()));
+        assert_eq!(p.active().bindings, before);
+    }
     use super::*;
 
     #[test]

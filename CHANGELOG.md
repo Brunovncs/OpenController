@@ -3,6 +3,22 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.6
+
+The button being assigned is outlined on the drawing, and pressing a button on the controller opens it
+while All buttons is open. A button can now repeat its Xbox button while held, or do nothing at all.
+Esc can go into a macro, a key step in a macro can be changed by clicking it, and clicking the only
+Xbox button picked lets it go. Restore defaults can be undone for a few seconds. A controller can
+be given its own name, and a profile can be exported to a file and imported on another computer.
+
+Controllers with buttons on the back are drawn from behind too: the 8BitDo Ultimate 2, Ultimate 2C
+and Pro 2, the DualSense Edge, the Flydigi Vader and Apex and the GameSir G7 Pro and Cyclone 2. The
+drawing turns over while a back button is being assigned, and a button on it turns it by hand. The
+Ultimate 2 shows L4 and R4 from the front as well, and the DualShock 4's and DualSense's triggers sit
+closer to their shoulders.
+
+Settings carry over.
+
 ## 0.9.5
 
 A DualShock 4 is called DualShock 4 and an 8BitDo Ultimate 2 by its own name, and one set to show

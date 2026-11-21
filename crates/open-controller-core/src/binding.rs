@@ -226,6 +226,10 @@ pub enum Action {
     Macro(Vec<Step>),
     /// Several Xbox buttons, held together while this one is.
     Combo(Buttons),
+    /// Nothing at all: one of the buttons every gamepad has, which games then no longer see.
+    Off,
+    /// Xbox buttons pressed again and again while this one is held (see [`repeat_on`]).
+    Repeat(Buttons),
 }
 
 impl Action {
@@ -251,7 +255,16 @@ impl Action {
                 steps.iter().any(|s| !matches!(s, Step::Wait(_))).then_some(Action::Macro(steps))
             }
             Action::Combo(b) if b.len() <= 1 => b.iter().next().map(Action::Xbox),
+            Action::Repeat(b) if b.is_empty() => None,
             a => Some(a),
+        }
+    }
+
+    /// The Xbox buttons it presses over and over while its button is held, if that is what it does.
+    pub fn repeated(&self) -> Option<Buttons> {
+        match self {
+            Action::Repeat(b) => Some(*b),
+            _ => None,
         }
     }
 
@@ -317,6 +330,17 @@ pub fn remaps_normal(bindings: &Bindings) -> bool {
     bindings.keys().any(|&b| is_normal(b))
 }
 
+/// The Xbox buttons the held buttons press over and over.
+pub fn repeating(bindings: &Bindings, buttons: u64) -> Buttons {
+    bindings.iter().filter(|&(&b, _)| buttons & bit(b) != 0).filter_map(|(_, a)| a.repeated()).fold(Buttons::default(), Buttons::with)
+}
+
+/// Whether repeated buttons are down at `now`, held since `since`: down at once, then up and
+/// down every [`XBOX_TAP_MS`], so games reading once a frame see each press.
+pub fn repeat_on(since: std::time::Instant, now: std::time::Instant) -> bool {
+    (now.duration_since(since).as_millis() / u128::from(XBOX_TAP_MS)).is_multiple_of(2)
+}
+
 /// Presses the Xbox buttons and triggers the held buttons stand for. `buttons` is what is held,
 /// before the buttons that do something else are taken out of the report.
 pub fn overlay(bindings: &Bindings, buttons: u64, r: &mut XusbReport) {
@@ -361,6 +385,37 @@ pub fn uses_letters(bindings: &Bindings) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn repeated_buttons_go_down_at_once_then_up_and_down_every_tap() {
+        use std::time::{Duration, Instant};
+        let ab = Buttons::of(&[XboxButton::A, XboxButton::B]);
+        assert_eq!(Action::Repeat(ab).sanitised(), Some(Action::Repeat(ab)));
+        assert_eq!(Action::Repeat(Buttons::default()).sanitised(), None);
+        assert_eq!(Action::Repeat(ab).xbox(), None, "not held down the whole time");
+        let mut b = Bindings::new();
+        b.insert(extras::LEFT_PADDLE1, Action::Repeat(Buttons::of(&[XboxButton::A])));
+        b.insert(extras::RIGHT_PADDLE1, Action::Repeat(Buttons::of(&[XboxButton::B])));
+        assert_eq!(repeating(&b, 1 << extras::LEFT_PADDLE1), Buttons::of(&[XboxButton::A]));
+        assert_eq!(repeating(&b, 1 << extras::LEFT_PADDLE1 | 1 << extras::RIGHT_PADDLE1), ab);
+        assert!(repeating(&b, 0).is_empty());
+        let t = Instant::now();
+        let at = |ms: u64| repeat_on(t, t + Duration::from_millis(ms));
+        assert!(at(0) && at(49) && !at(50) && !at(99) && at(100) && !at(150));
+    }
+
+    #[test]
+    fn a_button_set_to_nothing_is_taken_from_games_and_presses_nothing() {
+        assert_eq!(Action::Off.sanitised(), Some(Action::Off));
+        assert_eq!(Action::Off.xbox(), None);
+        assert_eq!(serde_json::to_string(&Action::Off).unwrap(), r#""Off""#);
+        let mut b = Bindings::new();
+        b.insert(button::SOUTH as u8, Action::Off);
+        assert_eq!(taken(&b), 1 << button::SOUTH);
+        let mut r = XusbReport::default();
+        overlay(&b, 1 << button::SOUTH, &mut r);
+        assert_eq!(r, XusbReport::default());
+    }
     use super::*;
 
     use crate::mapping::axis;

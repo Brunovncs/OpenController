@@ -67,10 +67,12 @@ function Shot([string]$lang, [string[]]$outs, [int]$w = $Width, [int]$hh = $Heig
 }
 
 $env:OPEN_CONTROLLER_NO_VERSION = "1"
+# Controllers at rest: the example ones press buttons to show the drawings moving.
+$env:OPEN_CONTROLLER_DEMO_REST = "1"
 try {
     Shot "en" @(Join-Path $root "docs\controller.png") 1100 840 -Page
     if (Test-Path (Join-Path $Site "public")) {
         Shot "en" @(Join-Path $Site "public\window.png")
         Shot "pt" @(Join-Path $Site "public\window-pt.png")
     }
-} finally { Remove-Item Env:OPEN_CONTROLLER_NO_VERSION }
+} finally { Remove-Item Env:OPEN_CONTROLLER_NO_VERSION, Env:OPEN_CONTROLLER_DEMO_REST }

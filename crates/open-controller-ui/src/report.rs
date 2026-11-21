@@ -343,6 +343,8 @@ fn assignments(bindings: &Bindings) -> String {
             Action::Combo(b) => format!("Xbox {b}"),
             Action::Keys(c) => keyboard::chord_names(*c).join("+"),
             Action::Macro(steps) => format!("macro of {} steps", steps.len()),
+            Action::Off => "nothing".into(),
+            Action::Repeat(b) => format!("Xbox {b}, repeated"),
         };
         format!("{name} → {does}")
     };

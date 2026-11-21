@@ -54,6 +54,9 @@ pub enum Tab {
     Xbox,
     Key,
     Macro,
+    /// One of the buttons every gamepad has, made to do nothing.
+    Off,
+    /// Not assigned: an extra button does nothing, one every gamepad has is itself.
     Nothing,
 }
 
@@ -71,9 +74,13 @@ pub struct Editor {
     pub other_keys: bool,
     /// Picking Xbox buttons adds them to the ones it presses, rather than taking their place.
     pub several: bool,
+    /// The Xbox buttons picked are pressed again and again while the button is held.
+    pub repeat: bool,
     /// The Xbox buttons the controller held when last seen while recording; `None` until then,
     /// so buttons already held when recording starts are not steps.
     pub xbox_held: Option<Buttons>,
+    /// The macro's key step clicked to be changed: the next key pressed takes its place.
+    pub replacing: Option<usize>,
 }
 
 impl Editor {
@@ -121,9 +128,15 @@ pub struct MainView {
     pub screen: Screen,
     pub section: Section,
     pub editor: Option<Editor>,
-    pub confirm_reset: bool,
+    /// The assignments "Restore defaults" just cleared, and when, while Undo can bring them back.
+    pub reset_undo: Option<(PadKey, open_controller_core::binding::Bindings, std::time::Instant)>,
     /// The profile menu, while it is open.
     pub profile_menu: Option<crate::detail::ProfileMenu>,
+    /// The side of the controller its drawing shows, when picked with the button on it: `None`
+    /// follows the button being assigned, the back for one on the back.
+    pub back: Option<bool>,
+    /// The box the open controller's name is typed into, while it is being named.
+    pub naming: Option<(gpui::Entity<crate::text_field::TextField>, gpui::Subscription)>,
     pub installs: HashMap<Component, Install>,
     /// What Programs and Features says is installed, read when the settings open.
     pub installed: HashMap<Component, Option<String>>,
@@ -153,7 +166,8 @@ pub struct MainView {
     /// The app's icon, in its version drawn for small sizes, for the bar on top, made for the
     /// window's scale.
     brand: (f32, Arc<Image>),
-    /// Extra buttons held on the open controller in the last snapshot, to notice a new press.
+    /// Buttons held on the open controller in the last snapshot that a press can pick, to notice
+    /// a new press: its extra buttons, and the others while their list is open.
     held: u64,
     /// The bar on top was pressed where the window draws its own frame: moving the mouse now
     /// moves the window.
@@ -201,8 +215,10 @@ impl MainView {
             screen: Screen::Home,
             section: Section::Buttons,
             editor: None,
-            confirm_reset: false,
+            reset_undo: None,
             profile_menu: None,
+            naming: None,
+            back: None,
             installs: HashMap::new(),
             installed: HashMap::new(),
             ds3_unread: false,
@@ -303,8 +319,10 @@ impl MainView {
         self.lab_tab = 0;
         self.lab_numbers.clear();
         self.editor = None;
-        self.confirm_reset = false;
+        self.reset_undo = None;
         self.profile_menu = None;
+        self.naming = None;
+        self.back = None;
         self.gyro_custom = false;
         self.all_buttons = None;
         self.custom = None;
@@ -320,7 +338,7 @@ impl MainView {
         self.shown.0 += 1;
         self.learn = None;
         self.stick_right = false;
-        self.held = pad.map(extras_held).unwrap_or(0);
+        self.held = pad.map(|p| p.input.buttons).unwrap_or(0);
         cx.notify();
     }
 
@@ -461,15 +479,17 @@ impl MainView {
             let tab = match current {
                 None if keys_only => Tab::Key,
                 None if open_controller_core::binding::is_normal(button) => Tab::Nothing,
-                Some(Action::Xbox(_) | Action::Combo(_)) | None => Tab::Xbox,
+                Some(Action::Xbox(_) | Action::Combo(_) | Action::Repeat(_)) | None => Tab::Xbox,
                 Some(Action::Keys(_)) => Tab::Key,
                 Some(Action::Macro(_)) => Tab::Macro,
+                Some(Action::Off) => Tab::Off,
             };
             let steps = match current {
                 Some(Action::Macro(s)) => s.clone(),
                 _ => Vec::new(),
             };
-            let several = matches!(current, Some(Action::Combo(_)));
+            let several = current.and_then(|a| a.xbox().or(a.repeated())).is_some_and(|b| b.len() > 1);
+            let repeat = matches!(current, Some(Action::Repeat(_)));
             self.editor = Some(Editor {
                 button,
                 tab,
@@ -479,10 +499,13 @@ impl MainView {
                 holding: 0,
                 other_keys: false,
                 several,
+                repeat,
                 xbox_held: None,
+                replacing: None,
             });
         }
-        self.confirm_reset = false;
+        self.reset_undo = None;
+        self.back = None;
         cx.notify();
     }
 
@@ -519,13 +542,14 @@ impl MainView {
         }
         self.feed_learning(pad);
         self.record_xbox(pad, cx);
-        let held = extras_held(pad);
-        let pressed = held & !self.held;
+        let held = pad.input.buttons;
+        let pressed = held & !self.held & self.pickable(pad);
         self.held = held;
         let listening = self.editor.as_ref().is_some_and(|e| e.recording);
-        if let Some(button) = followed_extra(self.section, pad.profile().lab.touch.mode, pressed)
+        if let Some(button) = followed_press(self.section, pad.profile().lab.touch.mode, pressed)
             && !listening
             && self.profile_menu.as_ref().is_none_or(|m| m.renaming.is_none())
+            && self.naming.is_none()
             && self.measuring.is_none()
         {
             self.section = Section::Buttons;
@@ -533,6 +557,17 @@ impl MainView {
                 self.edit(pad, button, cx);
             }
         }
+    }
+
+    /// The buttons whose press opens their editor: the extra ones, and while "All buttons" is open
+    /// on the Buttons section, the ones every gamepad has. Pressed only to try them, those would
+    /// open an editor at every press.
+    fn pickable(&self, pad: &PadView) -> u64 {
+        let all_open = self.section == Section::Buttons
+            && crate::detail::remappable(pad)
+            && self.all_buttons.unwrap_or_else(|| binding::remaps_normal(pad.bindings()));
+        let normal = if all_open { binding::NORMAL.iter().fold(0u64, |m, &b| m | 1 << b) } else { 0 };
+        extras_mask(pad) | normal
     }
 
     /// While a macro records, the Xbox buttons the controller presses are steps of it, the ones
@@ -571,6 +606,14 @@ impl MainView {
             self.close_custom(window, cx);
             return;
         }
+        if self.naming.is_some() {
+            // The box takes the typing, and Enter; Escape leaves the name as it was.
+            if escape {
+                cx.stop_propagation();
+                self.stop_naming(window, cx);
+            }
+            return;
+        }
         if self.profile_menu.as_ref().is_some_and(|m| m.renaming.is_some()) {
             // The box takes the typing, and Enter; Escape leaves the name as it was.
             if escape {
@@ -585,6 +628,24 @@ impl MainView {
             }
             return;
         };
+        // A macro's key step being changed takes the next key; Escape leaves it as it was.
+        if let Some(e) = self.editor.as_mut().filter(|e| e.replacing.is_some()) {
+            cx.stop_propagation();
+            if escape {
+                e.replacing = None;
+            } else if !ev.is_held
+                && let Some(chord) = keys::chord(&ev.keystroke)
+                && let Some(step) = e.replacing.take().and_then(|i| e.steps.get_mut(i))
+            {
+                *step = Step::Keys(chord);
+                let (button, steps) = (e.button, e.steps.clone());
+                if let Some(pad) = self.pad(pad_key, cx) {
+                    self.bind(&pad, button, Some(Action::Macro(steps)), cx);
+                }
+            }
+            cx.notify();
+            return;
+        }
         let Some(e) = self.editor.as_mut().filter(|e| e.recording) else {
             if escape {
                 if self.profile_menu.is_some() {
@@ -682,8 +743,8 @@ impl MainView {
     }
 }
 
-/// A newly pressed extra button can select its editor, unless a tool owns the gesture.
-fn followed_extra(section: Section, touch: open_controller_core::lab::TouchMode, mut pressed: u64) -> Option<u8> {
+/// A newly pressed button can select its editor, unless a tool owns the gesture.
+fn followed_press(section: Section, touch: open_controller_core::lab::TouchMode, mut pressed: u64) -> Option<u8> {
     // Tools have their own live input. A touchpad mouse gesture must not open the mapper.
     if section == Section::Lab {
         return None;
@@ -697,10 +758,9 @@ fn followed_extra(section: Section, touch: open_controller_core::lab::TouchMode,
     (pressed != 0).then(|| pressed.trailing_zeros() as u8)
 }
 
-/// The extra buttons held on a controller, excluding indexes outside its 64-bit state.
-fn extras_held(pad: &PadView) -> u64 {
-    let mask = pad.extras.iter().fold(0u64, |m, &b| m | 1u64.checked_shl(u32::from(b)).unwrap_or(0));
-    pad.input.buttons & mask
+/// The extra buttons of a controller, excluding indexes outside its 64-bit state.
+fn extras_mask(pad: &PadView) -> u64 {
+    pad.extras.iter().fold(0u64, |m, &b| m | 1u64.checked_shl(u32::from(b)).unwrap_or(0))
 }
 
 /// The small icon for the window's `scale`. GPUI rasterizes an SVG image at twice its own size
@@ -768,15 +828,15 @@ mod tests {
         use open_controller_core::extras::{RIGHT_PADDLE1, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO, TOUCHPAD};
         use open_controller_core::lab::TouchMode;
         for button in [TOUCHPAD, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO, RIGHT_PADDLE1] {
-            assert_eq!(followed_extra(Section::Lab, TouchMode::Off, 1u64 << button), None);
+            assert_eq!(followed_press(Section::Lab, TouchMode::Off, 1u64 << button), None);
         }
         for mode in [TouchMode::Mouse, TouchMode::Trackball] {
             for button in [TOUCHPAD, TOUCH_LEFT, TOUCH_RIGHT, TOUCH_TWO] {
-                assert_eq!(followed_extra(Section::Buttons, mode, 1u64 << button), None);
+                assert_eq!(followed_press(Section::Buttons, mode, 1u64 << button), None);
             }
-            assert_eq!(followed_extra(Section::Info, mode, (1u64 << TOUCHPAD) | (1u64 << RIGHT_PADDLE1)), Some(RIGHT_PADDLE1));
+            assert_eq!(followed_press(Section::Info, mode, (1u64 << TOUCHPAD) | (1u64 << RIGHT_PADDLE1)), Some(RIGHT_PADDLE1));
         }
-        assert_eq!(followed_extra(Section::Info, TouchMode::Off, 1u64 << TOUCHPAD), Some(TOUCHPAD));
+        assert_eq!(followed_press(Section::Info, TouchMode::Off, 1u64 << TOUCHPAD), Some(TOUCHPAD));
     }
 
     fn editor() -> Editor {
@@ -789,7 +849,9 @@ mod tests {
             holding: 0,
             other_keys: false,
             several: false,
+            repeat: false,
             xbox_held: None,
+            replacing: None,
         }
     }
 

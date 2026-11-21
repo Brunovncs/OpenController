@@ -1,0 +1,108 @@
+{
+ "source": "pdfvec:manuals/edge_dns.pdf:12:212,84,298,141:nogray",
+ "width": 1600,
+ "ink": 110,
+ "line": 7,
+ "body_close": 3,
+ "align": {
+  "front": "out/dualsenseEdge-front.json",
+  "bbox": true
+ },
+ "triggers": {
+  "rt": {
+   "seeds": [
+    [
+     340,
+     137
+    ],
+    [
+     340,
+     48
+    ],
+    [
+     245,
+     103
+    ]
+   ]
+  },
+  "lt": {
+   "seeds": [
+    [
+     1250,
+     137
+    ],
+    [
+     1250,
+     48
+    ],
+    [
+     1345,
+     103
+    ]
+   ]
+  }
+ },
+ "buttons": [
+  {
+   "input": "rp1",
+   "seed": [
+    480,
+    540
+   ]
+  }
+ ],
+ "panels": [
+  {
+   "seed": [
+    800,
+    450
+   ],
+   "style": "line"
+  },
+  {
+   "seed": [
+    515,
+    208
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    1076,
+    208
+   ],
+   "style": "shade"
+  },
+  {
+   "stadium": [
+    750,
+    612,
+    843,
+    650
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    562,
+    722
+   ],
+   "style": "part"
+  },
+  {
+   "seed": [
+    1030,
+    722
+   ],
+   "style": "part"
+  }
+ ],
+ "dots": [
+  [
+   795,
+   485,
+   6
+  ]
+ ],
+ "glyphs": "ps"
+}

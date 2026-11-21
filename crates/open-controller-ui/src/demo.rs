@@ -6,7 +6,7 @@ use open_controller_core::device::{Brand, Form, Link, Power};
 use open_controller_core::extras::{self, Family, Features};
 use open_controller_core::mapping::{PadState, RawInput, axis, button};
 use open_controller_core::models;
-use open_controller_core::profile::{DpadStick, Edit, Gyro, GyroMode, Light, Output, Pressure, Profiles};
+use open_controller_core::profile::{DpadStick, Edit, Gyro, GyroMode, Output, Pressure, Profiles};
 use open_controller_core::{Driver, PadKey, PadView, Role, Snapshot};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -79,25 +79,22 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     eightbitdo.features = Features { motion: true, rumble: true, ..Features::default() };
     eightbitdo.profiles = eightbitdo_profiles();
 
-    let mut edge = pad(PadKey::Slot(2), "DualSense Wireless Controller", Brand::PlayStation, Family::DualSense, (0x054C, 0x0CE6));
-    edge.links = vec![Link::Bluetooth];
+    let mut edge = pad(PadKey::Slot(2), "Flydigi Vader 4 Pro", Brand::Other, Family::Flydigi, (0x37D7, 0x2401));
+    edge.links = vec![Link::Dongle];
     edge.power = Power::Charging(Some(45));
     edge.role = Role::Virtual { player: Some(1) };
     edge.input = input(&[button::DPAD_LEFT, button::RIGHT_SHOULDER], [0, 0, 16000, 12000, 12000, 0]);
     edge.extras = vec![
-        extras::LEFT_PADDLE1,
         extras::RIGHT_PADDLE1,
-        extras::LEFT_PADDLE2,
+        extras::LEFT_PADDLE1,
         extras::RIGHT_PADDLE2,
-        extras::MISC1,
-        extras::TOUCHPAD,
-        extras::TOUCH_LEFT,
-        extras::TOUCH_RIGHT,
-        extras::TOUCH_TWO,
+        extras::LEFT_PADDLE2,
+        extras::MISC2,
+        extras::MISC3,
+        extras::MISC4,
+        extras::MISC5,
     ];
-    edge.features = Features { touchpad: true, motion: true, rumble: true, light_bar: true, player_lights: true, ..Features::default() };
-    edge.can_power_off = true;
-    edge.profiles.apply(Edit::Light(Light::Color([120, 0, 255])));
+    edge.features = Features { motion: true, rumble: true, ..Features::default() };
     edge.profiles.apply(Edit::Gyro(Gyro { mode: GyroMode::Aiming, sensitivity: 150, ..Gyro::default() }));
     edge.profiles
         .apply(Edit::Bind { button: extras::LEFT_PADDLE1, action: Some(Action::Combo(Buttons::of(&[XboxButton::A, XboxButton::B]))) });
@@ -155,7 +152,7 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
     native.store = Some("model:054c:0df2".into());
     native.profiles.apply(Edit::Native(true));
 
-    let mut ds4 = pad(PadKey::Slot(4), "PS4 Controller", Brand::PlayStation, Family::DualShock4, (0x054C, 0x09CC));
+    let mut ds4 = pad(PadKey::Slot(4), "DualShock 4", Brand::PlayStation, Family::DualShock4, (0x054C, 0x09CC));
     ds4.links = vec![Link::Dongle];
     ds4.role = Role::Waiting { player: None, remaining: Duration::from_secs(9) };
     ds4.extras = vec![extras::TOUCHPAD, extras::TOUCH_LEFT, extras::TOUCH_RIGHT, extras::TOUCH_TWO];
@@ -212,6 +209,15 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
         Role::Virtual { player: Some(n) } | Role::Waiting { player: Some(n), .. } | Role::Native { player: Some(n) } => u32::from(n),
         _ => 100,
     });
+    // For screenshots: every controller at rest, nothing pressed, moved or touched.
+    if std::env::var_os("OPEN_CONTROLLER_DEMO_REST").is_some() {
+        for p in &mut pads {
+            p.input = PadState::default();
+            p.gyro = None;
+            p.aim = (0, 0);
+            p.raw = p.raw.take().map(|_| RawInput::default());
+        }
+    }
     Snapshot {
         pads,
         vigem: Driver::Ready { version: Some("1.22.0".into()) },

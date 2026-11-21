@@ -42,6 +42,11 @@ ones; nothing of the source picture is kept, only the shapes.
 | `psClassic` | "PlayStation Controller transparent.png" on Wikimedia Commons, CC BY-SA 3.0 (Sony publishes no straight front view) |
 | `logitechExtreme3d` | Logitech's top view of the Extreme 3D Pro on logitechg.com (`3dpro-gallery-3.png`), measured and drawn by hand from above (`derive_flightstick.py`); every flight stick without a drawing of its own gets it |
 | `logitechG29` | Logitech's front view of the G29 on logitechg.com (`g29-playstation-front-angle-gallery-8.png`), measured and drawn by hand (`derive_wheel.py`); every wheel without a drawing of its own gets it |
+| `ds4`, `dualsense`, `dualsenseEdge` triggers | The same traces, with `trigger_rise` and `trigger_scale` set so L2/R2 tuck behind L1/R1; `retrigger.py` rebuilds them from the bumpers in `pads.json` when the source is not at hand |
+| `ultimate2Back`, `ultimate2cBack`, `sn30proBack` (Pro 2 only) | The rear views in the same 8BitDo manuals |
+| `dualsenseEdgeBack` | The rear view in Sony's DualSense Edge manual (CFI-ZCP1), its left lever the right one mirrored |
+| `flydigiVaderBack`, `flydigiApexBack` | The rear views in Flydigi's Vader 5 Pro and Apex 5 manuals; the Apex's paddles moved into their slots (`fix_apex.py`) |
+| `gamesirG7ProBack`, `gamesirCycloneBack` | The rear views in GameSir's G7 Pro and Cyclone 2 manuals |
 | `generic`, `handheld` | The Ultimate 2C's outline with neutral buttons, and a handheld drawn by hand (`derive_misc.py`) |
 
 `looks/*.json` says, for each, where its source is and where each part is (a seed point inside it,
@@ -58,6 +63,14 @@ marked `grip`. A wheel is a `grip` with `steer` instead: it turns with the left 
 to `steer` degrees and does not lean, and the `panels` marked `grip` (its plate, its hub) turn
 with it. A throttle is a `levers` slot, filled from the back as far as its trigger; a pedal is one
 with `"handle": false`. A key that is not round can still carry a `label`, printed in its middle.
+
+A rear view (`<front>Back`) is the controller turned over, as the manuals draw it: its left side on
+the right of the picture, so printed labels read normally, and every part keeps the input it is (the
+paddle under the left hand is `lp1`, drawn on the right). `trace_back.py looks/u2-back.json
+out/ultimate2Back.json out/u2-back.png` traces one onto its front's grid, with the shoulders and each
+button given by hand in `looks/*-back.json`; `derive_four_front.py` adds a model's L4/R4 to its front,
+peeking above the bumpers where the rear view has them. The window turns a controller over while a
+button on its back is being assigned (`art::back_view`).
 
 The looks traced from one model's pictures are given to its USB ids in `DRAWINGS`, in
 `crates/open-controller-core/src/models.rs`; the rest are drawn by family. A model that copies

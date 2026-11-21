@@ -1,0 +1,157 @@
+{
+ "source": "pdfvec:manuals/User_Manual_Vader_5_Pro_compressed.pdf:9:50,130,177,222:nogray",
+ "width": 1600,
+ "ink": 110,
+ "line": 5,
+ "body_close": 3,
+ "align": {
+  "front": "out/flydigiVader-front.json",
+  "bbox": true
+ },
+ "triggers": {
+  "rt": {
+   "seeds": [
+    [
+     400,
+     150
+    ],
+    [
+     300,
+     212
+    ]
+   ]
+  },
+  "lt": {
+   "seeds": [
+    [
+     1195,
+     150
+    ],
+    [
+     1295,
+     212
+    ]
+   ]
+  }
+ },
+ "buttons": [
+  {
+   "input": "misc5",
+   "seed": [
+    565,
+    135
+   ],
+   "label": "RM"
+  },
+  {
+   "input": "misc4",
+   "seed": [
+    1030,
+    135
+   ],
+   "label": "LM"
+  },
+  {
+   "input": "rp1",
+   "seed": [
+    490,
+    600
+   ],
+   "grow_px": 5,
+   "label": "M1"
+  },
+  {
+   "input": "lp1",
+   "seed": [
+    1105,
+    600
+   ],
+   "grow_px": 5,
+   "label": "M2"
+  },
+  {
+   "input": "rp2",
+   "seed": [
+    520,
+    760
+   ],
+   "grow_px": 4,
+   "label": "M3"
+  },
+  {
+   "input": "lp2",
+   "seed": [
+    1075,
+    760
+   ],
+   "grow_px": 4,
+   "label": "M4"
+  },
+  {
+   "input": "misc6",
+   "seed": [
+    718,
+    822
+   ],
+   "grow_px": 2
+  },
+  {
+   "input": "none",
+   "seed": [
+    872,
+    822
+   ],
+   "grow_px": 2
+  }
+ ],
+ "panels": [
+  {
+   "seed": [
+    795,
+    250
+   ],
+   "style": "line"
+  },
+  {
+   "seed": [
+    541,
+    430
+   ],
+   "style": "shade"
+  },
+  {
+   "seed": [
+    1050,
+    430
+   ],
+   "style": "shade"
+  },
+  {
+   "stadium": [
+    743,
+    593,
+    849,
+    656
+   ],
+   "style": "shade"
+  }
+ ],
+ "dots": [
+  [
+   752,
+   730,
+   11
+  ],
+  [
+   796,
+   730,
+   11
+  ],
+  [
+   839,
+   730,
+   11
+  ]
+ ],
+ "glyphs": "xbox"
+}

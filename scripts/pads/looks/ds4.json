@@ -3,6 +3,8 @@
  "width": 1600,
  "ink": 110,
  "line": 4,
+ "trigger_rise": 0.02,
+ "trigger_scale": [0.8, 1.6],
  "bumpers": [
   [
    320,

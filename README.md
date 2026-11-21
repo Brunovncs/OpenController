@@ -29,7 +29,7 @@ controller with a gyro can aim.
 It reads [hundreds of controllers](https://opencontroller.com.br/en/controllers): PlayStation,
 Nintendo, 8BitDo, Flydigi, Steam Deck, handheld PCs and generic pads.
 
-![A controller's page: the 8BitDo drawn with its live input and its four back buttons, one pressing Xbox A, one typing Ctrl+Shift+M and one playing a macro](docs/controller.png)
+![A controller's page: the 8BitDo turned over to show L4, the back button being assigned, and its four back buttons, one pressing Xbox A, one typing Ctrl+Shift+M and one playing a macro](docs/controller.png)
 
 ## Install
 

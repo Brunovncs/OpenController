@@ -433,6 +433,8 @@ struct Phys {
     gyro_error: Option<String>,
     /// Its joystick by its own numbering, read only while a report on it is open.
     raw: RawInput,
+    /// Since when it holds buttons that repeat Xbox buttons, and whether those were last sent down.
+    repeat: Option<(Instant, bool)>,
     /// The gyro reading the window was last told of, which noise does not move.
     rate_shown: Option<[f32; 3]>,
     /// Whether its accelerometer's reports are on, for a virtual DualShock 4, and their last
@@ -810,6 +812,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         core.update_tools(now);
         core.flush_resends();
         core.macro_buttons();
+        core.repeat_buttons(Instant::now());
         core.feedback(now);
         core.housekeeping(now);
         core.microphone.watch(core.phys.values().any(|p| matches!(p.model.family, Family::DualSense | Family::DualSenseEdge)));
@@ -1507,6 +1510,7 @@ impl Core {
             rate: None,
             gyro_error: None,
             raw: RawInput::default(),
+            repeat: None,
             rate_shown: None,
             accel_on: false,
             accel: None,
@@ -1775,11 +1779,62 @@ impl Core {
         }
         if let Some(pr) = profile {
             binding::overlay(&pr.bindings, p.tools.runtime.output.buttons, &mut r);
+            if let Some((since, _)) = p.repeat
+                && binding::repeat_on(since, Instant::now())
+            {
+                binding::repeating(&pr.bindings, p.tools.runtime.output.buttons).press(&mut r);
+            }
         }
         if let Some(b) = self.macro_held.get(&dev) {
             b.press(&mut r);
         }
         r
+    }
+
+    /// Sends again, as they go down and up, the Xbox buttons held buttons repeat: input alone
+    /// would send them only when the controller changes.
+    fn repeat_buttons(&mut self, now: Instant) {
+        let repeating: Vec<(DeviceId, bool)> = self
+            .phys
+            .iter()
+            .map(|(&id, p)| {
+                let held = p.tools.runtime.output.buttons;
+                (id, self.profile_of(&p.model.store).is_some_and(|pr| !binding::repeating(&pr.bindings, held).is_empty()))
+            })
+            .collect();
+        let mut due = Vec::new();
+        for (id, on) in repeating {
+            let Some(p) = self.phys.get_mut(&id) else { continue };
+            let changed = match (on, p.repeat) {
+                (false, None) => false,
+                (false, Some(_)) => {
+                    p.repeat = None;
+                    true
+                }
+                // Pressed just now: the input that held it sent it down already.
+                (true, None) => {
+                    p.repeat = Some((now, true));
+                    false
+                }
+                (true, Some((since, down))) => {
+                    let now_down = binding::repeat_on(since, now);
+                    p.repeat = Some((since, now_down));
+                    now_down != down
+                }
+            };
+            if changed
+                && let Kind::Slot(s) = p.kind
+                && self.roster.get(s).and_then(|slot| slot.source) == Some(id)
+                && !due.contains(&s)
+            {
+                due.push(s);
+            }
+        }
+        for s in due {
+            if !self.is_native(s) {
+                self.resend(s);
+            }
+        }
     }
 
     /// Presses and lets go of the Xbox buttons macros tap, on the virtual controller of the
@@ -2595,11 +2650,12 @@ impl Core {
         let chosen = store.as_ref().and_then(|p| self.profiles.get(p)).and_then(|p| p.model.as_deref());
         // A controller that copies another's ids goes by the name of the model its owner chose.
         let alias = model.and_then(|m| models::alias(m.vendor, m.product, chosen));
+        let named = store.as_ref().and_then(|p| self.profiles.get(p)).and_then(|p| p.name.clone());
         PadView {
             lab_status: Default::default(),
             microphone_muted: model.filter(|m| matches!(m.family, Family::DualSense | Family::DualSenseEdge)).and(self.microphone_seen),
             key,
-            name: alias.map(|a| a.4.to_string()).or_else(|| model.map(|m| m.name.clone())).unwrap_or_default(),
+            name: named.or_else(|| alias.map(|a| a.4.to_string())).or_else(|| model.map(|m| m.name.clone())).unwrap_or_default(),
             brand: model.map(|m| m.brand).unwrap_or(Brand::Other),
             links: vec![Link::Unknown],
             power: Power::Unknown,

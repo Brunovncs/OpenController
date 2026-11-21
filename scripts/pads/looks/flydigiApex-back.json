@@ -1,0 +1,186 @@
+{
+ "source": "pdfvec:manuals/User_Manual_Apex_5.pdf:3:280,138,400,222:nogray",
+ "width": 1600,
+ "ink": 110,
+ "line": 5,
+ "body_close": 3,
+ "align": {
+  "front": "out/flydigiApex-front.json",
+  "bbox": true
+ },
+ "triggers": {
+  "rt": {
+   "seeds": [
+    [
+     417,
+     157
+    ],
+    [
+     323,
+     197
+    ],
+    [
+     317,
+     150
+    ],
+    [
+     337,
+     153
+    ]
+   ]
+  },
+  "lt": {
+   "seeds": [
+    [
+     1198,
+     157
+    ],
+    [
+     1292,
+     197
+    ],
+    [
+     1298,
+     150
+    ],
+    [
+     1278,
+     153
+    ]
+   ]
+  }
+ },
+ "bumpers": {
+  "rb": {
+   "seeds": [
+    [
+     417,
+     90
+    ],
+    [
+     327,
+     130
+    ]
+   ]
+  },
+  "lb": {
+   "seeds": [
+    [
+     1198,
+     90
+    ],
+    [
+     1288,
+     130
+    ]
+   ]
+  }
+ },
+ "buttons": [
+  {
+   "input": "misc3",
+   "seed": [
+    550,
+    107
+   ],
+   "label": "RM"
+  },
+  {
+   "input": "misc2",
+   "seed": [
+    1065,
+    107
+   ],
+   "label": "LM"
+  },
+  {
+   "input": "rp1",
+   "seed": [
+    500,
+    610
+   ],
+   "grow_px": 4,
+   "label": "M1"
+  },
+  {
+   "input": "lp1",
+   "seed": [
+    1115,
+    610
+   ],
+   "grow_px": 4,
+   "label": "M2"
+  },
+  {
+   "input": "rp2",
+   "grow_px": 2,
+   "label": "M3",
+   "seeds": [
+    [
+     550,
+     907
+    ],
+    [
+     500,
+     889
+    ],
+    [
+     424,
+     997
+    ]
+   ]
+  },
+  {
+   "input": "none",
+   "seed": [
+    757,
+    791
+   ],
+   "grow_px": 2
+  },
+  {
+   "input": "none",
+   "seed": [
+    858,
+    791
+   ],
+   "grow_px": 2
+  }
+ ],
+ "panels": [
+  {
+   "seed": [
+    808,
+    220
+   ],
+   "style": "line"
+  },
+  {
+   "stadium": [
+    767,
+    603,
+    849,
+    652
+   ],
+   "style": "shade"
+  }
+ ],
+ "dots": [
+  [
+   765,
+   727,
+   12
+  ],
+  [
+   807,
+   727,
+   12
+  ],
+  [
+   850,
+   727,
+   12
+  ]
+ ],
+ "glyphs": "xbox"
+}

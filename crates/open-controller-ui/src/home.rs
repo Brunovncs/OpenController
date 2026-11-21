@@ -10,11 +10,12 @@ use crate::widgets::{
 };
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, AppContext, Context, Div, InteractiveElement, IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled,
-    Window, div, px,
+    AnyElement, AppContext, Context, Div, InteractiveElement, IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement,
+    Styled, Window, div, px,
 };
 use open_controller_core::binding;
 use open_controller_core::device::{Link, Power};
+use open_controller_core::extras::Family;
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::profile::Output;
@@ -53,10 +54,11 @@ pub fn player(role: &Role) -> Option<u8> {
 }
 
 /// "Player 2", "Reconnecting, 4 s" and the like: what the controller is to games right now.
+/// Empty for a DualShock 4 shown to games as one, which its name already says.
 pub fn status(pad: &PadView, text: &Text) -> String {
     match &pad.role {
         Role::Virtual { .. } if pad.profiles.output == Output::DualShock4 && crate::tuning::can_choose_output(pad) => {
-            text.status_ds4.to_string()
+            if pad.family == Family::DualShock4 { String::new() } else { text.status_ds4.to_string() }
         }
         Role::Virtual { player: Some(n) } | Role::Native { player: Some(n) } => fill(text.player, n + 1),
         Role::Virtual { player: None } => text.fifth.to_string(),
@@ -97,7 +99,7 @@ pub fn power(pad: &PadView, text: &Text, t: &Theme) -> Option<Div> {
     )
 }
 
-/// The connections in a line, Bluetooth by its symbol: "USB + ᛒ".
+/// The connections in a line, Bluetooth by its symbol, named when the pointer rests on it.
 pub fn link_line(pad: &PadView, text: &Text, t: &Theme) -> Div {
     let mut line = div().flex().items_center().gap(px(4.)).min_w(px(0.));
     for (i, &l) in pad.links.iter().filter(|&&l| !link_name(text, l).is_empty()).enumerate() {
@@ -105,7 +107,11 @@ pub fn link_line(pad: &PadView, text: &Text, t: &Theme) -> Div {
             line = line.child(caption("+", t.text3));
         }
         line = match l {
-            Link::Bluetooth => line.child(icon(glyph::BLUETOOTH, 14., t.text3)),
+            Link::Bluetooth => line.child(with_tip(
+                div().id(SharedString::from(format!("bluetooth-{:?}", pad.key))).child(icon(glyph::BLUETOOTH, 14., t.text3)),
+                text.bluetooth,
+                t,
+            )),
             _ => line.child(caption(link_name(text, l), t.text3).truncate()),
         };
     }
@@ -172,6 +178,7 @@ impl MainView {
         let key = pad.key;
         let away = matches!(pad.role, Role::Waiting { .. } | Role::Unmapped | Role::Unavailable);
         let n = player(&pad.role);
+        let shown_status = status(pad, text);
         // So a button that does something else is not taken for a broken one.
         let remapped = crate::detail::remappable(pad) && binding::remaps_normal(pad.bindings());
         let remapped_chip = remapped.then(|| {
@@ -207,25 +214,27 @@ impl MainView {
             .rounded_t(px(radius::TILE))
             .relative()
             .child(div().when(away, |d| d.opacity(0.45)).child(art::controller(pad, ART_SCALE, &t)))
-            .child(
-                div()
-                    .absolute()
-                    .top(px(12.))
-                    .left(px(12.))
-                    .max_w(px(width - if remapped { 150. } else { 24. }))
-                    .overflow_hidden()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .px(px(8.))
-                    .h(px(24.))
-                    .rounded(px(radius::CHIP))
-                    .bg(t.layer.opacity(0.85))
-                    .border_1()
-                    .border_color(t.stroke)
-                    .when_some(n, |d, n| d.child(player_mark(Some(n), &t)))
-                    .child(caption(status(pad, text), if away { t.text3 } else { t.text2 }).min_w(px(0.)).truncate()),
-            )
+            .when(!shown_status.is_empty(), |d| {
+                d.child(
+                    div()
+                        .absolute()
+                        .top(px(12.))
+                        .left(px(12.))
+                        .max_w(px(width - if remapped { 150. } else { 24. }))
+                        .overflow_hidden()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .px(px(8.))
+                        .h(px(24.))
+                        .rounded(px(radius::CHIP))
+                        .bg(t.layer.opacity(0.85))
+                        .border_1()
+                        .border_color(t.stroke)
+                        .when_some(n, |d, n| d.child(player_mark(Some(n), &t)))
+                        .child(caption(shown_status, if away { t.text3 } else { t.text2 }).min_w(px(0.)).truncate()),
+                )
+            })
             .children(remapped_chip);
         // Controllers with a virtual controller can trade players by dragging one onto another.
         let swappable = matches!(key, PadKey::Slot(_)) && pad.role != Role::KeptNative;

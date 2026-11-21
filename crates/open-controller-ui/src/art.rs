@@ -171,6 +171,30 @@ pub fn look(pad: &PadView) -> Look {
     }
 }
 
+/// The drawing of the controller seen from behind, turned over as its maker's manual draws it,
+/// for the models whose back buttons are drawn there: its key in `pads.json`.
+pub fn back_view(pad: &PadView) -> Option<&'static str> {
+    let key = match look(pad) {
+        // The Ultimate 3 shares the Ultimate 2's front; its back was not checked.
+        Look::Ultimate2 if (pad.vendor, pad.product) != (0x2dc8, 0x202f) => "ultimate2Back",
+        Look::Ultimate2C => "ultimate2cBack",
+        // The SN30 Pro and the Pro 3 share the Pro 2's front, not its back.
+        Look::Sn30Pro if pad.family == Family::EightBitDoPro2 => "sn30proBack",
+        Look::DualSenseEdge => "dualsenseEdgeBack",
+        Look::Traced("flydigiVader") => "flydigiVaderBack",
+        Look::Traced("flydigiApex") => "flydigiApexBack",
+        Look::Traced("gamesirG7Pro") => "gamesirG7ProBack",
+        Look::Traced("gamesirCyclone") => "gamesirCycloneBack",
+        _ => return None,
+    };
+    pads().contains_key(key).then_some(key)
+}
+
+/// Whether button `b` is on the controller's back: drawn on its back view.
+pub fn on_back(pad: &PadView, b: u8) -> bool {
+    back_view(pad).and_then(|k| pads().get(k)).is_some_and(|g| g.buttons.iter().any(|x| x.input == Some(u32::from(b))))
+}
+
 /// What a model's own drawing prints on a button that its family does not name: the Extreme 3D
 /// Pro's numbers.
 pub fn printed_label(pad: &PadView, b: u8) -> Option<&'static str> {
@@ -465,6 +489,62 @@ fn extent(ops: &Ops) -> (f32, f32, f32, f32) {
         Op::Z => vec![],
     });
     pts.fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |(l, t, r, b), (x, y)| (l.min(x), t.min(y), r.max(x), b.max(y)))
+}
+
+/// Where a label fits best in a shape: the middle of its widest row, the top one of the widest
+/// when several are as wide, and how wide that row is. A curved paddle's middle can fall on its
+/// edge; its widest row is well inside it.
+fn label_spot(ops: &Ops) -> (f32, f32, f32) {
+    let pts: Vec<(f32, f32)> = ops
+        .iter()
+        .filter_map(|op| match *op {
+            Op::M(x, y) | Op::L(x, y) | Op::C(_, _, _, _, x, y) => Some((x, y)),
+            Op::Z => None,
+        })
+        .collect();
+    let (_, t, _, b) = extent(ops);
+    let mut best = (middle(ops), 0f32);
+    const ROWS: usize = 40;
+    for i in 1..ROWS {
+        let y = t + (b - t) * i as f32 / ROWS as f32;
+        let mut xs: Vec<f32> = (0..pts.len())
+            .filter_map(|j| {
+                let ((x0, y0), (x1, y1)) = (pts[j], pts[(j + 1) % pts.len()]);
+                ((y0 <= y) != (y1 <= y)).then(|| x0 + (y - y0) / (y1 - y0) * (x1 - x0))
+            })
+            .collect();
+        xs.sort_by(f32::total_cmp);
+        if let (Some(&l), Some(&r)) = (xs.first(), xs.last())
+            && r - l > best.1 * 1.05
+        {
+            best = (((l + r) / 2., y), r - l);
+        }
+    }
+    (best.0.0, best.0.1, best.1)
+}
+
+/// The middle of a shape's area. The middle of the extent for a shape with no area.
+fn middle(ops: &Ops) -> (f32, f32) {
+    let pts: Vec<(f32, f32)> = ops
+        .iter()
+        .filter_map(|op| match *op {
+            Op::M(x, y) | Op::L(x, y) | Op::C(_, _, _, _, x, y) => Some((x, y)),
+            Op::Z => None,
+        })
+        .collect();
+    let (mut area, mut cx, mut cy) = (0., 0., 0.);
+    for (i, &(x0, y0)) in pts.iter().enumerate() {
+        let (x1, y1) = pts[(i + 1) % pts.len()];
+        let cross = x0 * y1 - x1 * y0;
+        area += cross;
+        cx += (x0 + x1) * cross;
+        cy += (y0 + y1) * cross;
+    }
+    if area.abs() < 1. {
+        let (l, t, r, b) = extent(ops);
+        return ((l + r) / 2., (t + b) / 2.);
+    }
+    (cx / (3. * area), cy / (3. * area))
 }
 
 /// Where a flight stick's grip is: leant with the stick by `(dx, dy)` and turned by `angle`
@@ -862,6 +942,20 @@ pub fn controller(pad: &PadView, scale: f32, t: &Theme) -> AnyElement {
 }
 
 pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: crate::touch_animation::Frame) -> AnyElement {
+    controller_side(pad, scale, t, touches, false, None)
+}
+
+/// The drawing from the front, or from behind (`back`) for a controller that has a back view,
+/// with `selected`, the button being assigned, outlined.
+pub fn controller_side(
+    pad: &PadView,
+    scale: f32,
+    t: &Theme,
+    touches: crate::touch_animation::Frame,
+    back: bool,
+    selected: Option<u8>,
+) -> AnyElement {
+    let selected = selected.map(u32::from);
     let look = look(pad);
     let glyphs = glyphs(pad, look);
     let state: PadState = pad.input;
@@ -893,7 +987,7 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
         touch_light
     };
     let touch_ink = touch_color(touch_light, &ink, t);
-    let g = pad_for(look);
+    let g = back.then(|| back_view(pad)).flatten().and_then(|k| pads().get(k)).unwrap_or_else(|| pad_for(look));
     let (turn, gripped) = grip_turn(g, &state);
 
     let painted = canvas(
@@ -901,6 +995,12 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
         move |bounds, _, window, _| {
             let mut pen = Pen { window, o: bounds.origin, k };
             let on = |b: u32| held(&state, b);
+            // The button being assigned: a light outline in a blue glow, apart from the blue fill
+            // of a pressed one, so it shows whether or not it is held.
+            let ring = |pen: &mut Pen, ops: &Ops| {
+                pen.stroke(ops, (7. * k).max(5.), ink.lit.opacity(0.35));
+                pen.stroke(ops, (1.8 * k).max(1.4), ink.label);
+            };
             let lit_or = |b: Option<u32>, idle: Hsla| if b.is_some_and(on) { ink.lit } else { idle };
             let value = |a: usize| (state.axes[a].max(0) as f32 / 32767.).clamp(0., 1.);
 
@@ -918,6 +1018,10 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
             if let Some(bm) = &g.bumpers {
                 for (ops, b) in [(&bm[0], button::LEFT_SHOULDER), (&bm[1], button::RIGHT_SHOULDER)] {
                     pen.shape(ops, lit_or(Some(b), ink.part), lit_or(Some(b), ink.edge));
+                    // Before the body, which hides the part of it behind.
+                    if selected == Some(b) {
+                        ring(&mut pen, ops);
+                    }
                 }
             }
 
@@ -937,6 +1041,9 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
             if let Some(tp) = &g.touchpad {
                 let b = Some(button::TOUCHPAD);
                 pen.shape(tp, lit_or(b, ink.part), lit_or(b, ink.edge));
+                if selected == b {
+                    ring(&mut pen, tp);
+                }
                 let (left, top, right, bottom) = extent(tp);
                 // Keep both contacts inside the inset rectangle of the curved touch surface.
                 let inset = 11.;
@@ -996,6 +1103,9 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
                 }
                 let (cx, cy) = (st.x + mx * st.reach(), st.y + my * st.reach());
                 pen.shape(&circle(cx, cy, st.cap), if clicked { ink.lit } else { ink.body_top }, if active { ink.lit } else { ink.edge });
+                if selected == Some(click) {
+                    ring(&mut pen, &circle(cx, cy, st.cap));
+                }
                 pen.stroke(&circle(cx, cy, st.cap * 0.62), 1., if clicked { ink.on_lit.opacity(0.3) } else { ink.soft });
             }
 
@@ -1024,6 +1134,9 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
                         Shape::Path(ops) => (turned.ops(ops), None),
                     };
                     pen.shape(&ops, fill, edge);
+                    if selected.is_some() && b.input == selected {
+                        ring(&mut pen, &ops);
+                    }
                     let symbol = if b.input.is_some_and(on) { ink.on_lit } else { ink.label };
                     if let (Some(name), Some((x, y, r))) = (&b.icon, centre)
                         && let Some((ops, stroke)) = icon(name, x, y, r)
@@ -1081,9 +1194,12 @@ pub fn controller_with_touches(pad: &PadView, scale: f32, t: &Theme, touches: cr
                     (x, y, r)
                 }
                 Shape::Path(ops) if b.label.is_some() => {
-                    let (l, t0, r, bt) = extent(ops);
-                    let (x, y) = turned.at((l + r) / 2., (t0 + bt) / 2.);
-                    (x, y, (r - l).min(bt - t0) * 0.4)
+                    let (_, t0, _, bt) = extent(ops);
+                    let (mx, my, wide) = label_spot(ops);
+                    let (x, y) = turned.at(mx, my);
+                    // As big as the row holds the label across, and no taller than before.
+                    let chars = b.label.as_deref().map_or(1, |l| l.chars().count()).max(1) as f32;
+                    (x, y, (wide * 0.85 / chars).min((bt - t0) * 0.4))
                 }
                 Shape::Path(_) => continue,
             };
@@ -1143,6 +1259,51 @@ fn grip_turn(g: &Pad, state: &PadState) -> (Turn, bool) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_label_sits_in_the_middle_of_its_shape() {
+        // A square's middle is its centre; an L's is inside the L, off its extent's centre.
+        let sq = vec![Op::M(0., 0.), Op::L(10., 0.), Op::L(10., 10.), Op::L(0., 10.), Op::Z];
+        assert_eq!(middle(&sq), (5., 5.));
+        let l = vec![Op::M(0., 0.), Op::L(2., 0.), Op::L(2., 8.), Op::L(10., 8.), Op::L(10., 10.), Op::L(0., 10.), Op::Z];
+        let (x, y) = middle(&l);
+        assert!(x < 5. && y > 5., "({x}, {y})");
+        // A shape wide on top and thin below: its label goes up, where it is wide.
+        let drop = vec![Op::M(0., 0.), Op::L(10., 0.), Op::L(10., 4.), Op::L(6., 20.), Op::L(4., 20.), Op::L(0., 4.), Op::Z];
+        let (x, y, wide) = label_spot(&drop);
+        assert!((x - 5.).abs() < 0.5 && y < 5. && wide > 9., "({x}, {y}, {wide})");
+    }
+
+    #[test]
+    fn back_buttons_turn_the_drawing_over_only_where_a_back_view_is_drawn() {
+        use crate::demo::pad;
+        use open_controller_core::PadKey;
+        use open_controller_core::device::Brand;
+        let u2 = pad(PadKey::Device(1), "8BitDo Ultimate 2 Wireless", Brand::EightBitDo, Family::EightBitDoFour, (0x2dc8, 0x6012));
+        assert_eq!(back_view(&u2), Some("ultimate2Back"));
+        for b in [extras::LEFT_PADDLE1, extras::RIGHT_PADDLE1, extras::LEFT_PADDLE2, extras::RIGHT_PADDLE2] {
+            assert!(on_back(&u2, b), "{b}");
+        }
+        assert!(!on_back(&u2, button::SOUTH as u8) && !on_back(&u2, button::LEFT_SHOULDER as u8));
+        let u3 = pad(PadKey::Device(2), "8BitDo Ultimate 3", Brand::EightBitDo, Family::EightBitDoFour, (0x2dc8, 0x202f));
+        assert_eq!(back_view(&u3), None, "its back was not checked");
+        let ds4 = pad(PadKey::Device(3), "DualShock 4", Brand::PlayStation, Family::DualShock4, (0x054c, 0x09cc));
+        assert_eq!(back_view(&ds4), None);
+        // Every back view the app names is in pads.json, with buttons on it.
+        for key in [
+            "ultimate2Back",
+            "ultimate2cBack",
+            "sn30proBack",
+            "dualsenseEdgeBack",
+            "flydigiVaderBack",
+            "flydigiApexBack",
+            "gamesirG7ProBack",
+            "gamesirCycloneBack",
+        ] {
+            let g = pads().get(key).unwrap_or_else(|| panic!("{key} missing"));
+            assert!(g.buttons.iter().any(|b| b.input.is_some()), "{key} has no back buttons");
+        }
+    }
     use super::*;
 
     #[test]
