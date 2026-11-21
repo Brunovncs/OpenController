@@ -6,11 +6,11 @@ use crate::theme::icon as glyph;
 use crate::ui::{Install, MainView};
 use crate::widgets::{Kind, body, button, card, group, icon, labelled, title};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
-use open_controller_core::drivers;
 pub use open_controller_core::drivers::{Component, Outcome};
 use open_controller_core::i18n::{Text, fill};
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::{Driver, Snapshot};
+use open_controller_core::{devnode, drivers};
 use std::path::Path;
 
 /// What Programs and Features says is installed.
@@ -26,6 +26,12 @@ pub fn install(c: Component, dir: &Path, silent: bool) -> Result<Outcome, String
 /// can be neither installed nor asked for.
 fn unavailable(c: Component) -> bool {
     c == Component::HidHide && drivers::native_arm64()
+}
+
+/// Whether a DualShock 3 is plugged in that only DsHidMini would let anything read. The demo
+/// pretends one is with `OPEN_CONTROLLER_DEMO_DS3` set.
+pub fn ds3_unread(demo: bool) -> bool {
+    if demo { std::env::var_os("OPEN_CONTROLLER_DEMO_DS3").is_some() } else { devnode::unread_ds3() }
 }
 
 /// What keeps controllers from working fully, for the banner on the home screen.
@@ -59,6 +65,27 @@ fn state(c: Component, snap: &Snapshot, installed: Option<&String>) -> (bool, Op
 }
 
 impl MainView {
+    /// For the home screen: a DualShock 3 by cable that nothing reads yet, with DsHidMini's
+    /// install right there.
+    pub fn ds3_banner(&self, cx: &mut Context<Self>) -> Option<(String, Option<AnyElement>)> {
+        let c = Component::DsHidMini;
+        let t = self.theme;
+        let text = self.model.read(cx).text;
+        let installed = self.installed.get(&c).is_some_and(|v| v.is_some());
+        let install = |cx: &mut Context<Self>| {
+            button("install-ds3", text.install, Kind::Standard, &t)
+                .on_click(cx.listener(move |this, _, _, cx| this.install(c, true, cx)))
+                .into_any_element()
+        };
+        match self.installs.get(&c) {
+            Some(Install::Done(Outcome::RestartNeeded)) => Some((text.restart_needed.to_string(), None)),
+            _ if !self.ds3_unread || installed => None,
+            Some(Install::Running) => Some((text.ds3_unread.to_string(), Some(body(text.installing, t.text2).into_any_element()))),
+            Some(Install::Failed(e)) => Some((fill(text.install_failed, e), Some(install(cx)))),
+            _ => Some((text.ds3_unread.to_string(), Some(install(cx)))),
+        }
+    }
+
     fn driver_card(&self, c: Component, need: Need, desc: &'static str, cx: &mut Context<Self>) -> gpui::Div {
         let t = self.theme;
         let model = self.model.read(cx);
@@ -110,7 +137,12 @@ impl MainView {
                     .on_click(cx.listener(move |this, _, _, cx| this.install(c, false, cx)))
                     .into_any_element(),
             ),
-            _ => None,
+            // For one that is installed and still does not work right.
+            _ => Some(
+                button(("reinstall", c as usize), text.reinstall, Kind::Subtle, &t)
+                    .on_click(cx.listener(move |this, _, _, cx| this.run_setup(c, move |dir| drivers::reinstall(c, dir), cx)))
+                    .into_any_element(),
+            ),
         };
         let card = Card { id: c as usize, name: pkg.name, need, desc, works, status, note, action, home: Some(pkg.home) };
         self.requirement(card, text)

@@ -128,6 +128,25 @@ fn multi_sz_property(node: u32, key: &DEVPROPKEY) -> Vec<String> {
     if ok == CR_SUCCESS { from_multi_sz(&buf) } else { Vec::new() }
 }
 
+/// Whether a DualShock 3 or Sixaxis is plugged in by cable with nothing that can read it:
+/// Windows gives it its plain HID driver, which never asks it to start reporting. Behind
+/// DsHidMini, Sony's own driver or any other one, its service is that driver's.
+pub fn unread_ds3() -> bool {
+    present_ids(Some("USB"))
+        .iter()
+        .filter(|id| is_ds3(id))
+        .any(|id| locate(id).is_some_and(|n| plain_hid(&string_property(n, &DEVPKEY_Device_Service).unwrap_or_default())))
+}
+
+/// The controller's own USB device, not the HID device under it nor any other Sony one.
+fn is_ds3(instance_id: &str) -> bool {
+    instance_id.to_ascii_uppercase().starts_with(r"USB\VID_054C&PID_0268\")
+}
+
+fn plain_hid(service: &str) -> bool {
+    service.is_empty() || service.eq_ignore_ascii_case("HidUsb")
+}
+
 /// The name a USB controller gives itself (its product string, as Device Manager shows it under
 /// "Bus reported device description"), found by vendor and product id. For controllers SDL reads
 /// through XInput, which reports no name: an 8BitDo receiver is then "8BitDo Ultimate 2 Wireless
@@ -229,6 +248,30 @@ mod tests {
         for d in &devices {
             assert_eq!(*d, crate::report::without_address(d), "a Bluetooth address left in {d}");
             assert!(!d.contains("ViGEm"), "a virtual controller in {d}");
+        }
+    }
+
+    #[test]
+    fn only_a_dualshock_3_on_the_plain_hid_driver_is_unread() {
+        assert!(is_ds3(r"USB\VID_054C&PID_0268\5&2A9B2C1&0&3"));
+        assert!(is_ds3(r"usb\vid_054c&pid_0268\5&2a9b2c1&0&3"));
+        // The HID device under it, a DualShock 4 and a DualSense.
+        assert!(!is_ds3(r"HID\VID_054C&PID_0268\6&1C2D3E4&0&0000"));
+        assert!(!is_ds3(r"USB\VID_054C&PID_05C4\5&2A9B2C1&0&3"));
+        assert!(!is_ds3(r"USB\VID_054C&PID_0CE6\5&2A9B2C1&0&3"));
+        assert!(!is_ds3(r"USB\VID_054C&PID_02681\5&2A9B2C1&0&3"));
+        assert!(plain_hid("HidUsb") && plain_hid("hidusb") && plain_hid(""));
+        // DsHidMini (UMDF), WinUSB or libusbK from ScpToolkit and the like, Sony's own driver.
+        for other in ["WUDFRd", "dshidmini", "WinUSB", "libusbK", "sixaxis"] {
+            assert!(!plain_hid(other), "{other}");
+        }
+    }
+
+    #[test]
+    fn no_alarm_without_a_dualshock_3() {
+        // Whatever else this machine has plugged in.
+        if !present_ids(Some("USB")).iter().any(|id| is_ds3(id)) {
+            assert!(!unread_ds3());
         }
     }
 }

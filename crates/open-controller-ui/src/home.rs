@@ -334,7 +334,9 @@ impl MainView {
                 } else if let Some(e) = &snap.sdl_error {
                     Some((format!("SDL: {e}"), Some(requirements(cx))))
                 } else {
-                    crate::requirements::attention(&snap, text).map(|m| (m.to_string(), Some(requirements(cx))))
+                    crate::requirements::attention(&snap, text)
+                        .map(|m| (m.to_string(), Some(requirements(cx))))
+                        .or_else(|| self.ds3_banner(cx))
                 }
             }
         };

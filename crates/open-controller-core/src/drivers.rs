@@ -192,18 +192,40 @@ pub fn package(c: Component) -> &'static Package {
 /// The installed version of each package, from Programs and Features or next to the unpacked
 /// program; `None` when it is not installed. Programs and Features is read once for all of them.
 pub fn installed_all() -> Vec<(Component, Option<String>)> {
-    let programs = installed_programs();
+    let programs: Vec<(String, String)> = installed_programs().into_iter().map(|(_, name, version)| (name, version)).collect();
     PACKAGES.iter().map(|p| (p.component, installed_in(p.component, &programs))).collect()
 }
 
 fn installed_in(c: Component, programs: &[(String, String)]) -> Option<String> {
     match package(c).found {
-        Found::Named(want) => programs.iter().find(|(name, _)| name == want).map(|(_, v)| v.clone()),
-        Found::Prefixed(start) => programs.iter().find(|(name, _)| name.starts_with(start)).map(|(_, v)| v.clone()),
+        Found::Named(_) | Found::Prefixed(_) => programs.iter().find(|(name, _)| listed_as(c, name)).map(|(_, v)| v.clone()),
         Found::Unpacked => crate::viiper::server_exe()
             .is_file()
             .then(|| std::fs::read_to_string(crate::viiper::server_dir().join(VERSION_FILE)).unwrap_or_default().trim().to_string()),
     }
+}
+
+/// Whether `name` in Programs and Features is `c`.
+fn listed_as(c: Component, name: &str) -> bool {
+    match package(c).found {
+        Found::Named(want) => name == want,
+        Found::Prefixed(start) => name.starts_with(start),
+        Found::Unpacked => false,
+    }
+}
+
+/// The Windows Installer product code `c` is installed under, which its uninstall takes.
+fn product_code(c: Component) -> Option<String> {
+    installed_programs().into_iter().find(|(key, name, _)| listed_as(c, name) && is_guid(key)).map(|(key, ..)| key)
+}
+
+/// `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`, and nothing else: it goes into a command line.
+fn is_guid(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 38
+        && b[0] == b'{'
+        && b[37] == b'}'
+        && b[1..37].iter().enumerate().all(|(i, c)| if [8, 13, 18, 23].contains(&i) { *c == b'-' } else { c.is_ascii_hexdigit() })
 }
 
 /// Whether `exe` is the VIIPER server this version was made with.
@@ -249,6 +271,24 @@ pub enum Outcome {
 /// to finish. `silent` runs it without its own windows; otherwise its setup wizard shows, which
 /// an update of HidHide needs, since it may ask to restart halfway.
 pub fn install(c: Component, dir: &Path, silent: bool) -> Result<Outcome, String> {
+    run_setup(c, dir, silent, None)
+}
+
+/// Uninstalls `c` and installs it again, for a driver that is installed but does not work. Both
+/// run under one administrator prompt. A package Windows Installer does not know is installed
+/// over, which its own setup takes as a repair.
+pub fn reinstall(c: Component, dir: &Path) -> Result<Outcome, String> {
+    // HidHide and BthPS3 are filters that cannot be stopped: the driver running stays until
+    // Windows restarts, and replacing it is what a reinstall is for. ViGEmBus makes its bus again
+    // at once, and DsHidMini's controllers start again on the new one.
+    Ok(match run_setup(c, dir, true, product_code(c).as_deref())? {
+        Outcome::Installed if matches!(c, Component::HidHide | Component::BthPs3) => Outcome::RestartNeeded,
+        o => o,
+    })
+}
+
+/// [`install`], after uninstalling the product `remove` when given.
+fn run_setup(c: Component, dir: &Path, silent: bool, remove: Option<&str>) -> Result<Outcome, String> {
     let p = package(c);
     let file = download(p, dir)?;
     if p.setup == Setup::Zip {
@@ -267,6 +307,10 @@ pub fn install(c: Component, dir: &Path, silent: bool) -> Result<Outcome, String
         Setup::Inno => (file.display().to_string(), if silent { "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" } else { "/NORESTART" }.into()),
         _ => (file.display().to_string(), if silent { "/exenoui /qn /norestart".to_string() } else { String::new() }),
     };
+    let (exe, args) = match remove {
+        Some(code) => (system32("cmd.exe").display().to_string(), uninstall_first(code, &exe, &args)?),
+        None => (exe, args),
+    };
     let code = run_elevated(&exe, &args);
     drop(lock);
     let _ = std::fs::remove_file(&file);
@@ -278,6 +322,16 @@ pub fn install(c: Component, dir: &Path, silent: bool) -> Result<Outcome, String
         (USER_EXIT, _) | (INNO_CANCELLED | INNO_ABORTED, Setup::Inno) => Ok(Outcome::Cancelled),
         (n, _) => Err(format!("the installer ended with code {n}")),
     }
+}
+
+/// cmd.exe's arguments for uninstalling product `code` and then running `exe` with `args`. The
+/// exit code is the setup's: an uninstall that finds nothing to remove still lets it run.
+fn uninstall_first(code: &str, exe: &str, args: &str) -> Result<String, String> {
+    if !is_guid(code) {
+        return Err(format!("{code} is not a product code"));
+    }
+    let msiexec = system32("msiexec.exe");
+    Ok(format!("/d /s /c \"\"{}\" /x {code} /qn /norestart & \"{exe}\" {args}\"", msiexec.display()))
 }
 
 /// Unpacks VIIPER's zip (the server and its licenses) into `dir` with the `tar` that comes with
@@ -383,8 +437,9 @@ fn run_elevated(exe: &str, args: &str) -> Result<u32, String> {
     Ok(code)
 }
 
-/// (display name, version) of every program in Programs and Features, both registry views.
-fn installed_programs() -> Vec<(String, String)> {
+/// (registry key, display name, version) of every program in Programs and Features, both registry
+/// views. A Windows Installer product's key is its product code.
+fn installed_programs() -> Vec<(String, String, String)> {
     const UNINSTALL: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
     let mut out = Vec::new();
     for view in [KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
@@ -412,7 +467,8 @@ fn installed_programs() -> Vec<(String, String)> {
             }
             let sub = from_wide(&name);
             if let Some(display) = string_value(key, &sub, "DisplayName") {
-                out.push((display, string_value(key, &sub, "DisplayVersion").unwrap_or_default()));
+                let version = string_value(key, &sub, "DisplayVersion").unwrap_or_default();
+                out.push((sub, display, version));
             }
         }
         unsafe { RegCloseKey(key) };
@@ -514,6 +570,31 @@ mod tests {
         // Every Windows install has some; the list must not come back empty or garbled.
         let all = installed_programs();
         assert!(!all.is_empty());
-        assert!(all.iter().all(|(n, _)| !n.contains('\0')));
+        assert!(all.iter().all(|(k, n, _)| !k.contains('\0') && !n.contains('\0')));
+    }
+
+    #[test]
+    fn only_a_product_code_reaches_the_command_line() {
+        assert!(is_guid("{966606F3-2745-49E9-BF15-5C3EAA4E9077}"));
+        assert!(!is_guid("USBip_is1"));
+        assert!(!is_guid("{966606F3-2745-49E9-BF15-5C3EAA4E907\"}"));
+        assert!(!is_guid("{966606F3&2745-49E9-BF15-5C3EAA4E9077}"));
+        assert!(uninstall_first("x & calc", "setup.exe", "").is_err());
+        let args = uninstall_first("{966606F3-2745-49E9-BF15-5C3EAA4E9077}", r"C:\Temp\setup.exe", "/exenoui /qn /norestart").unwrap();
+        assert!(args.starts_with(r#"/d /s /c """#), "{args}");
+        assert!(
+            args.ends_with(r#"" /x {966606F3-2745-49E9-BF15-5C3EAA4E9077} /qn /norestart & "C:\Temp\setup.exe" /exenoui /qn /norestart""#),
+            "{args}"
+        );
+    }
+
+    #[test]
+    fn finds_the_installed_drivers_product_codes() {
+        // On a machine with them, as this one: what the reinstall uninstalls.
+        for c in [Component::ViGEmBus, Component::HidHide] {
+            if installed_all().iter().any(|(k, v)| *k == c && v.is_some()) {
+                assert!(product_code(c).is_some_and(|k| is_guid(&k)), "{c:?}");
+            }
+        }
     }
 }

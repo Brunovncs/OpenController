@@ -38,7 +38,17 @@ pub fn attention(snap: &Snapshot, text: &'static Text) -> Option<&'static str> {
     }
 }
 
+/// A DualShock 3 needs a driver only on Windows.
+pub fn ds3_unread(_: bool) -> bool {
+    false
+}
+
 impl MainView {
+    /// A DualShock 3 needs a driver only on Windows.
+    pub fn ds3_banner(&self, _: &mut Context<Self>) -> Option<(String, Option<AnyElement>)> {
+        None
+    }
+
     pub fn render_requirements(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let model = self.model.read(cx);

@@ -58,7 +58,8 @@ pub fn chord(k: &Keystroke) -> Option<Chord> {
 }
 
 /// Keys the window cannot hear, because Windows acts on them first or the keyboard lacks them.
-pub const OTHER: [u16; 21] = [
+pub const OTHER: [u16; 22] = [
+    0x1B, // Esc, which stops the recording instead
     0x5B, // Win
     0x2C, // Print Screen
     0xB3, 0xB0, 0xB1, 0xAD, 0xAE, 0xAF, // media and volume

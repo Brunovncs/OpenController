@@ -127,6 +127,8 @@ pub struct MainView {
     pub installs: HashMap<Component, Install>,
     /// What Programs and Features says is installed, read when the settings open.
     pub installed: HashMap<Component, Option<String>>,
+    /// A DualShock 3 is plugged in that Windows cannot read without DsHidMini.
+    pub ds3_unread: bool,
     /// Whether a newer version is out, and what is being done about it.
     pub update: crate::updates::Update,
     /// The report on a controller, while its dialog is open.
@@ -203,6 +205,7 @@ impl MainView {
             profile_menu: None,
             installs: HashMap::new(),
             installed: HashMap::new(),
+            ds3_unread: false,
             update: Default::default(),
             report: None,
             gyro_advanced: false,
@@ -224,6 +227,7 @@ impl MainView {
             _subscriptions: vec![observe, theme_change, activation],
         };
         view.read_installed(cx);
+        view.watch_ds3(cx);
         // `--demo` with `OPEN_CONTROLLER_PAGE` set: the first example controller's page, an extra
         // button picked, for the screenshot of a controller's page. A slot's number or `d` and a
         // device's opens that controller's page instead, `settings` the settings, and
@@ -360,6 +364,32 @@ impl MainView {
         .detach();
     }
 
+    /// Looks every few seconds for a DualShock 3 that Windows cannot read, for the home screen.
+    fn watch_ds3(&mut self, cx: &mut Context<Self>) {
+        if !cfg!(windows) {
+            return;
+        }
+        let demo = self.model.read(cx).demo;
+        cx.spawn(async move |this, cx| {
+            loop {
+                let found = cx.background_executor().spawn(async move { requirements::ds3_unread(demo) }).await;
+                let gone = this
+                    .update(cx, |this, cx| {
+                        if this.ds3_unread != found {
+                            this.ds3_unread = found;
+                            cx.notify();
+                        }
+                    })
+                    .is_err();
+                if gone {
+                    break;
+                }
+                cx.background_executor().timer(std::time::Duration::from_secs(3)).await;
+            }
+        })
+        .detach();
+    }
+
     /// Whether something keeps controllers from working fully, for the dot on the settings
     /// button and the banner on the home screen.
     pub fn needs_attention(&self, cx: &Context<Self>) -> bool {
@@ -371,6 +401,17 @@ impl MainView {
 
     /// Downloads and runs a driver's installer, away from the interface thread.
     pub fn install(&mut self, c: Component, silent: bool, cx: &mut Context<Self>) {
+        self.run_setup(c, move |dir| requirements::install(c, dir, silent), cx);
+    }
+
+    /// `setup` with the folder for downloads, away from the interface thread, one at a time per
+    /// driver.
+    pub fn run_setup(
+        &mut self,
+        c: Component,
+        setup: impl FnOnce(&std::path::Path) -> Result<Outcome, String> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
         if self.installs.get(&c) == Some(&Install::Running) {
             return;
         }
@@ -378,7 +419,7 @@ impl MainView {
         cx.notify();
         let dir = std::env::temp_dir().join("open-controller-setup");
         cx.spawn(async move |this, cx| {
-            let result = cx.background_executor().spawn(async move { requirements::install(c, &dir, silent) }).await;
+            let result = cx.background_executor().spawn(async move { setup(&dir) }).await;
             let _ = this.update(cx, |this, cx| {
                 // VIIPER, chosen but missing something, is tried again with what was installed.
                 // Not when it already works: choosing it again reconnects it, and games would see

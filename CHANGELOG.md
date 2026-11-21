@@ -3,6 +3,13 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+A button can now press Esc: pick it under "Keys you can't press here", since pressing Esc stops
+the recording. On Windows, ViGEmBus and HidHide have a Reinstall button in Settings, for when one
+is installed but stops working, and so do the PlayStation 3 drivers. Plugging in a DualShock 3
+without its driver now says so on the home screen, with a button that installs it.
+
 ## 0.9.3
 
 The window moves more smoothly: pages, sections, menus and the report dialog ease in instead of
