@@ -105,6 +105,65 @@ pub struct RawInput {
     pub axes: Vec<i16>,
     /// Each hat's directions, as SDL gives them: up 1, right 2, down 4, left 8.
     pub hats: Vec<u8>,
+    /// The controller's own HID reports, when it has a HID device to read them from.
+    #[serde(default)]
+    pub hid: Option<HidBytes>,
+}
+
+/// What a controller's own HID reports did while a report was open on it, by kind of report.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HidBytes {
+    pub reports: Vec<HidReport>,
+}
+
+/// One kind of report, told by its first byte (the report id, for most controllers) and length.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HidReport {
+    pub id: u8,
+    /// The first one received, at rest unless something was held.
+    pub first: Vec<u8>,
+    pub received: u32,
+    /// Per byte: the bits that ever differed from `first`, and the lowest and highest value.
+    pub flipped: Vec<u8>,
+    pub low: Vec<u8>,
+    pub high: Vec<u8>,
+}
+
+/// The most kinds of report kept: controllers send one or two, besides their replies.
+pub const HID_KINDS: usize = 4;
+
+impl HidBytes {
+    /// Takes in one report. Whether a byte moved somewhere new: counting alone is no news.
+    pub fn feed(&mut self, data: &[u8]) -> bool {
+        let Some(&id) = data.first() else { return false };
+        let Some(r) = (match self.reports.iter().position(|r| r.id == id && r.first.len() == data.len()) {
+            Some(i) => self.reports.get_mut(i),
+            None if self.reports.len() < HID_KINDS => {
+                self.reports.push(HidReport {
+                    id,
+                    first: data.to_vec(),
+                    received: 0,
+                    flipped: vec![0; data.len()],
+                    low: data.to_vec(),
+                    high: data.to_vec(),
+                });
+                self.reports.last_mut()
+            }
+            None => None,
+        }) else {
+            return false;
+        };
+        r.received = r.received.saturating_add(1);
+        let mut changed = r.received == 1;
+        for (i, &b) in data.iter().enumerate() {
+            let flipped = r.flipped[i] | (b ^ r.first[i]);
+            changed |= flipped != r.flipped[i] || b < r.low[i] || b > r.high[i];
+            r.flipped[i] = flipped;
+            r.low[i] = r.low[i].min(b);
+            r.high[i] = r.high[i].max(b);
+        }
+        changed
+    }
 }
 
 /// The most axes and hats a [`RawInput`] keeps.
@@ -209,6 +268,33 @@ pub fn motor(v: u8) -> u16 {
 
 #[cfg(test)]
 mod tests {
+    use super::{HID_KINDS, HidBytes};
+
+    #[test]
+    fn hid_bytes_keep_what_moved_and_where() {
+        let mut h = HidBytes::default();
+        // A Flydigi V1 report at rest, then with bits 0x10 and 0x20 of byte 10 and byte 23 up.
+        let mut rest = [0u8; 32];
+        (rest[0], rest[1], rest[17]) = (0x04, 0xFE, 0x7F);
+        assert!(h.feed(&rest), "the first is news");
+        assert!(!h.feed(&rest), "the same again is not");
+        let mut held = rest;
+        (held[10], held[23]) = (0x30, 0xFF);
+        assert!(h.feed(&held));
+        assert!(!h.feed(&rest), "nothing new once back at rest");
+        let r = &h.reports[0];
+        assert_eq!((r.id, r.received, r.first.len()), (0x04, 4, 32));
+        let moved: Vec<(usize, u8, u8, u8)> =
+            (0..32).filter(|&i| r.flipped[i] != 0).map(|i| (i, r.flipped[i], r.low[i], r.high[i])).collect();
+        assert_eq!(moved, vec![(10, 0x30, 0, 0x30), (23, 0xFF, 0, 0xFF)]);
+        // Another kind of report is kept apart, and only so many kinds are.
+        for id in 1..=10u8 {
+            h.feed(&[id, 1, 2]);
+        }
+        assert_eq!(h.reports.len(), HID_KINDS);
+        assert!(!h.feed(&[]));
+    }
+
     use super::*;
 
     #[test]

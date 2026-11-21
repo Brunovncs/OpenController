@@ -9,6 +9,7 @@ use crate::ds4::{self, Motion};
 use crate::extras::{self, Art, Family, Features, Hint};
 use crate::handheld;
 use crate::hiding::Hider;
+use crate::hidtap::HidTap;
 use crate::keyboard::{Keyboard, Tap};
 use crate::mapping::{self, PadState, RawInput, XusbReport};
 use crate::models;
@@ -677,6 +678,9 @@ struct Core {
     input_changed: bool,
     /// The controller a report is open on, whose joystick is read by its own numbering.
     raw_watch: Option<PadKey>,
+    /// Its HID device, opened beside SDL's while the report is open; `None` inside when it has
+    /// none to open.
+    hid_tap: Option<(DeviceId, Option<HidTap>)>,
     /// Last, so it is dropped last: SDL_Quit must come after every gamepad is closed.
     sdl: Sdl,
 }
@@ -764,6 +768,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         changed: true,
         input_changed: false,
         raw_watch: None,
+        hid_tap: None,
         sdl,
     };
     // Before the first events are read: a joystick one of these maps comes as a gamepad.
@@ -785,6 +790,7 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
                     watching = on;
                     if !on {
                         core.raw_watch = None;
+                        core.hid_tap = None;
                     }
                     focused = true;
                     core.changed = true;
@@ -991,6 +997,7 @@ impl Core {
                     p.raw = RawInput::default();
                 }
                 self.raw_watch = key;
+                self.hid_tap = None;
                 self.changed = true;
             }
             Command::Diagnose(key, reply) => {
@@ -1116,9 +1123,18 @@ impl Core {
 
     /// What the joystick of the controller a report is open on sends, by its own numbering.
     fn read_watched(&mut self) {
-        let Some(d) = self.raw_watch.and_then(|k| self.device_for(k)) else { return };
+        let Some(d) = self.raw_watch.and_then(|k| self.device_for(k)) else {
+            self.hid_tap = None;
+            return;
+        };
         if let Some(p) = self.phys.get_mut(&d) {
             self.input_changed |= p.pad.read_raw(&mut p.raw);
+            if self.hid_tap.as_ref().is_none_or(|(id, _)| *id != d) {
+                self.hid_tap = Some((d, HidTap::open(&p.path)));
+            }
+            if let Some((_, Some(tap))) = &mut self.hid_tap {
+                self.input_changed |= tap.read(p.raw.hid.get_or_insert_default());
+            }
         }
     }
 

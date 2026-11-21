@@ -278,7 +278,7 @@ mod tests {
     use super::*;
 
     fn raw(buttons: u64, axes: &[i16], hats: &[u8]) -> RawInput {
-        RawInput { buttons, axes: axes.to_vec(), hats: hats.to_vec() }
+        RawInput { buttons, axes: axes.to_vec(), hats: hats.to_vec(), hid: None }
     }
 
     #[test]

@@ -18,7 +18,7 @@ use open_controller_core::binding::{Action, Bindings};
 use open_controller_core::i18n::{Lang, Text, fill};
 use open_controller_core::ipc::ToTray;
 use open_controller_core::keyboard;
-use open_controller_core::mapping::{self, RawInput, axis};
+use open_controller_core::mapping::{self, HidBytes, RawInput, axis};
 use open_controller_core::platform::VirtualDriver;
 use open_controller_core::rating::{self, Rating};
 use open_controller_core::report::{self, Diagnosis, Submission};
@@ -116,6 +116,8 @@ pub struct Report {
     pub raw_buttons: u64,
     pub raw_axes: Vec<(i16, i16)>,
     pub raw_hats: Vec<u8>,
+    /// The controller's own HID reports, as the resident process last summed them up.
+    pub hid: Option<HidBytes>,
     /// The text as last shown: when, from what, and the timer that shows it again.
     composed: Option<(Instant, (bool, bool, Lang), String)>,
     recompose: Option<Task<()>>,
@@ -146,6 +148,9 @@ impl Report {
     }
 
     fn observe_raw(&mut self, raw: &RawInput) {
+        if raw.hid.is_some() && self.hid != raw.hid {
+            self.hid.clone_from(&raw.hid);
+        }
         self.raw_buttons |= raw.buttons;
         for (i, &v) in raw.axes.iter().enumerate() {
             match self.raw_axes.get_mut(i) {
@@ -345,6 +350,22 @@ fn assignments(bindings: &Bindings) -> String {
 }
 
 /// The report's text, in English: it is read by the maintainer, not translated.
+/// Each kind of report the controller sent: how it looks at rest, then every byte that moved,
+/// the bits that changed and the values it went between.
+fn hid_lines(h: &HidBytes) -> Vec<String> {
+    let mut out = Vec::new();
+    for r in &h.reports {
+        let rest: Vec<String> = r.first.iter().map(|b| format!("{b:02x}")).collect();
+        out.push(format!("Report {:02x}, {} bytes, {} received. At rest: {}", r.id, r.first.len(), r.received, rest.join(" ")));
+        let moved: Vec<String> = (0..r.first.len())
+            .filter(|&i| r.flipped[i] != 0)
+            .map(|i| format!("byte {i} {} to {} (bits {:02x})", r.low[i], r.high[i], r.flipped[i]))
+            .collect();
+        out.push(format!("Moved: {}", if moved.is_empty() { "nothing".to_string() } else { moved.join(", ") }));
+    }
+    out
+}
+
 pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, lang: &str) -> String {
     let p = &r.pad;
     let mut s = String::new();
@@ -471,6 +492,16 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
             mapping::PRESSURE.iter().zip(r.pressure_peak).map(|(&b, v)| format!("{} {v}", BUTTON_NAMES[b as usize])).collect();
         let _ = writeln!(s, "Hardest press (0 to 255): {}", peaks.join(", "));
     }
+    if let Some(h) = r.hid.as_ref().filter(|h| !h.reports.is_empty()) {
+        let _ = writeln!(
+            s,
+            "
+== The controller's own reports while this report was open"
+        );
+        for line in hid_lines(h) {
+            let _ = writeln!(s, "{line}");
+        }
+    }
     let gyro = diagnosis.and_then(|d| d.gyro.as_ref());
     if gyro.is_some() || r.gyro_readings > 0 {
         let _ = writeln!(s, "\n== Gyro");
@@ -553,6 +584,7 @@ impl MainView {
             raw_buttons: 0,
             raw_axes: Vec::new(),
             raw_hats: Vec::new(),
+            hid: None,
             composed: None,
             recompose: None,
         });
@@ -939,6 +971,17 @@ impl MainView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hid_lines_show_the_report_at_rest_and_what_moved() {
+        let mut h = HidBytes::default();
+        h.feed(&[0x04, 0xFE, 0x00, 0x00]);
+        h.feed(&[0x04, 0xFE, 0x30, 0x00]);
+        assert_eq!(
+            hid_lines(&h),
+            vec!["Report 04, 4 bytes, 2 received. At rest: 04 fe 00 00".to_string(), "Moved: byte 2 0 to 48 (bits 30)".into()]
+        );
+    }
 
     #[test]
     fn emails() {

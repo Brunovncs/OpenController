@@ -4,7 +4,7 @@ members = ["crates/open-controller-core", "crates/open-controller", "crates/open
 default-members = ["crates/open-controller", "crates/open-controller-ui"]
 
 [workspace.package]
-version = "0.9.3"
+version = "0.9.4"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
@@ -16,6 +16,14 @@ crossbeam-channel = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 windows-sys = "0.61"
+
+# Full debug info made target/ grow by tens of GB a week (each UI exe was ~470 MB); backtraces
+# only need line tables.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = "line-tables-only"
 
 [profile.release]
 lto = true

@@ -29,6 +29,7 @@ pub mod trigger_effect;
 mod engine;
 pub mod handheld;
 mod hiding;
+pub mod hidtap;
 pub mod instance;
 pub mod ipc;
 pub mod keyboard;

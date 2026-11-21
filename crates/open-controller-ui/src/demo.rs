@@ -241,7 +241,7 @@ fn flight_sticks() -> [PadView; 2] {
     t16000.form = Form::FlightStick;
     t16000.hidden = false;
     t16000.store = None;
-    t16000.raw = Some(RawInput { buttons: 1, axes: vec![1200, -8000, 300, 32767], hats: vec![0] });
+    t16000.raw = Some(RawInput { buttons: 1, axes: vec![1200, -8000, 300, 32767], hats: vec![0], ..Default::default() });
     [e3d, t16000]
 }
 
@@ -300,7 +300,7 @@ fn twin_shock(mapped: &[String]) -> PadView {
 fn pressing() -> RawInput {
     static START: OnceLock<Instant> = OnceLock::new();
     let half_seconds = START.get_or_init(Instant::now).elapsed().as_millis() as usize / 500;
-    let mut raw = RawInput { buttons: 0, axes: vec![0; 4], hats: vec![0] };
+    let mut raw = RawInput { buttons: 0, axes: vec![0; 4], hats: vec![0], ..Default::default() };
     let part = half_seconds / 2 % 24;
     if half_seconds % 2 == 1 {
         return raw;
