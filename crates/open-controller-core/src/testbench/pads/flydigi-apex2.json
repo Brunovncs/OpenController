@@ -1,0 +1,74 @@
+{
+  "name": "Flydigi Apex 2, Android mode",
+  "ids": ["04b4:2412", "04b4:2411"],
+  "connections": "Cable: SDL's own Flydigi driver reads interface 2 (usage page 0xFFA0). 2.4G receiver: SDL reads it as a plain gamepad; the same report comes on the receiver's interface 2.",
+  "sources": [
+    "SDL 3.4 src/joystick/hidapi/SDL_hidapi_flydigi.c (HandleStatePacketV1, InitControllerV1)",
+    "Flydigi's FlydigiPcSpace 2.5.7.8: getDeviceOperateEventFrom32, handerDeviceInfo, handleMotionData, FlydigiGamePadConnectCheck",
+    "Nielk1/ExtendInput FlydigiController.cs (APEX_2: no analog triggers, wheel, air mouse, dongle 2411 rev 0x0303)",
+    "An owner's report from OpenController 0.9.6 (firmware 6.0.5.2, cable)"
+  ],
+  "rest": "04 fe 66 00 00 00 00 00 00 00 00 00 00 00 00 00 00 84 00 7f 00 7e 7f 81 85 00 00 00 01 04 36 00",
+  "signature": 2,
+  "controls": [
+    { "name": "Up", "byte": 9, "mask": 1, "to": "dpad_up" },
+    { "name": "Right", "byte": 9, "mask": 2, "to": "dpad_right" },
+    { "name": "Down", "byte": 9, "mask": 4, "to": "dpad_down" },
+    { "name": "Left", "byte": 9, "mask": 8, "to": "dpad_left" },
+    { "name": "A", "byte": 9, "mask": 16, "to": "south" },
+    { "name": "B", "byte": 9, "mask": 32, "to": "east" },
+    { "name": "Select", "byte": 9, "mask": 64, "to": "back" },
+    { "name": "X", "byte": 9, "mask": 128, "to": "west" },
+    { "name": "Y", "byte": 10, "mask": 1, "to": "north" },
+    { "name": "Start", "byte": 10, "mask": 2, "to": "start" },
+    { "name": "LB", "byte": 10, "mask": 4, "to": "left_shoulder" },
+    { "name": "RB", "byte": 10, "mask": 8, "to": "right_shoulder" },
+    { "name": "LT", "byte": 10, "mask": 16, "to": "left_trigger" },
+    { "name": "RT", "byte": 10, "mask": 32, "to": "right_trigger" },
+    { "name": "Left stick click", "byte": 10, "mask": 64, "to": "left_stick" },
+    { "name": "Right stick click", "byte": 10, "mask": 128, "to": "right_stick" },
+    { "name": "C", "byte": 7, "mask": 1, "to": "misc2" },
+    { "name": "Z", "byte": 7, "mask": 2, "to": "misc3" },
+    { "name": "M1", "byte": 7, "mask": 4, "to": "right_paddle1" },
+    { "name": "M2", "byte": 7, "mask": 8, "to": "left_paddle1" },
+    { "name": "M3", "byte": 7, "mask": 16, "to": "right_paddle2" },
+    { "name": "M4", "byte": 7, "mask": 32, "to": "left_paddle2" },
+    { "name": "M5", "byte": 7, "mask": 64, "to": "misc5" },
+    { "name": "M6", "byte": 7, "mask": 128, "to": "misc4" },
+    { "name": "Pairing", "byte": 8, "mask": 1, "to": "none" },
+    { "name": "Home", "byte": 8, "mask": 8, "to": "guide" },
+    { "name": "Return", "byte": 8, "mask": 16, "to": "misc6" }
+  ],
+  "axes": [
+    { "name": "Left stick X", "byte": 17, "to": "left_x" },
+    { "name": "Left stick Y", "byte": 19, "to": "left_y" },
+    { "name": "Right stick X", "byte": 21, "to": "right_x" },
+    { "name": "Right stick Y", "byte": 22, "to": "right_y" },
+    { "name": "ABXY wheel X (SDL took it for LT)", "byte": 23, "to": "none" },
+    { "name": "ABXY wheel Y (SDL took it for RT)", "byte": 24, "to": "none" }
+  ],
+  "noise": [
+    { "name": "Air mouse flags", "bytes": [3] },
+    { "name": "Air mouse, two 12-bit numbers (the gyro)", "bytes": [4, 5, 6] }
+  ],
+  "not_input": [
+    { "name": "Reply to 05 EC (model 19, battery 0x6a)", "report": "04 ff 66 13 00 00 00 00 00 52 60 6a 00 01 00 ec 00 84 00 7f 00 7e 7f 81 85 00 00 00 01 04 36 00" }
+  ],
+  "captures": [
+    {
+      "what": "The owner's 0.9.6 report, cable: every button, both triggers, the sticks, the pad moved around",
+      "moved": "byte 4 0 to 255 (bits ff), byte 5 0 to 255 (bits ff), byte 6 0 to 255 (bits ff), byte 7 0 to 32 (bits 3f), byte 9 0 to 128 (bits f0), byte 10 0 to 48 (bits 3f), byte 17 4 to 254 (bits ff), byte 19 1 to 254 (bits ff), byte 21 1 to 254 (bits ff), byte 22 1 to 254 (bits ff)"
+    }
+  ],
+  "unseen": ["M5 and M6 (byte 7, 0x40 and 0x80) never came in a report: from ExtendInput only"],
+  "decoders": ["flydigi-apex2-cable", "flydigi-apex2-receiver"],
+  "motion": {
+    "decoder": "flydigi-apex2-air",
+    "samples": [
+      { "what": "Still", "report": "04 fe 66 00 00 00 00 00 00 00 00 00 00 00 00 00 00 84 00 7f 00 7e 7f 81 85 00 00 00 01 04 36 00", "gyro": ["0", "0", "0"] },
+      { "what": "Turned right: Flydigi's app moves the mouse right by 100", "report": "04 fe 66 00 64 00 00 00 00 00 00 00 00 00 00 00 00 84 00 7f 00 7e 7f 81 85 00 00 00 01 04 36 00", "gyro": ["0", "-", "0"] },
+      { "what": "Top tilted up: the mouse goes up by 50", "report": "04 fe 66 00 00 e0 fc 00 00 00 00 00 00 00 00 00 00 84 00 7f 00 7e 7f 81 85 00 00 00 01 04 36 00", "gyro": ["+", "0", "0"] },
+      { "what": "Turned left and down, 30 each", "report": "04 fe 66 00 e2 ef 01 00 00 00 00 00 00 00 00 00 00 84 00 7f 00 7e 7f 81 85 00 00 00 01 04 36 00", "gyro": ["-", "+", "0"] }
+    ]
+  }
+}

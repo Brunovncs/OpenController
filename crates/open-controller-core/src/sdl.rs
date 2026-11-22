@@ -688,6 +688,32 @@ impl Gamepad {
         }
     }
 
+    /// Whether SDL's Flydigi driver took the controller for an Apex 2, whose triggers and extra
+    /// buttons it reads wrong (see `flydigi`). The ids are the Vader's too; the GUID's last byte
+    /// is the model SDL found.
+    pub fn is_flydigi_apex2(&self) -> bool {
+        (self.vendor(), self.product()) == (crate::flydigi::VENDOR, crate::flydigi::PRODUCT)
+            && self.flydigi_type() == Some(crate::flydigi::sdl_type::APEX2)
+    }
+
+    /// For a Flydigi pad SDL reads with its own Flydigi driver, rather than as a plain gamepad: the
+    /// model it found, `SDL_FlyDigiControllerType` (see `flydigi::sdl_type`), 0 when it does not
+    /// know it. A newer pad whose app does not let other programs take it over is read the plain
+    /// way, through XInput, and gives `None`.
+    pub fn flydigi_type(&self) -> Option<u8> {
+        if ![crate::flydigi::VENDOR, crate::flydigi::V2_VENDOR].contains(&self.vendor()) {
+            return None;
+        }
+        unsafe {
+            let js = SDL_GetGamepadJoystick(self.gp);
+            if js.is_null() {
+                return None;
+            }
+            let guid = SDL_GetJoystickGUID(js);
+            (guid.data[14] == b'h').then_some(guid.data[15])
+        }
+    }
+
     pub fn has_button(&self, b: u32) -> bool {
         unsafe { SDL_GamepadHasButton(self.gp, SDL_GamepadButton(b as i32)) }
     }
@@ -706,6 +732,9 @@ impl Gamepad {
                 player_lights: cap(SDL_PROP_GAMEPAD_CAP_PLAYER_LED_BOOLEAN),
                 pressure: self.pressure,
                 sixaxis,
+                // Set by the engine, which sends the effects: for the DualSense family, and a
+                // Flydigi's once it says which model it is.
+                force_triggers: false,
             }
         }
     }

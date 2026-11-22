@@ -37,6 +37,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | `gamesirG7Pro` | The device layout drawing in GameSir's G7 Pro manual |
 | `flydigiVader` | The front drawing in Flydigi's Vader 5 Pro manual |
 | `flydigiApex` | The front drawing in Flydigi's Apex 5 manual, its filled shapes only, so the grey callouts drop out |
+| `flydigiApex2` | The front drawing on page 2 of Flydigi's Apex 2 manual (tencent-bbs.cdn.flydigi.com/flydigi/pdf/A2Eng.pdf), its callouts left out (`within`) and the two that stay inside the clip erased |
 | `onikumaC1` | A retailer's front photo of the Onikuma C1 (compumarts.com), its watermark and the JPEG noise under the outline erased |
 | `leadjoyXenoPro` | LeadJoy's front render of the Xeno Pro on leadjoy.ai (`XenoPro_mainImages_01.png`), laid on white and cropped to the controller; the shoulders, light-coloured on a dark body, are drawn by hand |
 | `psClassic` | "PlayStation Controller transparent.png" on Wikimedia Commons, CC BY-SA 3.0 (Sony publishes no straight front view) |
@@ -46,6 +47,7 @@ ones; nothing of the source picture is kept, only the shapes.
 | `ultimate2Back`, `ultimate2cBack`, `sn30proBack` (Pro 2 only) | The rear views in the same 8BitDo manuals |
 | `dualsenseEdgeBack` | The rear view in Sony's DualSense Edge manual (CFI-ZCP1), its left lever the right one mirrored |
 | `flydigiVaderBack`, `flydigiApexBack` | The rear views in Flydigi's Vader 5 Pro and Apex 5 manuals; the Apex's paddles moved into their slots (`fix_apex.py`) |
+| `flydigiApex2Back` | The rear view on page 2 of the same Apex 2 manual |
 | `gamesirG7ProBack`, `gamesirCycloneBack` | The rear views in GameSir's G7 Pro and Cyclone 2 manuals |
 | `generic`, `handheld` | The Ultimate 2C's outline with neutral buttons, and a handheld drawn by hand (`derive_misc.py`) |
 

@@ -358,7 +358,8 @@ fn hid_lines(h: &HidBytes) -> Vec<String> {
     let mut out = Vec::new();
     for r in &h.reports {
         let rest: Vec<String> = r.first.iter().map(|b| format!("{b:02x}")).collect();
-        out.push(format!("Report {:02x}, {} bytes, {} received. At rest: {}", r.id, r.first.len(), r.received, rest.join(" ")));
+        let on = r.source.map(|s| format!(" on interface {} (usage page {:04x})", s.interface, s.usage_page)).unwrap_or_default();
+        out.push(format!("Report {:02x}{on}, {} bytes, {} received. At rest: {}", r.id, r.first.len(), r.received, rest.join(" ")));
         let moved: Vec<String> = (0..r.first.len())
             .filter(|&i| r.flipped[i] != 0)
             .map(|i| format!("byte {i} {} to {} (bits {:02x})", r.low[i], r.high[i], r.flipped[i]))
@@ -518,6 +519,9 @@ pub fn compose(r: &Report, diagnosis: Option<&Diagnosis>, snapshot: &Snapshot, l
             }
             if let Some(x) = &g.sixaxis {
                 let _ = writeln!(s, "DualShock 3 motion: {x}");
+            }
+            if let Some(x) = &g.air_mouse {
+                let _ = writeln!(s, "Flydigi air mouse: {x}");
             }
         }
         let _ = writeln!(s, "{}", gyro_seen(r.gyro_readings, r.gyro_peak, r.aim_peak));
@@ -983,6 +987,11 @@ mod tests {
             hid_lines(&h),
             vec!["Report 04, 4 bytes, 2 received. At rest: 04 fe 00 00".to_string(), "Moved: byte 2 0 to 48 (bits 30)".into()]
         );
+        // A receiver read on two interfaces says which each report came on.
+        let mut h = HidBytes::default();
+        let source = Some(open_controller_core::mapping::HidSource { interface: 2, usage_page: 0xFFA0 });
+        h.feed_from(source, &[0x04, 0xFE]);
+        assert_eq!(hid_lines(&h)[0], "Report 04 on interface 2 (usage page ffa0), 2 bytes, 1 received. At rest: 04 fe");
     }
 
     #[test]

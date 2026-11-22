@@ -14,6 +14,7 @@ pub mod ds3;
 pub mod ds4;
 pub mod dsu;
 pub mod extras;
+pub mod flydigi;
 pub mod i18n;
 pub mod lab;
 pub mod mapping;
@@ -38,6 +39,8 @@ pub mod platform;
 mod plug;
 pub mod rt;
 pub mod sdl;
+#[cfg(test)]
+mod testbench;
 pub mod update;
 
 #[cfg(windows)]

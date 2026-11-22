@@ -79,6 +79,10 @@ pub struct GyroFacts {
     /// be checked against a real controller.
     #[serde(default)]
     pub sixaxis: Option<String>,
+    /// For a Flydigi Apex 2, whose air mouse is its gyro: the last motion it read and what it last
+    /// said of itself, so the guessed scale and directions can be checked.
+    #[serde(default)]
+    pub air_mouse: Option<String>,
     /// What games are sent besides an Xbox controller's input, as `Debug` prints it.
     #[serde(default)]
     pub output: Option<String>,

@@ -28,6 +28,8 @@ static PADS: &str = include_str!("../../../assets/pads.json");
 const FLIGHT_STICK: &str = "logitechExtreme3d";
 /// The drawing every wheel gets that has none of its own.
 const WHEEL: &str = "logitechG29";
+/// The Flydigi Apex 2's drawing, which its USB ids cannot point at (`Family::FlydigiApex2`).
+const APEX2: &str = "flydigiApex2";
 
 /// Which drawing a controller gets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,6 +128,10 @@ pub fn look(pad: &PadView) -> Look {
     if let Some(key) = models::drawing(pad.vendor, pad.product) {
         return Look::Traced(key);
     }
+    // Its ids are the Vader's; SDL's driver tells it apart.
+    if pad.family == FlydigiApex2 {
+        return Look::Traced(APEX2);
+    }
     if pad.form == Form::FlightStick {
         return Look::Traced(FLIGHT_STICK);
     }
@@ -183,6 +189,7 @@ pub fn back_view(pad: &PadView) -> Option<&'static str> {
         Look::DualSenseEdge => "dualsenseEdgeBack",
         Look::Traced("flydigiVader") => "flydigiVaderBack",
         Look::Traced("flydigiApex") => "flydigiApexBack",
+        Look::Traced(APEX2) => "flydigiApex2Back",
         Look::Traced("gamesirG7Pro") => "gamesirG7ProBack",
         Look::Traced("gamesirCyclone") => "gamesirCycloneBack",
         _ => return None,
@@ -1397,6 +1404,34 @@ mod tests {
         p.form = Form::Wheel;
         assert_eq!(look(&p), Look::Traced(WHEEL));
         assert_eq!(glyphs(&p, look(&p)), Glyphs::Xbox);
+    }
+
+    #[test]
+    fn the_apex_2_is_drawn_as_itself_front_and_back() {
+        use open_controller_core::PadKey;
+        use open_controller_core::extras::{self, Art};
+        let mut p = crate::demo::pad(PadKey::Slot(13), "Flydigi Apex 2", Brand::Other, Family::FlydigiApex2, (0x04B4, 0x2412));
+        assert_eq!(look(&p), Look::Traced(APEX2));
+        assert_eq!(glyphs(&p, look(&p)), Glyphs::Xbox);
+        assert_eq!(back_view(&p), Some("flydigiApex2Back"));
+        let front = pad_for(look(&p));
+        let back = pads().get("flydigiApex2Back").unwrap();
+        let on = |g: &Pad, b: u8| g.buttons.iter().any(|x| x.input == Some(u32::from(b)));
+        for b in [extras::MISC2, extras::MISC3, extras::MISC6] {
+            assert!(on(front, b) && !on(back, b), "{b} on the front");
+        }
+        for b in [extras::RIGHT_PADDLE1, extras::LEFT_PADDLE1, extras::RIGHT_PADDLE2, extras::LEFT_PADDLE2, extras::MISC4, extras::MISC5] {
+            assert!(on(back, b) && on_back(&p, b), "{b} on the back");
+        }
+        let names: Vec<_> = [extras::MISC2, extras::MISC3, extras::MISC4, extras::MISC5]
+            .iter()
+            .map(|&b| extras::printed_name(Family::FlydigiApex2, Art::Offset, b))
+            .collect();
+        assert_eq!(names, [Some("C"), Some("Z"), Some("M6"), Some("M5")]);
+        // A Vader on the same ids keeps the generic drawing.
+        p.family = Family::Flydigi;
+        p.name = "Flydigi Vader 2".into();
+        assert_eq!(look(&p), Look::Generic);
     }
 
     #[test]

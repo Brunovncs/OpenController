@@ -34,13 +34,14 @@ fn heading(label: &'static str, tip: &'static str, t: &Theme) -> Div {
     labelled(strong(label, t.text), tip, t)
 }
 
-/// The Lab's tabs that work with this controller as it is set up: trigger effects need a
-/// DualSense, mouse output Windows, the mapping tools a controller that is not kept native.
+/// The Lab's tabs that work with this controller as it is set up: trigger effects need triggers
+/// that push back (a DualSense, a Flydigi Apex 3, 4 or 5), mouse output Windows, the mapping tools
+/// a controller that is not kept native.
 pub fn tabs(pad: &PadView) -> Vec<u8> {
     let native = matches!(pad.role, Role::KeptNative | Role::Native { .. });
     let f = pad.features;
     [
-        (0, matches!(pad.family, Family::DualSense | Family::DualSenseEdge)),
+        (0, matches!(pad.family, Family::DualSense | Family::DualSenseEdge) || f.force_triggers),
         (1, cfg!(windows) && f.touchpad),
         (2, cfg!(windows) && !native),
         (3, !native),
@@ -578,5 +579,26 @@ impl MainView {
                     })
                     .when(trig.mode == TriggerMode::HipFire, |d| d.child(delay))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::demo::pad;
+    use open_controller_core::PadKey;
+    use open_controller_core::device::Brand;
+    use open_controller_core::extras::Features;
+
+    #[test]
+    fn trigger_effects_show_for_triggers_that_push_back() {
+        let mut dualsense = pad(PadKey::Slot(1), "DualSense", Brand::PlayStation, Family::DualSense, (0x054C, 0x0CE6));
+        dualsense.role = Role::Virtual { player: None };
+        assert!(tabs(&dualsense).contains(&0));
+        let mut apex = pad(PadKey::Slot(2), "Flydigi Apex 4", Brand::Other, Family::Flydigi, (0x04B4, 0x2412));
+        apex.role = Role::Virtual { player: None };
+        assert!(!tabs(&apex).contains(&0), "a Flydigi until it says it is an Apex 3, 4 or 5");
+        apex.features = Features { force_triggers: true, ..Features::default() };
+        assert!(tabs(&apex).contains(&0));
     }
 }

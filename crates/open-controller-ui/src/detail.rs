@@ -153,6 +153,8 @@ fn hint_text(text: &Text, h: Hint) -> &'static str {
         Hint::XboxPaddlesHidden => text.hint_elite,
         Hint::SteamInput => text.hint_steam,
         Hint::FlydigiThirdParty => text.hint_flydigi,
+        Hint::FlydigiXInputMode => text.hint_flydigi_xinput,
+        Hint::FlydigiAppOpen => text.hint_flydigi_app,
         Hint::Switch2Unsupported => text.hint_switch2,
         Hint::PlayStationInXboxMode => text.hint_ps_xbox_mode,
     }
@@ -978,16 +980,24 @@ impl MainView {
         let tip = if pad.extras.is_empty() || kept_native(pad) { "" } else { text.extras_hint };
         let col = div().flex().flex_col().child(labelled(title(text.extra_buttons, t.text), tip, t).pb(px(12.)));
         let trouble = trouble(text, pad).map(|(question, answer)| labelled(caption(question, t.text2), answer, t).pt(px(8.)));
+        // A Flydigi in its 360 mode can be told to switch to Android, where its extras are read.
+        let key = pad.key;
+        let switch = (pad.hint == Some(Hint::FlydigiXInputMode)).then(|| {
+            div().pt(px(10.)).flex().child(
+                button("flydigi-android", text.flydigi_android, Kind::Standard, t)
+                    .on_click(cx.listener(move |this, _, _, cx| this.send(ToTray::FlydigiAndroidMode(key), cx))),
+            )
+        });
         if pad.extras.is_empty() || kept_native(pad) {
             let direct = matches!(pad.role, Role::Native { .. } | Role::KeptNative | Role::Unmapped);
             let message = if direct { text.no_extras_native } else { text.no_extras };
-            return col.child(caption(message, t.text2)).children(trouble);
+            return col.child(caption(message, t.text2)).children(trouble).children(switch);
         }
         let mut g = group();
         for &b in &pad.extras {
             g = g.child(self.button_row(pad, b, printed_name(pad, b), place_name(text, pad, b), t, cx));
         }
-        col.child(g).children(trouble)
+        col.child(g).children(trouble).children(switch)
     }
 
     /// The buttons every gamepad has, folded away until asked for: most people never change them.
@@ -1281,6 +1291,7 @@ impl MainView {
             (f.motion, text.motion),
             (f.rumble, text.rumble),
             (f.trigger_rumble, text.trigger_rumble),
+            (f.force_triggers, text.force_triggers),
             (f.light_bar, text.light_bar),
             (f.player_lights, text.player_lights),
             (f.pressure, text.pressure_title),
@@ -1830,5 +1841,9 @@ mod trouble_tests {
         assert_eq!(trouble(text, &p), Some((text.switch2_question, text.hint_switch2)));
         p.hint = Some(Hint::FlydigiThirdParty);
         assert_eq!(trouble(text, &p), Some((text.extras_missing, text.hint_flydigi)));
+        p.hint = Some(Hint::FlydigiXInputMode);
+        assert_eq!(trouble(text, &p), Some((text.extras_missing, text.hint_flydigi_xinput)));
+        p.hint = Some(Hint::FlydigiAppOpen);
+        assert_eq!(trouble(text, &p), Some((text.extras_missing, text.hint_flydigi_app)));
     }
 }

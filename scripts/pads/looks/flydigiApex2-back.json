@@ -1,0 +1,156 @@
+{
+ "source": "pdfvec:out/flydigiApex2/A2Eng.pdf:1:90,95,195,167:nodash,within",
+ "width": 1600,
+ "ink": 110,
+ "line": 5,
+ "body_close": 3,
+ "align": {
+  "front": "out/flydigiApex2.json",
+  "bbox": true
+ },
+ "triggers": {
+  "rt": {
+   "seeds": [
+    [
+     380,
+     160
+    ]
+   ]
+  },
+  "lt": {
+   "seeds": [
+    [
+     1214,
+     160
+    ]
+   ]
+  }
+ },
+ "bumpers": {
+  "rb": {
+   "seeds": [
+    [
+     355,
+     95
+    ],
+    [
+     455,
+     82
+    ]
+   ]
+  },
+  "lb": {
+   "seeds": [
+    [
+     1239,
+     95
+    ],
+    [
+     1139,
+     82
+    ]
+   ]
+  }
+ },
+ "buttons": [
+  {
+   "input": "misc5",
+   "seed": [
+    540,
+    100
+   ],
+   "label": "M5"
+  },
+  {
+   "input": "misc4",
+   "seed": [
+    1054,
+    100
+   ],
+   "label": "M6"
+  },
+  {
+   "input": "rp1",
+   "seeds": [
+    [
+     465,
+     625
+    ],
+    [
+     442,
+     625
+    ]
+   ],
+   "grow_px": 2,
+   "label": "M1"
+  },
+  {
+   "input": "lp1",
+   "seeds": [
+    [
+     1110,
+     625
+    ],
+    [
+     1142,
+     625
+    ]
+   ],
+   "grow_px": 2,
+   "label": "M2"
+  },
+  {
+   "input": "rp2",
+   "seeds": [
+    [
+     615,
+     590
+    ],
+    [
+     568,
+     590
+    ]
+   ],
+   "label": "M3"
+  },
+  {
+   "input": "lp2",
+   "seeds": [
+    [
+     975,
+     590
+    ],
+    [
+     1022,
+     590
+    ]
+   ],
+   "label": "M4"
+  }
+ ],
+ "panels": [
+  {
+   "seed": [
+    790,
+    220
+   ],
+   "style": "line"
+  },
+  {
+   "seed": [
+    790,
+    385
+   ],
+   "style": "line"
+  },
+  {
+   "at": [
+    793,
+    585,
+    36
+   ],
+   "style": "shade"
+  }
+ ],
+ "glyphs": "xbox"
+}

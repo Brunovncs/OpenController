@@ -1,0 +1,298 @@
+{
+ "source": "pdfvec:out/flydigiApex2/A2Eng.pdf:1:90,15,195,92:nodash,within",
+ "width": 1600,
+ "ink": 110,
+ "line": 6,
+ "erase": [
+  [
+   545,
+   812,
+   690,
+   975
+  ],
+  [
+   666,
+   782,
+   694,
+   799
+  ],
+  [
+   910,
+   812,
+   1055,
+   975
+  ],
+  [
+   906,
+   782,
+   934,
+   799
+  ]
+ ],
+ "wall": [
+  [
+   698,
+   489,
+   904,
+   477
+  ]
+ ],
+ "bumpers": [
+  [
+   420,
+   102
+  ],
+  [
+   1180,
+   107
+  ]
+ ],
+ "sticks": [
+  {
+   "at": [
+    421,
+    349,
+    111
+   ],
+   "well": 134
+  },
+  {
+   "at": [
+    992,
+    583,
+    111
+   ],
+   "well": 127
+  }
+ ],
+ "buttons": [
+  {
+   "input": "south",
+   "seed": [
+    1168,
+    420
+   ]
+  },
+  {
+   "input": "east",
+   "seed": [
+    1255,
+    322
+   ]
+  },
+  {
+   "input": "west",
+   "seed": [
+    1082,
+    322
+   ]
+  },
+  {
+   "input": "north",
+   "seed": [
+    1168,
+    228
+   ]
+  },
+  {
+   "input": "back",
+   "seed": [
+    668,
+    270
+   ],
+   "circle": false,
+   "icon": "view"
+  },
+  {
+   "input": "start",
+   "seed": [
+    932,
+    270
+   ],
+   "circle": false,
+   "icon": "menu"
+  },
+  {
+   "input": "misc3",
+   "seed": [
+    1321,
+    505
+   ],
+   "label": "Z"
+  },
+  {
+   "input": "misc2",
+   "seed": [
+    1233,
+    581
+   ],
+   "label": "C"
+  },
+  {
+   "input": "none",
+   "seed": [
+    700,
+    770
+   ],
+   "circle": false,
+   "corners": true
+  },
+  {
+   "input": "guide",
+   "seed": [
+    800,
+    770
+   ],
+   "circle": false,
+   "corners": true
+  },
+  {
+   "input": "misc6",
+   "seed": [
+    900,
+    770
+   ],
+   "circle": false,
+   "corners": true,
+   "label": "\u21a9"
+  }
+ ],
+ "dpad": {
+  "seed": [
+   605,
+   591
+  ]
+ },
+ "panels": [
+  {
+   "seed": [
+    800,
+    150
+   ],
+   "style": "shade"
+  },
+  {
+   "poly": [
+    [
+     738,
+     183
+    ],
+    [
+     860,
+     183
+    ],
+    [
+     800,
+     295
+    ]
+   ],
+   "style": "line",
+   "corners": true
+  },
+  {
+   "seed": [
+    1168,
+    345
+   ],
+   "style": "part"
+  },
+  {
+   "seed": [
+    605,
+    481
+   ],
+   "style": "part"
+  },
+  {
+   "poly": [
+    [
+     785,
+     527
+    ],
+    [
+     817,
+     527
+    ],
+    [
+     817,
+     533
+    ],
+    [
+     785,
+     533
+    ]
+   ],
+   "style": "light",
+   "corners": true
+  },
+  {
+   "poly": [
+    [
+     785,
+     565
+    ],
+    [
+     817,
+     565
+    ],
+    [
+     817,
+     571
+    ],
+    [
+     785,
+     571
+    ]
+   ],
+   "style": "light",
+   "corners": true
+  },
+  {
+   "poly": [
+    [
+     785,
+     605
+    ],
+    [
+     817,
+     605
+    ],
+    [
+     817,
+     610
+    ],
+    [
+     785,
+     610
+    ]
+   ],
+   "style": "light",
+   "corners": true
+  },
+  {
+   "poly": [
+    [
+     785,
+     644
+    ],
+    [
+     817,
+     644
+    ],
+    [
+     817,
+     649
+    ],
+    [
+     785,
+     649
+    ]
+   ],
+   "style": "light",
+   "corners": true
+  }
+ ],
+ "dots": [],
+ "glyphs": "xbox",
+ "tint": false
+}

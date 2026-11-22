@@ -153,19 +153,47 @@ fn plain_hid(service: &str) -> bool {
 /// Controller for PC" instead of "XInput Controller". Virtual controllers are skipped.
 pub fn usb_product_name(vendor: u16, product: u16) -> Option<String> {
     let prefix = format!(r"USB\VID_{vendor:04X}&PID_{product:04X}");
-    present_ids(Some("USB"))
+    let names = present_ids(Some("USB"))
         .into_iter()
         .filter(|id| id.to_ascii_uppercase().starts_with(&prefix))
+        // The device itself, not a composite device's interfaces, which may name themselves.
+        .filter(|id| !id.to_ascii_uppercase().contains("&MI_"))
         .filter(|id| !is_virtual_instance(id))
-        .find_map(|id| string_property(locate(&id)?, &DEVPKEY_Device_BusReportedDeviceDesc))
+        .filter_map(|id| string_property(locate(&id)?, &DEVPKEY_Device_BusReportedDeviceDesc))
         .map(|n| n.trim().to_string())
-        .filter(|n| !n.is_empty())
+        .filter(|n| !n.is_empty());
+    one_name(names)
+}
+
+/// The name all these devices share, `None` when they disagree: an XInput controller cannot be
+/// matched to its USB device, so with a Flydigi in its 360 mode and a real Xbox 360 controller
+/// (both 045e:028e) neither name can be told to be its own.
+fn one_name(mut names: impl Iterator<Item = String>) -> Option<String> {
+    let first = names.next()?;
+    names.all(|n| n == first).then_some(first)
 }
 
 /// An instance id without its last part, which can hold a serial number or a Bluetooth address:
 /// `USB\VID_054C&PID_09CC\<serial>` is kept as `USB\VID_054C&PID_09CC`.
 fn model_part(id: &str) -> String {
     id.splitn(3, '\\').take(2).collect::<Vec<_>>().join("\\")
+}
+
+/// The USB device an interface path belongs to (`USB\VID_04B4&PID_2411\<instance>`), above the
+/// interface it is on (`&MI_02`): what tells the interfaces of one controller or receiver from
+/// another unit's with the same ids.
+pub fn usb_device(interface_path: &str) -> Option<String> {
+    let mut node = locate(&instance_id(interface_path)?);
+    for _ in 0..MAX_DEPTH {
+        let n = node?;
+        let id = id_of(n)?;
+        let upper = id.to_ascii_uppercase();
+        if upper.starts_with("USB\\") && !upper.contains("&MI_") {
+            return Some(id);
+        }
+        node = parent(n);
+    }
+    None
 }
 
 /// The device behind an interface path and its ancestors up to the USB or Bluetooth device, as
@@ -238,6 +266,15 @@ pub fn xinput_devices() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_counts_only_when_every_device_with_the_ids_gives_it() {
+        let names = |v: &[&str]| one_name(v.iter().map(|s| s.to_string()));
+        assert_eq!(names(&["Flydigi 2.4G x360"]), Some("Flydigi 2.4G x360".into()));
+        assert_eq!(names(&["Controller", "Controller"]), Some("Controller".into()), "two of the same pad");
+        assert_eq!(names(&["Flydigi 2.4G x360", "Controller"]), None, "a Flydigi and a real Xbox 360 pad");
+        assert_eq!(names(&[]), None);
+    }
 
     #[test]
     fn xinput_devices_say_nothing_of_the_unit() {

@@ -116,9 +116,19 @@ pub struct HidBytes {
     pub reports: Vec<HidReport>,
 }
 
+/// The interface of the controller a report came on, when more than SDL's own is read: its
+/// number and HID usage page (0xFFA0 is Flydigi's own report, 0x0001 a plain gamepad).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HidSource {
+    pub interface: i32,
+    pub usage_page: u16,
+}
+
 /// One kind of report, told by its first byte (the report id, for most controllers) and length.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HidReport {
+    #[serde(default)]
+    pub source: Option<HidSource>,
     pub id: u8,
     /// The first one received, at rest unless something was held.
     pub first: Vec<u8>,
@@ -129,17 +139,24 @@ pub struct HidReport {
     pub high: Vec<u8>,
 }
 
-/// The most kinds of report kept: controllers send one or two, besides their replies.
-pub const HID_KINDS: usize = 4;
+/// The most kinds of report kept: controllers send one or two per interface, besides their
+/// replies, and a receiver has a few interfaces.
+pub const HID_KINDS: usize = 8;
 
 impl HidBytes {
     /// Takes in one report. Whether a byte moved somewhere new: counting alone is no news.
     pub fn feed(&mut self, data: &[u8]) -> bool {
+        self.feed_from(None, data)
+    }
+
+    /// [`Self::feed`], for a report that came on a given interface.
+    pub fn feed_from(&mut self, source: Option<HidSource>, data: &[u8]) -> bool {
         let Some(&id) = data.first() else { return false };
-        let Some(r) = (match self.reports.iter().position(|r| r.id == id && r.first.len() == data.len()) {
+        let Some(r) = (match self.reports.iter().position(|r| r.source == source && r.id == id && r.first.len() == data.len()) {
             Some(i) => self.reports.get_mut(i),
             None if self.reports.len() < HID_KINDS => {
                 self.reports.push(HidReport {
+                    source,
                     id,
                     first: data.to_vec(),
                     received: 0,
@@ -287,8 +304,13 @@ mod tests {
         let moved: Vec<(usize, u8, u8, u8)> =
             (0..32).filter(|&i| r.flipped[i] != 0).map(|i| (i, r.flipped[i], r.low[i], r.high[i])).collect();
         assert_eq!(moved, vec![(10, 0x30, 0, 0x30), (23, 0xFF, 0, 0xFF)]);
+        // The same report on another interface is another kind.
+        let vendor = Some(super::HidSource { interface: 2, usage_page: 0xFFA0 });
+        assert!(h.feed_from(vendor, &rest));
+        assert_eq!((h.reports.len(), h.reports[1].source, h.reports[1].received), (2, vendor, 1));
+        assert_eq!(h.reports[0].received, 4, "the first kind kept its count");
         // Another kind of report is kept apart, and only so many kinds are.
-        for id in 1..=10u8 {
+        for id in 1..=20u8 {
             h.feed(&[id, 1, 2]);
         }
         assert_eq!(h.reports.len(), HID_KINDS);

@@ -176,6 +176,8 @@ pub fn snapshot(real: &Snapshot, edits: &HashMap<String, Profiles>, swaps: &[(Pa
         pads.extend(flight_sticks());
         pads.push(twin_shock(mapped));
         pads.push(wheel());
+        pads.push(apex2());
+        pads.push(apex4());
     }
     if std::env::var_os("OPEN_CONTROLLER_DEMO_HINTS").is_some() {
         pads.extend(xinput_pads());
@@ -251,8 +253,8 @@ fn flight_sticks() -> [PadView; 2] {
     [e3d, t16000]
 }
 
-/// Two pads read through XInput: an 8BitDo with its switch on X, which has a hint of its own, and
-/// a Flydigi on its receiver in X-input mode, which has none.
+/// Two pads read through XInput, each with a hint of its own: an 8BitDo with its switch on X, and
+/// a Flydigi on its receiver in its 360 mode, told by its name.
 fn xinput_pads() -> [PadView; 2] {
     let mut eightbitdo = pad(PadKey::Device(13), "8BitDo Ultimate 2.4G", Brand::EightBitDo, Family::Xbox, (0x2DC8, 0x3106));
     eightbitdo.links = vec![Link::Dongle];
@@ -267,6 +269,7 @@ fn xinput_pads() -> [PadView; 2] {
     flydigi.hidden = false;
     flydigi.store = None;
     flydigi.features = Features { rumble: true, ..Features::default() };
+    flydigi.hint = extras::name_hint(&flydigi.name, true);
     [eightbitdo, flydigi]
 }
 
@@ -281,6 +284,40 @@ fn wheel() -> PadView {
     g29.extras = vec![extras::MISC2, extras::MISC3, extras::MISC4, extras::MISC5, extras::MISC6];
     g29.input = input(&[u32::from(extras::MISC2)], [6554, 0, 0, 0, 0, 24000]);
     g29
+}
+
+/// A Flydigi Apex 2, wired in its Android mode, with the left trigger and C held: both read from
+/// its own report, as SDL reads neither.
+/// A Flydigi Apex 4, whose triggers push back: the Lab's trigger effects drive them.
+fn apex4() -> PadView {
+    let mut p = pad(PadKey::Slot(14), "Flydigi Apex 4", Brand::Other, Family::Flydigi, (0x04B4, 0x2412));
+    p.role = Role::Virtual { player: None };
+    p.power = Power::Charging(Some(60));
+    p.store = Some("model:04b4:2412".into());
+    p.features = Features { rumble: true, force_triggers: true, ..Features::default() };
+    p
+}
+
+fn apex2() -> PadView {
+    // On its receiver: the battery and the air mouse as gyro come from its own report.
+    let mut p = pad(PadKey::Slot(13), "Flydigi Apex 2", Brand::Other, Family::FlydigiApex2, (0x04B4, 0x2411));
+    p.role = Role::Virtual { player: None };
+    p.power = Power::Battery(Some(75));
+    p.store = Some("model:04b4:2411".into());
+    p.features = Features { rumble: true, motion: true, ..Features::default() };
+    p.extras = vec![
+        extras::LEFT_PADDLE1,
+        extras::RIGHT_PADDLE1,
+        extras::LEFT_PADDLE2,
+        extras::RIGHT_PADDLE2,
+        extras::MISC2,
+        extras::MISC3,
+        extras::MISC4,
+        extras::MISC5,
+        extras::MISC6,
+    ];
+    p.input = input(&[u32::from(extras::MISC2)], [0, 0, 0, 0, i16::MAX, 0]);
+    p
 }
 
 /// A PC twin shock pad SDL has no layout for, pressing every part in turn on its own so mapping
@@ -378,6 +415,7 @@ pub fn diagnosis(p: &PadView) -> open_controller_core::report::Diagnosis {
                 "order Some(Driver), words Some([[ff, 01], [00, 02], [8f, 01], [fe, 01]]), yaw rest 0.00 °/s, failed reads 0, tilt true"
                     .into()
             }),
+            air_mouse: None,
             output: Some(format!("{:?}", p.profiles.output)),
         }),
     }

@@ -1133,6 +1133,31 @@
    ]
   },
   {
+   "id": "04b4:2411",
+   "name": "Flydigi 2.4G receiver (Apex 2, Vader 2)",
+   "family": "Flydigi",
+   "layout": null,
+   "models": [
+    "Flydigi Apex 2 (2.4 GHz receiver, Android mode)",
+    "Flydigi Vader 2 (2.4 GHz receiver)"
+   ],
+   "reported": [
+    "Flydigi 2.4G Android",
+    "Flydigi Vader 2"
+   ],
+   "modes": [
+    "2.4g dongle"
+   ],
+   "confidence": [
+    "confirmed"
+   ],
+   "sources": [
+    "https://github.com/libretro/retroarch-joypad-autoconfig/blob/master/dinput/Flydigi%20Apex%202.cfg",
+    "https://github.com/Nielk1/ExtendInput/blob/master/ExtendInput/ExtendInput/Controller/Flydigi/FlydigiController.cs",
+    "OpenController problem report from an Apex 2 owner, 2026-11-22"
+   ]
+  },
+  {
    "id": "04d8:f064",
    "name": "retroUSB NES RetroPort",
    "family": "Other",

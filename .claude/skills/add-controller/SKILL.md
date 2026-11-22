@@ -61,6 +61,11 @@ Rate each id `confirmed` (two independent sources, or the reporter's own app rep
 (one good source) or a guess. Only confirmed and likely ids go in the table. A guess goes in the
 reply to the maintainer, not in code.
 
+When the report is about buttons or triggers that do not work, rather than a missing model, read
+`scripts/research/README.md`: it covers the maker's app (`vendorapp.py`), the raw bytes in the
+report, and proving the cause with the test bench in `crates/open-controller-core/src/testbench`
+and a port of SDL's driver as in `flydigi/sim.rs`.
+
 ## 4. Decide which case it is
 
 **It copies another controller's ids.** Very common with cheaper pads, which use the same chip

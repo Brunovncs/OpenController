@@ -68,6 +68,11 @@ pub fn usb_product_name(_: u16, _: u16) -> Option<String> {
     None
 }
 
+/// Not looked up on Linux: a report reads only the interface SDL opened.
+pub fn usb_device(_: &str) -> Option<String> {
+    None
+}
+
 pub fn ancestry(_: &str) -> Vec<String> {
     Vec::new()
 }

@@ -740,6 +740,9 @@ pub static MODELS: &[Row] = &[
     (0x047d, 0x4005, Family::Other, "Gravis Eliminator GamePad Pro"),
     (0x047d, 0x4007, Family::Other, "Gravis Xterminator Force"),
     (0x047d, 0x4008, Family::Other, "Gravis Destroyer Tiltpad"),
+    // Flydigi's two- and three-dot receivers. SDL's Flydigi driver takes only the 2412, so this one
+    // is read through its plain HID gamepad, with the triggers as buttons.
+    (0x04b4, 0x2411, Family::Flydigi, "Flydigi 2.4G receiver (Apex 2, Vader 2)"),
     (0x04d8, 0xf064, Family::Other, "retroUSB NES RetroPort"),
     (0x04d8, 0xf6eb, Family::Other, "2600-daptor (Atari joystick adapter)"),
     (0x054c, 0x0cda, Family::Other, "PlayStation Classic Controller"),

@@ -133,6 +133,10 @@ pub mod devnode {
         None
     }
 
+    pub fn usb_device(_: &str) -> Option<String> {
+        None
+    }
+
     pub fn usb_product_name(_: u16, _: u16) -> Option<String> {
         None
     }

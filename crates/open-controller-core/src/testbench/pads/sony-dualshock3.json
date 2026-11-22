@@ -1,0 +1,74 @@
+{
+  "name": "Sony DualShock 3 behind DsHidMini (SXS mode)",
+  "ids": [
+    "054c:0268"
+  ],
+  "connections": "SDL reads it from feature report 0, as with Sony's driver; OpenController reads the same report for the motion SDL leaves out (ds3.rs).",
+  "sources": [
+    "SDL 3.4 src/joystick/hidapi/SDL_hidapi_ps3.c (feature report 0, motion words from byte 41 of the data)",
+    "DsHidMini 3 and Sony's driver: 113 counts a g around 512, little-endian, X mirrored, the gyro flipped",
+    "DS4Windows and PadForge's SDL fork, checked on real controllers: 123 counts per 90 degrees a second",
+    "An OpenController report's words at rest, as the demo shows them"
+  ],
+  "rest": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff 01 00 02 8f 01 fe 01",
+  "signature": 1,
+  "controls": [],
+  "motion": {
+    "decoder": "ds3-sixaxis",
+    "samples": [
+      {
+        "what": "Lying flat, as DsHidMini 3 writes it",
+        "report": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff 01 00 02 8f 01 fe 01",
+        "gyro": [
+          "0",
+          "0",
+          "0"
+        ],
+        "accel_g": 1.0
+      },
+      {
+        "what": "Lying flat, as older DsHidMini copies the controller (big-endian, raw)",
+        "report": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 02 00 01 8f 02 00",
+        "gyro": [
+          "0",
+          "0",
+          "0"
+        ],
+        "accel_g": 1.0
+      },
+      {
+        "what": "Turning left at 90 degrees a second, DsHidMini 3",
+        "report": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 02 8f 01 85 01",
+        "gyro": [
+          "0",
+          "+",
+          "0"
+        ],
+        "accel_g": 1.0
+      },
+      {
+        "what": "Turning right at 90 degrees a second, older DsHidMini",
+        "report": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02 00 02 00 01 8f 01 85",
+        "gyro": [
+          "0",
+          "-",
+          "0"
+        ],
+        "accel_g": 1.0
+      },
+      {
+        "what": "Standing on its side, DsHidMini 3: gravity along X",
+        "report": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 8f 01 00 02 00 02 00 02",
+        "gyro": [
+          "0",
+          "0",
+          "0"
+        ],
+        "accel_g": 1.0
+      }
+    ]
+  },
+  "unseen": [
+    "Only the gyro's yaw exists: the DualShock 3 has no pitch or roll gyro"
+  ]
+}

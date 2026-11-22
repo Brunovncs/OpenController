@@ -90,6 +90,8 @@ pub enum ToTray {
     },
     /// Takes away the mapping its owner made for a GUID: the joystick is unmapped again.
     Unmap(String),
+    /// Tells a Flydigi pad in its 360 mode to switch to its Android mode.
+    FlydigiAndroidMode(PadKey),
     Quit,
 }
 

@@ -88,6 +88,10 @@ pub enum Family {
     Flydigi,
     /// Flydigi Apex 5 and 6, with two extra buttons, LM and RM, on the back beside the bumpers.
     FlydigiApex,
+    /// Flydigi Apex 2, read partly from its own report (see `flydigi`): C and Z under ABXY, M5
+    /// and M6 on top beside the bumpers, Return under the right stick. Its ids are the Vader's,
+    /// so SDL's name for it decides.
+    FlydigiApex2,
     Luna,
     Stadia,
     Shield,
@@ -148,12 +152,15 @@ pub fn printed_name(family: Family, art: Art, b: u8) -> Option<&'static str> {
         (JoyCons, LEFT_PADDLE1) => "SL (L)",
         (JoyCons, RIGHT_PADDLE2) => "SL (R)",
         (JoyCons, LEFT_PADDLE2) => "SR (L)",
-        (Flydigi | FlydigiApex, RIGHT_PADDLE1) => "M1",
-        (Flydigi | FlydigiApex, LEFT_PADDLE1) => "M2",
-        (Flydigi | FlydigiApex, RIGHT_PADDLE2) => "M3",
-        (Flydigi | FlydigiApex, LEFT_PADDLE2) => "M4",
-        (Flydigi, MISC2) => "C",
-        (Flydigi, MISC3) => "Z",
+        (Flydigi | FlydigiApex | FlydigiApex2, RIGHT_PADDLE1) => "M1",
+        (Flydigi | FlydigiApex | FlydigiApex2, LEFT_PADDLE1) => "M2",
+        (Flydigi | FlydigiApex | FlydigiApex2, RIGHT_PADDLE2) => "M3",
+        (Flydigi | FlydigiApex | FlydigiApex2, LEFT_PADDLE2) => "M4",
+        (Flydigi | FlydigiApex2, MISC2) => "C",
+        (Flydigi | FlydigiApex2, MISC3) => "Z",
+        (FlydigiApex2, MISC4) => "M6",
+        (FlydigiApex2, MISC5) => "M5",
+        (FlydigiApex2, MISC6) => "Return",
         (Flydigi, MISC4) | (FlydigiApex, MISC2) => "LM",
         (Flydigi, MISC5) | (FlydigiApex, MISC3) => "RM",
         (Flydigi, MISC6) => "◯",
@@ -287,6 +294,10 @@ pub struct Features {
     /// a gyro around one axis and an accelerometer (see `ds3`).
     #[serde(default)]
     pub sixaxis: bool,
+    /// Triggers that push back, which the Lab's trigger effects drive: a DualSense's through SDL,
+    /// a Flydigi Apex 3, 4 or 5's through its own commands (see `flydigi::trigger`).
+    #[serde(default)]
+    pub force_triggers: bool,
 }
 
 /// Something the user can do to get more out of this controller.
@@ -310,6 +321,13 @@ pub enum Hint {
     /// Flydigi's app must allow other programs to read the extra buttons. Only the newer pads
     /// (vendor 37d7) ask for this; the older receiver (04b4:2412) gives them to SDL as they are.
     FlydigiThirdParty,
+    /// A Flydigi pad in its 360 mode, where it reports itself as an Xbox 360 controller and sends
+    /// only the Xbox buttons. Its Android mode sends the rest; Flydigi's app puts it back in 360
+    /// mode whenever a setting is applied there (`changeXBoxMode` after `configApplySuccess`).
+    FlydigiXInputMode,
+    /// Flydigi's app is open while one of its older pads is in Android mode: applying a setting
+    /// there switches the pad to its 360 mode. Given while the app runs, not by the model.
+    FlydigiAppOpen,
     /// Switch 2 controllers need libusb, which this build of SDL leaves out.
     Switch2Unsupported,
     /// A PlayStation-style pad in its Xbox/PC mode (SDL's `XInputPS4Controller`): it speaks
@@ -334,6 +352,12 @@ pub fn hint(vendor: u16, product: u16, family: Family) -> Option<Hint> {
         (_, _, Family::Switch2) => Some(Hint::Switch2Unsupported),
         _ => None,
     }
+}
+
+/// A hint only the controller's name gives: a Flydigi pad in its 360 mode has Microsoft's ids,
+/// and only the name its USB device carries ("Flydigi 2.4G x360") tells it is a Flydigi.
+pub fn name_hint(name: &str, xinput: bool) -> Option<Hint> {
+    (xinput && name.to_ascii_lowercase().contains("flydigi")).then_some(Hint::FlydigiXInputMode)
 }
 
 /// Mappings SDL 3.4 lacks for buttons its drivers do report: the joystick buttons each
@@ -421,6 +445,9 @@ mod tests {
         assert_eq!(hint(0x045E, 0x0B00, family(0x045E, 0x0B00, PadType::XboxOne)), Some(Hint::XboxPaddlesHidden));
         assert_eq!(hint(0x057E, 0x2069, family(0x057E, 0x2069, PadType::Standard)), Some(Hint::Switch2Unsupported));
         assert_eq!(hint(0x37D7, 0x2501, Family::FlydigiApex), Some(Hint::FlydigiThirdParty));
+        assert_eq!(name_hint("Controller (Flydigi 2.4G x360)", true), Some(Hint::FlydigiXInputMode));
+        assert_eq!(name_hint("Flydigi Apex 2", false), None, "its Android mode reads everything");
+        assert_eq!(name_hint("Controller (XBOX 360 For Windows)", true), None);
         assert_eq!(hint(0x04B4, 0x2412, Family::Flydigi), None);
         // Pro 2 Wired for Xbox, both ids: P1 and P2 only copy other buttons.
         assert_eq!(hint(0x2DC8, 0x2000, Family::EightBitDoPro2), Some(Hint::EightBitDoForXbox));

@@ -7,6 +7,7 @@ use crate::device::{self, Brand, Form, Identity, Link, Power};
 use crate::ds3::Sixaxis;
 use crate::ds4::{self, Motion};
 use crate::extras::{self, Art, Family, Features, Hint};
+use crate::flydigi::{self, V1Reader, trigger};
 use crate::handheld;
 use crate::hiding::Hider;
 use crate::hidtap::HidTap;
@@ -65,6 +66,8 @@ const LOG_LINES: usize = 80;
 pub const GRACE: Duration = Duration::from_secs(15);
 /// Poll period while a controller is connected. SDL reads the controllers' reports when polled.
 const ACTIVE_PERIOD: Duration = Duration::from_millis(1);
+/// How often to look whether Flydigi's app is open, while one of its pads is connected.
+const FLYDIGI_APP_EVERY: Duration = Duration::from_secs(5);
 /// Poll period with nothing connected: only hot-plug is watched.
 const IDLE_PERIOD: Duration = Duration::from_millis(20);
 /// How long to look for a new virtual controller's XInput slot. It takes a few milliseconds
@@ -167,6 +170,8 @@ pub enum Command {
     /// Replaces the gamepad mappings owners made, by GUID. A joystick whose mapping is new
     /// becomes a gamepad; one whose mapping was taken away is a joystick without a layout again.
     SetMappings(BTreeMap<String, String>),
+    /// Tells a Flydigi pad in its 360 mode to switch to its Android mode (`flydigi::ANDROID_KNOCK`).
+    FlydigiAndroidMode(PadKey),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -446,6 +451,125 @@ struct Phys {
     sixaxis: Option<Sixaxis>,
     tilt: TiltRate,
     tilt_at: Option<Instant>,
+    /// An older Flydigi pad's own report: its battery for all of them, and for an Apex 2 the
+    /// triggers and extra buttons SDL reads wrong.
+    v1: Option<V1Reader>,
+    /// An Apex 5's device, for its triggers.
+    v2: Option<flydigi::Port>,
+    /// Which Flydigi pad it is, once SDL or the pad said.
+    flydigi: Option<flydigi::Kind>,
+    /// What a Flydigi pad's triggers were last told.
+    flydigi_sent: TriggersTold,
+    /// One of the two listings of a receiver's one pad (`flydigi::LISTED_TWICE`). Both read the
+    /// pad's own report, so only the one driving the slot puts it in its state and sends trigger
+    /// effects: the silent one would otherwise take the slot over with its sticks at rest.
+    twin: bool,
+    /// Whether its own Flydigi report goes into its state: always but for the twin not driving.
+    takes_report: bool,
+    /// Its state as SDL alone read it, before its own report went in: what tells which twin the
+    /// player uses, as the report reaches both.
+    sdl_state: PadState,
+    /// A Flydigi pad in its 360 mode being told to switch to Android: since when, and the step of
+    /// `flydigi::ANDROID_KNOCK` to send next.
+    knock: Option<(Instant, usize)>,
+}
+
+/// What a Flydigi pad's triggers were told, left and right, and when; `None` while they were told
+/// nothing, so the effect stored in the pad by Flydigi's app stays until there is one to send.
+#[derive(Clone, Copy, Debug, Default)]
+struct TriggersTold {
+    told: [Option<(trigger::Command, Instant)>; 2],
+    /// The last command sent, either side, and which: Flydigi's app waits this long between the
+    /// two, and the other side goes first next time, so one changing often cannot starve it.
+    wrote: Option<(Instant, usize)>,
+    /// A side whose last write failed, and when to try it again.
+    retry: [Option<Instant>; 2],
+}
+
+/// The time Flydigi's app leaves between its two triggers' commands.
+const TRIGGER_GAP: Duration = Duration::from_millis(100);
+/// How often an effect is sent again while it is on, should the pad have been turned off and on.
+const TRIGGER_RESEND: Duration = Duration::from_secs(5);
+/// How long after a write the pad refused it is tried again. SDL finds these writes fail now and
+/// then.
+const TRIGGER_RETRY: Duration = Duration::from_secs(1);
+
+impl TriggersTold {
+    /// The side to send next and what to send it, if any is due now.
+    fn next(&self, wanted: [trigger::Command; 2], now: Instant) -> Option<(usize, trigger::Command)> {
+        if self.wrote.is_some_and(|(w, _)| now.duration_since(w) < TRIGGER_GAP) {
+            return None;
+        }
+        let first = self.wrote.map_or(0, |(_, side)| 1 - side);
+        [first, 1 - first].into_iter().find_map(|side| {
+            // A refused write only waits: what is due then is judged as ever, so a pad never
+            // told anything is not told "off" either.
+            if self.retry[side].is_some_and(|at| now < at) {
+                return None;
+            }
+            let w = wanted[side];
+            let due = match self.told[side] {
+                None => !w.is_off(),
+                Some((t, at)) => t != w || !w.is_off() && now.duration_since(at) >= TRIGGER_RESEND,
+            };
+            due.then_some((side, w))
+        })
+    }
+
+    fn sent(&mut self, side: usize, c: trigger::Command, now: Instant) {
+        self.told[side] = Some((c, now));
+        self.wrote = Some((now, side));
+        self.retry[side] = None;
+    }
+
+    /// The pad refused the write: tried again in a while, whatever is wanted then.
+    fn failed(&mut self, side: usize, now: Instant) {
+        self.wrote = Some((now, side));
+        self.retry[side] = Some(now + TRIGGER_RETRY);
+    }
+
+    /// Whether an effect the pad was given may still be on.
+    fn any_on(&self) -> bool {
+        self.told.iter().flatten().any(|(c, _)| !c.is_off())
+    }
+}
+
+/// Whether OpenController drives this pad's triggers itself: a Flydigi Apex 3, 4 or 5 it has a
+/// way to write to.
+fn flydigi_triggers(p: &Phys) -> bool {
+    p.model.features.force_triggers && p.flydigi.is_some_and(|k| k.force_triggers()) && (p.v1.is_some() || p.v2.is_some())
+}
+
+/// Turns a Flydigi pad's triggers off, should it have been given an effect: one it keeps until it
+/// is turned off otherwise. With `retry`, a refused write is tried once more. Blocks for Flydigi's
+/// gap.
+fn clear_flydigi_triggers(p: &Phys, retry: bool) {
+    if !flydigi_triggers(p) || !p.flydigi_sent.any_on() {
+        return;
+    }
+    for side in 0..2 {
+        if side == 1 {
+            std::thread::sleep(TRIGGER_GAP);
+        }
+        if !send_flydigi_trigger(p, side, trigger::Command::OFF) {
+            if !retry {
+                // Unplugged, most likely: the other side would be refused too.
+                return;
+            }
+            std::thread::sleep(TRIGGER_GAP);
+            send_flydigi_trigger(p, side, trigger::Command::OFF);
+        }
+    }
+}
+
+/// Sends one trigger's effect to a Flydigi pad. Whether it took it.
+fn send_flydigi_trigger(p: &Phys, side: usize, c: trigger::Command) -> bool {
+    let n = if side == 0 { trigger::LEFT } else { trigger::RIGHT };
+    match (&p.v2, &p.v1) {
+        (Some(port), _) => port.write(&trigger::v2_report(n, c)),
+        (None, Some(r)) => r.write(&trigger::v1_report(n, c)),
+        (None, None) => false,
+    }
 }
 
 struct Tools {
@@ -493,6 +617,19 @@ impl Tools {
 }
 
 impl Phys {
+    /// Its state as SDL has it, with what an Apex 2's own report says in place of what SDL reads
+    /// wrong. Should its report not open, its triggers are at least released rather than held.
+    fn read_pad(&mut self) {
+        self.pad.read(&mut self.state);
+        self.sdl_state = self.state;
+        if self.model.family == Family::FlydigiApex2 && self.takes_report {
+            match &self.v1 {
+                Some(r) => r.apply(&mut self.state),
+                None => flydigi::Apex2::default().apply(&mut self.state),
+            }
+        }
+    }
+
     /// What its motion sensors read, for a virtual DualShock 4: at rest when they are off.
     fn motion(&self) -> Motion {
         Motion { gyro: self.rate.unwrap_or(Motion::REST.gyro), accel: self.accel.unwrap_or(Motion::REST.accel) }
@@ -502,6 +639,13 @@ impl Phys {
     /// own report, with the up and down and sideways tilt worked out from the accelerometer
     /// when `tilt` is on.
     fn read_motion(&mut self, now: Instant, tilt: bool) {
+        if let Some(r) = self.v1.as_ref().filter(|_| self.model.family == Family::FlydigiApex2) {
+            // An Apex 2's air mouse: no accelerometer, and nothing to tilt by. The silent twin of
+            // a receiver stays still, as its sticks do.
+            self.rate = Some(if self.takes_report { flydigi::air_rate(r.air) } else { [0.; 3] });
+            self.accel = None;
+            return;
+        }
         let Some(sx) = self.sixaxis.as_mut() else {
             self.rate = self.pad.gyro();
             self.accel = if self.accel_on { self.pad.accel() } else { None };
@@ -647,8 +791,6 @@ struct Core {
     identify: Vec<(DeviceId, Instant)>,
     /// What each slot's controller is, still shown while it is away.
     memo: HashMap<SlotId, Model>,
-    /// USB product names by vendor and product id, for XInput controllers SDL cannot name.
-    names: HashMap<(u16, u16), Option<String>>,
     /// Devices turned off from here: when one leaves and its slot is empty, the virtual
     /// controller is unplugged at once, without the grace period.
     turning_off: Vec<(DeviceId, Instant)>,
@@ -683,6 +825,15 @@ struct Core {
     /// Its HID device, opened beside SDL's while the report is open; `None` inside when it has
     /// none to open.
     hid_tap: Option<(DeviceId, Option<HidTap>)>,
+    /// Whether Flydigi's app for the older pads is running, and when that was last looked at.
+    flydigi_app: bool,
+    flydigi_app_at: Instant,
+    /// Whether Flydigi's current app runs, while a pad whose triggers OpenController drives is here.
+    flydigi_station: bool,
+    /// Trigger effects from game mods made for Flydigi's app, while a pad that takes them is here.
+    mods: trigger::Mods,
+    /// Whether a mod's packet was logged since the port opened.
+    mods_heard: bool,
     /// Last, so it is dropped last: SDL_Quit must come after every gamepad is closed.
     sdl: Sdl,
 }
@@ -750,7 +901,6 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         feedback_rx,
         identify: Vec::new(),
         memo: HashMap::new(),
-        names: HashMap::new(),
         turning_off: Vec::new(),
         gone_halves: Vec::new(),
         profiles: config.profiles,
@@ -771,6 +921,11 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         input_changed: false,
         raw_watch: None,
         hid_tap: None,
+        flydigi_app: false,
+        flydigi_app_at: Instant::now(),
+        flydigi_station: false,
+        mods: trigger::Mods::new(trigger::MOD_PORT),
+        mods_heard: false,
         sdl,
     };
     // Before the first events are read: a joystick one of these maps comes as a gamepad.
@@ -808,6 +963,9 @@ fn run(config: Config, rx: Receiver<Msg>, shared: Arc<Mutex<Snapshot>>, on_chang
         }
         core.handheld_buttons();
         core.poll_sixaxis(now);
+        core.poll_flydigi(now);
+        core.poll_mods(now);
+        core.knock_flydigi(now);
         core.forward(now);
         core.update_tools(now);
         core.flush_resends();
@@ -949,6 +1107,17 @@ impl Core {
                     self.identify.push((dev, now + Duration::from_millis(400)));
                 }
             }
+            Command::FlydigiAndroidMode(key) => {
+                if let Some(dev) = self.device_for(key)
+                    && let Some(p) = self.phys.get_mut(&dev)
+                    && p.model.hint == Some(Hint::FlydigiXInputMode)
+                    && p.knock.is_none()
+                {
+                    p.knock = Some((now, 0));
+                    let name = p.model.name.clone();
+                    self.note(format!("asked \"{name}\" to switch to its Android mode"));
+                }
+            }
             Command::PowerOff(key) => {
                 let dev = self.device_for(key);
                 let addr = dev.and_then(|d| self.phys.get(&d)).and_then(|p| device::bluetooth_address(&p.identity));
@@ -1009,7 +1178,16 @@ impl Core {
                         let gyro = p.model.features.motion.then(|| GyroFacts {
                             mode: self.profile_of(&p.model.store).map_or("no profile".into(), |pr| format!("{:?}", pr.gyro.mode)),
                             wanted: p.gyro_on,
-                            enabled: if p.model.features.sixaxis { p.sixaxis.is_some() } else { p.pad.gyro_enabled() },
+                            enabled: if p.model.features.sixaxis {
+                                p.sixaxis.is_some()
+                            } else if p.model.family == Family::FlydigiApex2 {
+                                p.v1.is_some()
+                            } else {
+                                p.pad.gyro_enabled()
+                            },
+                            air_mouse: p.v1.as_ref().filter(|_| p.model.family == Family::FlydigiApex2).map(|r| {
+                                format!("last right {} down {}, taken as 1 °/s a unit; the pad said {:?}", r.air.0, r.air.1, r.info)
+                            }),
                             error: p.gyro_error.clone(),
                             sixaxis: p.sixaxis.as_ref().map(|sx| {
                                 format!(
@@ -1113,6 +1291,14 @@ impl Core {
         }
     }
 
+    /// Whether a device is its slot's source now, or has no slot to share.
+    fn drives_its_slot(&self, id: DeviceId) -> bool {
+        match self.phys.get(&id).map(|p| p.kind) {
+            Some(Kind::Slot(s)) => self.roster.get(s).and_then(|slot| slot.source) == Some(id),
+            _ => true,
+        }
+    }
+
     /// Whether the slot's controller is kept native: no virtual controller, not hidden, and
     /// nothing written to it.
     fn is_native(&self, s: SlotId) -> bool {
@@ -1133,7 +1319,7 @@ impl Core {
         if let Some(p) = self.phys.get_mut(&d) {
             self.input_changed |= p.pad.read_raw(&mut p.raw);
             if self.hid_tap.as_ref().is_none_or(|(id, _)| *id != d) {
-                self.hid_tap = Some((d, HidTap::open(&p.path)));
+                self.hid_tap = Some((d, HidTap::open(&p.path, p.model.vendor, p.model.product)));
             }
             if let Some((_, Some(tap))) = &mut self.hid_tap {
                 self.input_changed |= tap.read(p.raw.hid.get_or_insert_default());
@@ -1272,6 +1458,130 @@ impl Core {
         }
     }
 
+    /// Reads each older Flydigi pad's own report: its battery, and an Apex 2's triggers, extra
+    /// buttons and air mouse. SDL tells of a new report only when something it reads changes, so a
+    /// trigger or C pressed alone would otherwise never be forwarded.
+    ///
+    /// A pad whose model SDL did not say, on the receiver or a model SDL does not know, is learnt
+    /// from its answer: an Apex 2 then gets its drawing and buttons, an Apex 3 or 4 its trigger
+    /// effects, and any other is left to SDL but for its battery.
+    fn poll_flydigi(&mut self, now: Instant) {
+        let mut found = Vec::new();
+        for (&id, p) in &mut self.phys {
+            let Some(r) = p.v1.as_mut() else { continue };
+            let read = r.read(now);
+            r.ask_again(now);
+            if (read.input || read.motion && p.gyro_on) && !self.updated.contains(&id) {
+                self.updated.push(id);
+            }
+            if let Some(power) = r.power()
+                && power != p.power
+            {
+                p.power = power;
+                self.changed = true;
+            }
+            if p.flydigi.is_none()
+                && let Some(i) = r.info
+            {
+                found.push((id, i.model, r.receiver));
+            }
+        }
+        for (id, number, receiver) in found {
+            let Some(p) = self.phys.get_mut(&id) else { continue };
+            let kind = flydigi::Kind::from_model(number);
+            p.flydigi = Some(kind);
+            let m = &mut p.model;
+            if kind == flydigi::Kind::Apex2 {
+                m.family = Family::FlydigiApex2;
+                m.art = extras::art(m.family, m.vendor, m.product);
+                m.extras = flydigi::extras(&m.extras, receiver);
+                m.features.motion = true;
+            }
+            m.features.force_triggers |= kind.force_triggers();
+            if receiver && let Some(n) = kind.name() {
+                m.name = n.to_string();
+            }
+            let name = m.name.clone();
+            if !self.updated.contains(&id) {
+                self.updated.push(id);
+            }
+            self.changed = true;
+            self.note(format!("{name}: the Flydigi pad says it is model {number} ({kind:?})"));
+        }
+    }
+
+    /// Listens for game mods' trigger effects while a Flydigi pad that takes them is connected.
+    fn poll_mods(&mut self, now: Instant) {
+        let wanted = self.phys.values().any(flydigi_triggers) && !self.flydigi_station && !self.flydigi_app;
+        let heard = self.mods.poll(wanted, &self.foreground, now, || !flydigi::station_running() && !flydigi::app_running());
+        match heard.listening {
+            Some(true) => self.note(format!("listening for game mods' trigger effects on port {}", trigger::MOD_PORT)),
+            Some(false) => {
+                self.mods_heard = false;
+                self.note("no longer listening for game mods' trigger effects".into());
+            }
+            None => {}
+        }
+        if heard.refused {
+            self.note(format!(
+                "port {} is taken, by Flydigi's app or another program: game mods' trigger effects go there",
+                trigger::MOD_PORT
+            ));
+        }
+        if heard.packets > 0 && !self.mods_heard {
+            self.mods_heard = true;
+            let program = self.foreground.clone();
+            self.note(format!("a game mod sends trigger effects, while {program} is in front"));
+        }
+    }
+
+    /// Looks every few seconds, while an older Flydigi pad is connected, whether Flydigi's app is
+    /// open: it switches the pad to its 360 mode, so its page says so.
+    ///
+    /// And, while a pad whose triggers it drives is connected, whether Flydigi's current app runs,
+    /// which keeps game mods' trigger effects for itself.
+    fn watch_flydigi_app(&mut self, now: Instant) {
+        if now.duration_since(self.flydigi_app_at) < FLYDIGI_APP_EVERY {
+            return;
+        }
+        self.flydigi_app_at = now;
+        if self.phys.values().any(|p| flydigi::app_drives(p.model.vendor)) {
+            let running = flydigi::app_running();
+            if running != self.flydigi_app {
+                self.flydigi_app = running;
+                self.changed = true;
+                self.note(format!("Flydigi's app {}", if running { "is open" } else { "was closed" }));
+            }
+        } else if self.flydigi_app {
+            // No pad of its left: nothing to warn about, and nothing to log either.
+            self.flydigi_app = false;
+            self.changed = true;
+        }
+        let station = self.phys.values().any(flydigi_triggers) && flydigi::station_running();
+        if station != self.flydigi_station {
+            self.flydigi_station = station;
+            self.note(format!(
+                "Flydigi Space Station {}",
+                if station { "runs: game mods' trigger effects are left to it" } else { "is not running" }
+            ));
+        }
+    }
+
+    /// Sends the next step of each Flydigi mode switch that is due.
+    fn knock_flydigi(&mut self, now: Instant) {
+        for p in self.phys.values_mut() {
+            let Some((since, step)) = p.knock else { continue };
+            if now < since + flydigi::KNOCK_STEP * step as u32 {
+                continue;
+            }
+            p.knock = flydigi::ANDROID_KNOCK.get(step).map(|&(low, high)| {
+                // Long enough that SDL does not stop it between steps.
+                p.pad.rumble(low, high, 1000);
+                (since, step + 1)
+            });
+        }
+    }
+
     /// Turns each controller's motion sensors on while they are used: the gyro while its
     /// profile aims with it or games are sent it through a DualShock 4, and the accelerometer
     /// for the DualShock 4 too. A DualShock 3's are read by opening it alongside SDL.
@@ -1302,6 +1612,9 @@ impl Core {
                     p.sixaxis = None;
                 }
                 opened.err()
+            } else if p.model.family == Family::FlydigiApex2 && p.v1.is_some() {
+                // Its air mouse is always in its report.
+                None
             } else {
                 p.pad.set_sensors(gyro, accel).err()
             };
@@ -1441,12 +1754,26 @@ impl Core {
         if self.shares_link(&identity, link) {
             identity = device::identity(vendor, product, None, &path);
         }
+        // A receiver that lists its one pad twice: both share the first's slot, and whichever
+        // sends input drives it, so games never get a second, silent player.
+        let mut twin_of = None;
+        if flydigi::LISTED_TWICE.contains(&(vendor, product))
+            && let Some(usb) = devnode::usb_device(&path)
+            && let Some((&first_id, first)) = self.phys.iter().find(|(_, p)| {
+                (p.model.vendor, p.model.product) == (vendor, product) && devnode::usb_device(&p.path).as_ref() == Some(&usb)
+            })
+        {
+            identity = first.identity.clone();
+            twin_of = Some(first_id);
+        }
         let mut name = pad.name();
-        if device::is_xinput_path(&path) && name.starts_with("XInput ") {
-            let usb = self.names.entry((vendor, product)).or_insert_with(|| devnode::usb_product_name(vendor, product));
-            if let Some(n) = usb {
-                name = n.clone();
-            }
+        // Looked up each time: a second device with the same ids may have come since, and then the
+        // name could be either's.
+        if device::is_xinput_path(&path)
+            && name.starts_with("XInput ")
+            && let Some(n) = devnode::usb_product_name(vendor, product)
+        {
+            name = n;
         }
         if models::is_generic_name(&name)
             && let Some(row) = models::lookup(vendor, product)
@@ -1466,7 +1793,39 @@ impl Core {
                 name = m.name.to_string();
             }
         }
-        let features = pad.features();
+        // A Flydigi pad: the model SDL found, and the pad's own report or device for what SDL
+        // leaves out. A model SDL does not know is learnt from the pad's answer (`poll_flydigi`).
+        let fd_type = pad.flydigi_type();
+        let fd_kind = fd_type.map(flydigi::Kind::from_sdl).filter(|&k| k != flydigi::Kind::Other);
+        let (mut v1, mut v2) = (None, None);
+        if vendor == flydigi::VENDOR && fd_type.is_some() {
+            v1 = V1Reader::open(&path);
+            if v1.is_none() {
+                self.note(format!("could not open the Flydigi pad's own report: {}", crate::sdl::error()));
+            }
+        } else if (vendor, product) == (flydigi::VENDOR, flydigi::RECEIVER) {
+            v1 = V1Reader::on_receiver(&path, Instant::now());
+            if v1.is_none() {
+                self.note(format!("could not open the Flydigi receiver's own report: {}", crate::sdl::error()));
+            }
+        } else if fd_kind == Some(flydigi::Kind::Apex5) {
+            v2 = flydigi::Port::open(&path);
+            if v2.is_none() {
+                self.note(format!("could not open the Flydigi Apex 5 for its triggers: {}", crate::sdl::error()));
+            }
+        }
+        let apex2 = fd_kind == Some(flydigi::Kind::Apex2);
+        if apex2 {
+            family = Family::FlydigiApex2;
+        }
+        let mut features = pad.features();
+        features.force_triggers = matches!(family, Family::DualSense | Family::DualSenseEdge)
+            || fd_kind.is_some_and(|k| k.force_triggers()) && (v1.is_some() || v2.is_some());
+        let mut hint = extras::hint(vendor, product, family).or_else(|| extras::name_hint(&name, device::is_xinput_path(&path)));
+        // A newer Flydigi that SDL reads with its own driver was let in by Flydigi's app already.
+        if hint == Some(Hint::FlydigiThirdParty) && fd_type.is_some() {
+            hint = None;
+        }
         let mut model = Model {
             name,
             brand: device::brand(vendor, pad.pad_type()),
@@ -1482,7 +1841,7 @@ impl Core {
             form: pad.form(),
             extras: extras::available(&features, |b| pad.has_button(b)),
             features,
-            hint: extras::hint(vendor, product, family),
+            hint,
             store: binding::store_key(&identity, vendor, product),
             half,
             guid: self.sdl.joystick_guid(id),
@@ -1490,6 +1849,10 @@ impl Core {
         if let Some(m) = built_in {
             model.extras = extras::HANDHELD[..m.buttons.len()].to_vec();
             model.store = format!("handheld:{}", m.name);
+        }
+        if apex2 && v1.is_some() {
+            model.extras = flydigi::extras(&model.extras, false);
+            model.features.motion = true;
         }
         let mut p = Phys {
             tools: Tools::new(Instant::now()),
@@ -1517,9 +1880,17 @@ impl Core {
             sixaxis: None,
             tilt: TiltRate::default(),
             tilt_at: None,
+            v1,
+            v2,
+            flydigi: fd_kind,
+            flydigi_sent: TriggersTold::default(),
+            twin: twin_of.is_some(),
+            takes_report: true,
+            sdl_state: PadState::default(),
+            knock: None,
             pad,
         };
-        p.pad.read(&mut p.state);
+        p.read_pad();
         p.tools.runtime.output = p.state;
         let xbox = matches!(p.pad.pad_type(), device::PadType::Xbox360 | device::PadType::XboxOne);
         p.kind = if devnode::is_virtual(&p.path) {
@@ -1547,6 +1918,9 @@ impl Core {
             self.memo.insert(s, p.model.clone());
         }
         self.phys.insert(id, p);
+        if let Some(first) = twin_of.and_then(|f| self.phys.get_mut(&f)) {
+            first.twin = true;
+        }
         if let Kind::Slot(s) = kind {
             if self.is_native(s) {
                 // SDL numbered it when it opened; without a number, numbering another controller
@@ -1669,6 +2043,9 @@ impl Core {
         if p.tools.last_effect.is_some() {
             let _ = p.pad.trigger_effect(Default::default());
         }
+        // Gone from SDL while still plugged in (Flydigi's app took it back): its effect would stay.
+        // Once only: a pad really unplugged refuses, and the other pads wait meanwhile.
+        clear_flydigi_triggers(&p, false);
         self.macro_held.remove(&id);
         if let Kind::Slot(s) = p.kind {
             self.roster.detach(id, now);
@@ -2002,15 +2379,18 @@ impl Core {
     fn forward(&mut self, now: Instant) {
         let updated = std::mem::take(&mut self.updated);
         for &id in &updated {
+            let driving = self.drives_its_slot(id);
             let Some(p) = self.phys.get_mut(&id) else { continue };
             // One of our own virtual controllers, reporting back what was just sent to it.
             if p.kind == Kind::Own {
                 continue;
             }
+            p.takes_report = !p.twin || driving;
             let before = p.state;
+            let sdl_before = p.sdl_state;
             let aim_before = p.aim_out;
             let (rate_before, accel_before) = (p.rate, p.accel);
-            p.pad.read(&mut p.state);
+            p.read_pad();
             if p.model.family == Family::Handheld && p.kind == Kind::Native {
                 p.state.buttons |= self.handheld_held;
             }
@@ -2045,11 +2425,14 @@ impl Core {
                 continue;
             }
             let (kind, state) = (p.kind, p.state);
+            // A receiver's twins both get the pad's own report, and the one not driving drops it:
+            // only what SDL read of each may move the slot.
+            let (from, to) = if p.twin { (sdl_before, p.sdl_state) } else { (before, state) };
             // Any button can type keys, not only the extra ones.
             if let Kind::Slot(s) = kind {
                 // Stick noise on the idle connection of a controller connected twice must not
                 // pull the slot over to it.
-                if mapping::significant(&before, &state) && self.roster.touched(id) {
+                if mapping::significant(&from, &to) && self.roster.touched(id) {
                     self.changed = true;
                     self.move_rumble(s);
                 }
@@ -2086,7 +2469,14 @@ impl Core {
                 Kind::Native => (true, false),
                 _ => (false, false),
             };
+            // Another device drives this one's slot: for a receiver's twin, the other listing.
+            let other_drives = match self.phys[&id].kind {
+                Kind::Slot(s) => self.roster.get(s).and_then(|slot| slot.source).is_some_and(|src| src != id),
+                _ => false,
+            };
             let cfg = self.profile_of(&self.phys[&id].model.store).map(|p| p.lab).unwrap_or_default();
+            // A game mod's effects, over the Lab's, for a controller that plays.
+            let from_mods = if owned { self.mods.effects(&self.foreground) } else { [None; 2] };
             let p = self.phys.get_mut(&id).unwrap();
             let mut before = p.tools.runtime.output;
             if owned {
@@ -2133,6 +2523,24 @@ impl Core {
                     self.changed |= error != p.tools.error;
                     p.tools.error = error;
                     p.tools.last_effect = Some((effects, now));
+                }
+            } else if flydigi_triggers(p) && p.twin && other_drives {
+                // The other listing of the receiver drives the pad's triggers; this one must not
+                // turn them off. Told afresh should it take the slot.
+                p.flydigi_sent = TriggersTold::default();
+            } else if flydigi_triggers(p) {
+                let lab = effects.map(trigger::Command::from_effect);
+                let wanted = [0, 1].map(|i| from_mods[i].unwrap_or(lab[i]));
+                if let Some((side, c)) = p.flydigi_sent.next(wanted, now) {
+                    let took = send_flydigi_trigger(p, side, c);
+                    if took {
+                        p.flydigi_sent.sent(side, c, now);
+                    } else {
+                        p.flydigi_sent.failed(side, now);
+                    }
+                    let error = (!took).then(|| "The controller did not take the trigger effect.".to_string());
+                    self.changed |= error != p.tools.error;
+                    p.tools.error = error;
                 }
             }
             if owned && cfg.dsu && p.rate.is_some() && p.accel.is_some() {
@@ -2313,6 +2721,7 @@ impl Core {
         }
         self.follow_hider();
         self.plug_missing(now);
+        self.watch_flydigi_app(now);
         self.find_player_slots(now);
         self.update_lights(now);
         let unsent: Vec<SlotId> = self.targets.iter().filter(|(_, t)| t.last != Some(t.showing())).map(|(&s, _)| s).collect();
@@ -2673,7 +3082,9 @@ impl Core {
             raw: None,
             extras: model.filter(|_| assignable).map(|m| m.extras.clone()).unwrap_or_default(),
             features: model.map(|m| m.features).unwrap_or_default(),
-            hint: model.and_then(|m| m.hint),
+            hint: model
+                .and_then(|m| m.hint)
+                .or_else(|| model.filter(|m| self.flydigi_app && flydigi::app_drives(m.vendor)).map(|_| Hint::FlydigiAppOpen)),
             profiles: store.as_ref().and_then(|p| self.profiles.get(p)).cloned().unwrap_or_default(),
             in_use: store.as_ref().and_then(|p| self.profiles.get(p)).map_or(0, |p| p.in_use(&self.foreground)),
             store,
@@ -2693,6 +3104,9 @@ impl Core {
             if p.tools.last_effect.is_some() {
                 let _ = p.pad.trigger_effect(Default::default());
             }
+        }
+        for p in self.phys.values() {
+            clear_flydigi_triggers(p, true);
         }
         for p in self.phys.values().filter(|p| !(matches!(p.kind, Kind::Slot(_)) && native(&self.profiles, &p.model.store, p.model.form))) {
             p.pad.rumble(0, 0, 0);
@@ -2752,6 +3166,82 @@ fn dsu_source_key(store: &str, path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn flydigi_triggers_are_told_one_side_at_a_time_and_only_when_needed() {
+        use super::{TRIGGER_GAP, TRIGGER_RESEND, TriggersTold};
+        use crate::flydigi::trigger::{Command, mode};
+        let race = Command { mode: mode::RACE, params: [40, 200, 0, 0, 0] };
+        let lock = Command { mode: mode::LOCK, params: [90, 255, 0, 0, 0] };
+        let off = Command::OFF;
+        let t0 = std::time::Instant::now();
+        let mut told = TriggersTold::default();
+        assert_eq!(told.next([off, off], t0), None, "nothing on: what the pad keeps from Flydigi's app stays");
+        assert_eq!(told.next([race, lock], t0), Some((0, race)));
+        told.sent(0, race, t0);
+        assert_eq!(told.next([race, lock], t0 + TRIGGER_GAP / 2), None, "Flydigi's gap between the two");
+        let t1 = t0 + TRIGGER_GAP;
+        assert_eq!(told.next([race, lock], t1), Some((1, lock)));
+        told.sent(1, lock, t1);
+        let t2 = t1 + TRIGGER_GAP;
+        assert_eq!(told.next([race, lock], t2), None, "both told");
+        assert!(told.any_on());
+        // Again after a while, should the pad have been turned off and on.
+        assert_eq!(told.next([race, lock], t0 + TRIGGER_RESEND), Some((0, race)));
+        // Turned off: cleared once, then left alone.
+        assert_eq!(told.next([off, lock], t2), Some((0, off)));
+        told.sent(0, off, t2);
+        let t3 = t2 + TRIGGER_RESEND * 2;
+        assert_eq!(told.next([off, lock], t3), Some((1, lock)), "only the side still on is sent again");
+        told.sent(1, off, t3);
+        assert!(!told.any_on());
+        assert_eq!(told.next([off, off], t3 + TRIGGER_RESEND * 2), None);
+    }
+
+    #[test]
+    fn a_trigger_changing_all_the_time_does_not_starve_the_other() {
+        use super::{TRIGGER_GAP, TriggersTold};
+        use crate::flydigi::trigger::{Command, mode};
+        let mut told = TriggersTold::default();
+        let mut t = std::time::Instant::now();
+        let right = Command { mode: mode::LOCK, params: [90, 255, 0, 0, 0] };
+        let mut right_sent = false;
+        for i in 0..6u8 {
+            // A mod moving the left effect at every look.
+            let left = Command { mode: mode::RACE, params: [i * 10, 200, 0, 0, 0] };
+            if let Some((side, c)) = told.next([left, right], t) {
+                told.sent(side, c, t);
+                right_sent |= side == 1;
+            }
+            t += TRIGGER_GAP;
+        }
+        assert!(right_sent);
+    }
+
+    #[test]
+    fn a_refused_trigger_write_is_tried_again() {
+        use super::{TRIGGER_GAP, TRIGGER_RETRY, TriggersTold};
+        use crate::flydigi::trigger::{Command, mode};
+        let race = Command { mode: mode::RACE, params: [40, 200, 0, 0, 0] };
+        let t0 = std::time::Instant::now();
+        let mut told = TriggersTold::default();
+        told.sent(0, race, t0);
+        let t1 = t0 + TRIGGER_GAP;
+        // Turning it off fails: the effect would stay on without another try.
+        assert_eq!(told.next([Command::OFF, Command::OFF], t1), Some((0, Command::OFF)));
+        told.failed(0, t1);
+        assert_eq!(told.next([Command::OFF, Command::OFF], t1 + TRIGGER_GAP), None, "not at once");
+        assert_eq!(told.next([Command::OFF, Command::OFF], t1 + TRIGGER_RETRY), Some((0, Command::OFF)));
+        told.sent(0, Command::OFF, t1 + TRIGGER_RETRY);
+        assert!(!told.any_on());
+        assert_eq!(told.next([Command::OFF, Command::OFF], t1 + TRIGGER_RETRY * 3), None);
+        // A first effect refused, then turned off before the retry: the pad, never told
+        // anything, keeps what Flydigi's app stored.
+        let mut fresh = TriggersTold::default();
+        assert_eq!(fresh.next([race, Command::OFF], t0), Some((0, race)));
+        fresh.failed(0, t0);
+        assert_eq!(fresh.next([Command::OFF, Command::OFF], t0 + TRIGGER_RETRY), None);
+    }
+
     #[test]
     fn dsu_distinguishes_identical_serialless_pads_but_keeps_serialled_links_together() {
         assert_ne!(super::dsu_source_key("model:1234:5678", "usb-a"), super::dsu_source_key("model:1234:5678", "usb-b"));

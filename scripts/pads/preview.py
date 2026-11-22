@@ -8,7 +8,7 @@ import sys
 
 import pymupdf
 
-pads = json.load(open(sys.argv[1]))
+pads = json.load(open(sys.argv[1], encoding="utf-8"))
 names = sys.argv[3:] or list(pads)
 LETTERS = {"south": "A", "east": "B", "west": "X", "north": "Y"}
 

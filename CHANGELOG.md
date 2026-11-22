@@ -3,6 +3,33 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.7
+
+The Flydigi Apex 2 works fully over its cable. Its triggers no longer sit half pressed: SDL took
+the ABXY wheel for them, and they now press all the way when you pull them. C, Z, M5, M6 and
+Return can be assigned like the other extra buttons, and it has a drawing of its own, front and
+back. On its 2.4 GHz receiver it takes one player instead of two, and once the controller is on
+it gets the same fixes and the same drawing, with M1 to M4 too. Its air mouse works as a gyro, for
+aiming like on a PlayStation controller. The gyro is new and untested on a real Apex 2: if it feels
+too slow or too fast, change its sensitivity.
+
+The older Flydigi controllers (Vader 2 to 4 Pro, Apex 2 to 4, Direwolf) show their battery, on the
+cable and on the receiver.
+
+The triggers of the Flydigi Apex 3, 4 and 5 push back. The Lab's trigger effects, until now for the
+DualSense only, work on them too, and game mods made for Flydigi's adaptive triggers send their
+effects to OpenController while Flydigi's app is closed. This is new and untested on these
+controllers: if you have one, a problem report helps.
+
+A Flydigi in its 360 mode has a button to switch it to Android mode, where its extra buttons can
+be read, and says how to do it on the controller. While Flydigi's app is open, the controller's
+page warns that applying a setting there switches it back to 360 mode. The hint about Flydigi
+Space Station only shows when the controller really needs it, and says which firmware the Apex 5
+and the Vader 5 Pro need. A problem report on a controller now reads every part of it, not only
+the one games use.
+
+Settings carry over.
+
 ## 0.9.6
 
 The button being assigned is outlined on the drawing, and pressing a button on the controller opens it
