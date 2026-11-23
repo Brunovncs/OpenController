@@ -3,12 +3,14 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.9.8
 
 - Flydigi Apex 2: extra buttons and gyro on the 2.4 GHz receiver, and the ))) button.
 - Legion Go S: extra buttons fixed.
 - Added the Deltaco GAM-198.
 - Switch controllers show Nintendo's letters on their drawing.
+
+Settings carry over.
 
 ## 0.9.7
 
