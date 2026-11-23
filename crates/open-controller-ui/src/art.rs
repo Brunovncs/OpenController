@@ -230,6 +230,8 @@ pub fn glyphs(pad: &PadView, look: Look) -> Glyphs {
     match pad.brand {
         Brand::PlayStation => Glyphs::PlayStation,
         Brand::Nintendo => Glyphs::Nintendo,
+        // A pad made for the Switch that a PC reads through XInput, as the page's labels have it.
+        _ if matches!(pad.family, Family::SwitchPro | Family::Switch2) => Glyphs::Nintendo,
         // 8BitDo's Super Nintendo shapes print Nintendo's letters, except the ones made for Xbox.
         _ if matches!(look, Look::Sn30Pro | Look::Retro) && !pad.name.contains("for Xbox") => Glyphs::Nintendo,
         _ => Glyphs::Xbox,
@@ -1358,6 +1360,14 @@ mod tests {
         p.profiles.apply(Edit::Model(Some("onikuma-c1".into())));
         assert_eq!(look(&p), Look::Traced("onikumaC1"));
         assert_eq!(glyphs(&p, look(&p)), Glyphs::Nintendo, "X on top, as printed on it");
+    }
+
+    #[test]
+    fn a_switch_pad_on_xinput_prints_nintendos_letters() {
+        use open_controller_core::PadKey;
+        let p = crate::demo::pad(PadKey::Slot(0), "Deltaco GAM-198", Brand::Xbox, Family::SwitchPro, (0x413D, 0x2131));
+        assert_eq!(look(&p), Look::SwitchPro);
+        assert_eq!(glyphs(&p, look(&p)), Glyphs::Nintendo, "B at the bottom, as the page's labels say");
     }
 
     #[test]

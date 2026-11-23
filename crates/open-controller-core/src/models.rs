@@ -1012,6 +1012,9 @@ pub static MODELS: &[Row] = &[
     (0x37d7, 0x2801, Family::Xbox, "Flydigi Vader 5S"),
     (0x4131, 0x3519, Family::Xbox, "LeadJoy Xeno Pro and Xeno Plus"),
     (0x413d, 0x2106, Family::Xbox, "BIGBIG WON gamepad (ArmorX Pro, Blitz 2)"),
+    // Made for the Switch 2, with Nintendo's letters; on a PC's cable it is an XInput pad named
+    // "Controller". From its owner's report.
+    (0x413d, 0x2131, Family::SwitchPro, "Deltaco GAM-198"),
     (0xf000, 0x0003, Family::Other, "retroUSB SNES RetroPad"),
     (0xf000, 0x0008, Family::Other, "retroUSB Genesis RetroPort"),
     (0xf000, 0x00f1, Family::Other, "retroUSB SNES RetroPort"),
