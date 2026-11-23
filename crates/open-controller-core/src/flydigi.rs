@@ -5,7 +5,8 @@
 //!   wheel is dragged. They rest near the middle (0x81, 0x85), so SDL holds both triggers about
 //!   half pressed for as long as the pad is connected, and they never move.
 //! - Its triggers are buttons, bits 0x10 and 0x20 of byte 10, which SDL does not read; nor C, Z,
-//!   M5 and M6 (byte 7) or Return (byte 8), as SDL gives only the Vader pads their extra buttons.
+//!   M5 and M6 (byte 7), Return or ))) (byte 8), as SDL gives only the Vader pads their extra
+//!   buttons.
 //!
 //! So OpenController opens the pad's own report, as SDL does, and takes those from it. The layout
 //! is Flydigi's own (ApexSpace's `getDeviceOperateEventFrom32`), with the Apex 2's buttons as
@@ -27,7 +28,7 @@
 pub mod trigger;
 
 use crate::device::Power;
-use crate::extras::{LEFT_PADDLE1, LEFT_PADDLE2, MISC2, MISC3, MISC4, MISC5, MISC6, RIGHT_PADDLE1, RIGHT_PADDLE2};
+use crate::extras::{LEFT_PADDLE1, LEFT_PADDLE2, MISC1, MISC2, MISC3, MISC4, MISC5, MISC6, RIGHT_PADDLE1, RIGHT_PADDLE2};
 use crate::hidtap;
 use crate::mapping::{PadState, axis};
 use crate::platform::devnode;
@@ -191,8 +192,9 @@ pub fn app_drives(vendor: u16) -> bool {
 pub const LISTED_TWICE: [(u16, u16); 1] = [(VENDOR, 0x2411)];
 
 /// The extra buttons OpenController reads from the report: C and Z under ABXY, M6 and M5 on top
-/// beside the left and right bumpers, and Return under the right stick.
-pub const EXTRAS: [u8; 5] = [MISC2, MISC3, MISC4, MISC5, MISC6];
+/// beside the left and right bumpers, Return under the right stick, and ))) left of Home (Pairing
+/// in the manual), which also turns the pad's air mouse on and off.
+pub const EXTRAS: [u8; 6] = [MISC1, MISC2, MISC3, MISC4, MISC5, MISC6];
 /// M1 to M4, SDL's on the cable (`SDL_GAMEPAD_BUTTON_FLYDIGI_M1` and on), OpenController's on the
 /// receiver.
 pub const PADDLES: [u8; 4] = [RIGHT_PADDLE1, LEFT_PADDLE1, RIGHT_PADDLE2, LEFT_PADDLE2];
@@ -214,7 +216,9 @@ pub struct Apex2 {
     pub paddles: u64,
 }
 
-const BUTTON_BITS: [(usize, u8, u8); 5] = [(7, 0x01, MISC2), (7, 0x02, MISC3), (7, 0x80, MISC4), (7, 0x40, MISC5), (8, 0x10, MISC6)];
+/// ))) is the bit SDL leaves out on purpose, as the Vader's gyro mouse button.
+const BUTTON_BITS: [(usize, u8, u8); 6] =
+    [(8, 0x01, MISC1), (7, 0x01, MISC2), (7, 0x02, MISC3), (7, 0x80, MISC4), (7, 0x40, MISC5), (8, 0x10, MISC6)];
 /// As SDL reads them on the cable.
 const PADDLE_BITS: [(usize, u8, u8); 4] =
     [(7, 0x04, RIGHT_PADDLE1), (7, 0x08, LEFT_PADDLE1), (7, 0x10, RIGHT_PADDLE2), (7, 0x20, LEFT_PADDLE2)];
@@ -558,12 +562,13 @@ mod tests {
 
     #[test]
     fn extra_buttons_by_their_bits() {
-        let cases = [((7, 0x01), MISC2), ((7, 0x02), MISC3), ((7, 0x80), MISC4), ((7, 0x40), MISC5), ((8, 0x10), MISC6)];
+        let cases =
+            [((8, 0x01), MISC1), ((7, 0x01), MISC2), ((7, 0x02), MISC3), ((7, 0x80), MISC4), ((7, 0x40), MISC5), ((8, 0x10), MISC6)];
         for ((at, v), b) in cases {
             assert_eq!(parse(&with(&[(at, v)])).unwrap().buttons, bit(b), "byte {at} bit {v:#04x}");
         }
-        // M1 to M4 (byte 7, 0x04 to 0x20), Home and Pairing (byte 8) are SDL's or not buttons.
-        assert_eq!(parse(&with(&[(7, 0x3c), (8, 0x09)])).unwrap().buttons, 0);
+        // M1 to M4 (byte 7, 0x04 to 0x20) and Home (byte 8) are SDL's.
+        assert_eq!(parse(&with(&[(7, 0x3c), (8, 0x08)])).unwrap().buttons, 0);
     }
 
     #[test]

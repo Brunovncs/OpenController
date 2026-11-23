@@ -402,6 +402,7 @@ fn every_extra_button_arrives_on_its_own_bit() {
         (Pad { m: m6, ..REST }, MISC4, "M6"),
         (Pad { m: m5, ..REST }, MISC5, "M5"),
         (Pad { ret: true, ..REST }, MISC6, "Return"),
+        (Pad { pair: true, ..REST }, MISC1, ")))"),
     ];
     let mut run = Run::new();
     run.hold(REST);

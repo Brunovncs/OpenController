@@ -89,7 +89,8 @@ pub enum Family {
     /// Flydigi Apex 5 and 6, with two extra buttons, LM and RM, on the back beside the bumpers.
     FlydigiApex,
     /// Flydigi Apex 2, read partly from its own report (see `flydigi`): C and Z under ABXY, M5
-    /// and M6 on top beside the bumpers, Return under the right stick. Its ids are the Vader's,
+    /// and M6 on top beside the bumpers, Return under the right stick, ))) left of Home. Its ids
+    /// are the Vader's,
     /// so SDL's name for it decides.
     FlydigiApex2,
     Luna,
@@ -161,6 +162,7 @@ pub fn printed_name(family: Family, art: Art, b: u8) -> Option<&'static str> {
         (FlydigiApex2, MISC4) => "M6",
         (FlydigiApex2, MISC5) => "M5",
         (FlydigiApex2, MISC6) => "Return",
+        (FlydigiApex2, MISC1) => ")))",
         (Flydigi, MISC4) | (FlydigiApex, MISC2) => "LM",
         (Flydigi, MISC5) | (FlydigiApex, MISC3) => "RM",
         (Flydigi, MISC6) => "◯",

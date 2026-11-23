@@ -3,6 +3,16 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+The Flydigi Apex 2 on its 2.4 GHz receiver now gets what it has on the cable: C, Z, M5, M6, Return,
+the gyro and its own drawing. OpenController could not open the part of the receiver that sends
+them. The ))) button left of Home lights up and can be assigned too. It still turns the
+controller's air mouse on and off, and the gyro only moves while the air mouse is on.
+
+The same fix lets OpenController read the extra buttons of the Legion Go S, which it could not open
+either.
+
 ## 0.9.7
 
 The Flydigi Apex 2 works fully over its cable. Its triggers no longer sit half pressed: SDL took

@@ -81,12 +81,27 @@ fn open_path(path: &str) -> Option<*mut SDL_hid_device> {
     (!dev.is_null()).then_some(dev)
 }
 
+/// One list at a time: the setting [`interfaces`] turns off is SDL's, for every thread.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Every HID interface with these ids, by path, with its number and usage page. HIDAPI must be
 /// initialized.
+///
+/// SDL leaves out of its list any interface that does not look like a controller, as it keeps
+/// only the makers' own pages its drivers read (the Flydigi cable's, not its 2.4G receiver's), so
+/// that is turned off while this one is made.
 pub(crate) fn interfaces(vendor: u16, product: u16) -> Vec<(String, HidSource)> {
+    let _held = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let mut out = Vec::new();
     unsafe {
+        let before = SDL_GetHint(SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS);
+        let before = (!before.is_null()).then(|| CStr::from_ptr(before).to_owned());
+        SDL_SetHint(SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS, c"0".as_ptr());
         let list = SDL_hid_enumerate(vendor, product);
+        match before {
+            Some(v) => SDL_SetHint(SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS, v.as_ptr()),
+            None => SDL_ResetHint(SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS),
+        };
         let mut d = list;
         while !d.is_null() {
             let info = &*d;
@@ -106,6 +121,35 @@ pub(crate) fn interfaces(vendor: u16, product: u16) -> Vec<(String, HidSource)> 
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
+
+    /// SDL's own list keeps only what looks like a controller; ours has every interface (on this
+    /// machine, the keyboard and mouse too), and SDL's setting is left as it was.
+    #[test]
+    fn interfaces_are_not_only_controllers() {
+        let count = |list: *mut SDL_hid_device_info| {
+            let (mut n, mut d) = (0, list);
+            while !d.is_null() {
+                n += 1;
+                d = unsafe { (*d).next };
+            }
+            unsafe { SDL_hid_free_enumeration(list) };
+            n
+        };
+        let sdl_list = || {
+            let _held = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+            count(unsafe { SDL_hid_enumerate(0, 0) })
+        };
+        unsafe { SDL_hid_init() };
+        let sdls = sdl_list();
+        let ours = interfaces(0, 0).len();
+        let after = sdl_list();
+        let hint = unsafe { SDL_GetHint(SDL_HINT_HIDAPI_ENUMERATE_ONLY_CONTROLLERS) };
+        unsafe { SDL_hid_exit() };
+        println!("SDL's list {sdls}, ours {ours}");
+        assert!(ours >= sdls);
+        assert_eq!(after, sdls, "SDL's list as before");
+        assert!(hint.is_null(), "the hint reset, not left at 0");
+    }
 
     /// On this machine's own devices: every interface of a composite USB device (`&MI_`) is found
     /// under one USB device, the same for its siblings and never another unit's.

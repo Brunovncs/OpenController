@@ -263,30 +263,20 @@ pub fn start(tx: Sender<Held>, stop: &'static AtomicBool) -> Option<Reader> {
 #[cfg(windows)]
 unsafe fn open_interface(iface: Interface) -> *mut sdl3_sys::everything::SDL_hid_device {
     use sdl3_sys::everything::*;
-    use std::ffi::CStr;
-    let mut dev: *mut SDL_hid_device = std::ptr::null_mut();
-    unsafe {
-        for &product in iface.products {
-            let list = SDL_hid_enumerate(iface.vendor, product);
-            let mut info = list;
-            while !info.is_null() && dev.is_null() {
-                let i = &*info;
-                let fits = match iface.number {
-                    Some(n) => i.interface_number == n,
-                    None => i.usage_page >= 0xFF00,
-                };
-                if fits && !i.path.is_null() {
-                    dev = SDL_hid_open_path(CStr::from_ptr(i.path).as_ptr());
-                }
-                info = i.next;
-            }
-            SDL_hid_free_enumeration(list);
+    let fits = |s: &crate::mapping::HidSource| match iface.number {
+        Some(n) => s.interface == n,
+        None => s.usage_page >= 0xFF00,
+    };
+    for &product in iface.products {
+        for (path, _) in crate::hidtap::interfaces(iface.vendor, product).into_iter().filter(|(_, s)| fits(s)) {
+            let Ok(path) = std::ffi::CString::new(path) else { continue };
+            let dev = unsafe { SDL_hid_open_path(path.as_ptr()) };
             if !dev.is_null() {
-                break;
+                return dev;
             }
         }
     }
-    dev
+    std::ptr::null_mut()
 }
 
 /// Reads the interface while the engine runs, and opens it again when it goes away: a Legion Go

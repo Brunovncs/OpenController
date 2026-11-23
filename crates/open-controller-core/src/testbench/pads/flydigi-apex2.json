@@ -35,7 +35,7 @@
     { "name": "M4", "byte": 7, "mask": 32, "to": "left_paddle2" },
     { "name": "M5", "byte": 7, "mask": 64, "to": "misc5" },
     { "name": "M6", "byte": 7, "mask": 128, "to": "misc4" },
-    { "name": "Pairing", "byte": 8, "mask": 1, "to": "none" },
+    { "name": ")))", "byte": 8, "mask": 1, "to": "misc1" },
     { "name": "Home", "byte": 8, "mask": 8, "to": "guide" },
     { "name": "Return", "byte": 8, "mask": 16, "to": "misc6" }
   ],
