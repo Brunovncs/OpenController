@@ -40,5 +40,21 @@ fn main() {
             "alias_of": original,
         }));
     }
+    // Models the app tells apart by what they say, under the ids of the model listed with them.
+    for &(vendor, product, family, name, drawing) in models::TOLD_APART {
+        let Some(&(.., original)) = models::lookup(vendor, product) else { continue };
+        let hint = extras::hint(vendor, product, family);
+        rows.push(serde_json::json!({
+            "vendor": format!("{vendor:04x}"),
+            "product": format!("{product:04x}"),
+            "family": family,
+            "name": name,
+            "art": extras::art(family, vendor, product),
+            "hint": hint,
+            "rating": rating::rating(vendor, product, family, hint),
+            "drawing": drawing,
+            "same_ids_as": original,
+        }));
+    }
     println!("{}", serde_json::to_string_pretty(&rows).unwrap());
 }

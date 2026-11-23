@@ -207,7 +207,7 @@ pub struct Decoder {
 }
 
 pub fn decoder(name: &str) -> Option<Decoder> {
-    use crate::flydigi::{Apex2, EXTRAS, PADDLES};
+    use crate::flydigi::{Apex2, EXTRAS, ON_RECEIVER};
     match name {
         "flydigi-apex2-cable" => Some(Decoder {
             name: "flydigi-apex2-cable",
@@ -216,11 +216,11 @@ pub fn decoder(name: &str) -> Option<Decoder> {
         }),
         "flydigi-apex2-receiver" => Some(Decoder {
             name: "flydigi-apex2-receiver",
-            owns: |t| matches!(t, Target::Button(b) if EXTRAS.contains(&b) || PADDLES.contains(&b)) || matches!(t, Target::Trigger(_)),
+            owns: |t| matches!(t, Target::Button(b) if EXTRAS.contains(&b) || ON_RECEIVER.contains(&b)) || matches!(t, Target::Trigger(_)),
             apply: |r, s| {
                 let a = Apex2::default().after(r);
                 a.apply(s);
-                a.apply_paddles(s);
+                a.apply_on_receiver(s);
             },
         }),
         _ => None,

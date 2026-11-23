@@ -15,7 +15,7 @@
 //! On its 2.4G receiver (04b4:2411) SDL reads the pad as a plain gamepad, without M1 to M4 either.
 //! The same report comes on the receiver's interface 2, as Flydigi's app reads it, so
 //! OpenController opens that, asks which pad is on the receiver and, for an Apex 2, takes the
-//! paddles from it as well.
+//! paddles and Home from it as well.
 //!
 //! Two things SDL does not give for any of these pads come from the same report: the battery, in
 //! the reply to the question SDL asks only once to learn the model, and the motion the pad's air
@@ -30,7 +30,7 @@ pub mod trigger;
 use crate::device::Power;
 use crate::extras::{LEFT_PADDLE1, LEFT_PADDLE2, MISC1, MISC2, MISC3, MISC4, MISC5, MISC6, RIGHT_PADDLE1, RIGHT_PADDLE2};
 use crate::hidtap;
-use crate::mapping::{PadState, axis};
+use crate::mapping::{PadState, axis, button};
 use crate::platform::devnode;
 use sdl3_sys::everything::*;
 use std::ffi::CString;
@@ -198,6 +198,9 @@ pub const EXTRAS: [u8; 6] = [MISC1, MISC2, MISC3, MISC4, MISC5, MISC6];
 /// M1 to M4, SDL's on the cable (`SDL_GAMEPAD_BUTTON_FLYDIGI_M1` and on), OpenController's on the
 /// receiver.
 pub const PADDLES: [u8; 4] = [RIGHT_PADDLE1, LEFT_PADDLE1, RIGHT_PADDLE2, LEFT_PADDLE2];
+const HOME: u8 = button::GUIDE as u8;
+/// What SDL leaves out only on the receiver, whose mapping has no Home: M1 to M4 and Home.
+pub const ON_RECEIVER: [u8; 5] = [RIGHT_PADDLE1, LEFT_PADDLE1, RIGHT_PADDLE2, LEFT_PADDLE2, HOME];
 
 /// The extra buttons of an Apex 2 SDL gave `have`: SDL's and those read here.
 pub fn extras(have: &[u8], receiver: bool) -> Vec<u8> {
@@ -212,16 +215,16 @@ pub struct Apex2 {
     pub rt: bool,
     /// [`EXTRAS`] held, as the bits of `PadState::buttons`.
     pub buttons: u64,
-    /// [`PADDLES`] held, the same way.
-    pub paddles: u64,
+    /// [`ON_RECEIVER`] held, the same way.
+    pub on_receiver: u64,
 }
 
 /// ))) is the bit SDL leaves out on purpose, as the Vader's gyro mouse button.
 const BUTTON_BITS: [(usize, u8, u8); 6] =
     [(8, 0x01, MISC1), (7, 0x01, MISC2), (7, 0x02, MISC3), (7, 0x80, MISC4), (7, 0x40, MISC5), (8, 0x10, MISC6)];
 /// As SDL reads them on the cable.
-const PADDLE_BITS: [(usize, u8, u8); 4] =
-    [(7, 0x04, RIGHT_PADDLE1), (7, 0x08, LEFT_PADDLE1), (7, 0x10, RIGHT_PADDLE2), (7, 0x20, LEFT_PADDLE2)];
+const RECEIVER_BITS: [(usize, u8, u8); 5] =
+    [(7, 0x04, RIGHT_PADDLE1), (7, 0x08, LEFT_PADDLE1), (7, 0x10, RIGHT_PADDLE2), (7, 0x20, LEFT_PADDLE2), (8, 0x08, HOME)];
 
 fn bits(r: &[u8], table: &[(usize, u8, u8)]) -> u64 {
     table.iter().filter(|&&(at, bit, _)| r[at] & bit != 0).fold(0, |b, &(.., to)| b | 1 << to)
@@ -237,7 +240,7 @@ pub fn parse(r: &[u8]) -> Option<Apex2> {
     if r.len() < 25 || r[0] != 0x04 || r[1] != 0xFE {
         return None;
     }
-    Some(Apex2 { lt: r[10] & 0x10 != 0, rt: r[10] & 0x20 != 0, buttons: bits(r, &BUTTON_BITS), paddles: bits(r, &PADDLE_BITS) })
+    Some(Apex2 { lt: r[10] & 0x10 != 0, rt: r[10] & 0x20 != 0, buttons: bits(r, &BUTTON_BITS), on_receiver: bits(r, &RECEIVER_BITS) })
 }
 
 /// What a pad says of itself in its reply to [`ASK_MODEL`], as FlydigiPcSpace's `handerDeviceInfo`
@@ -319,9 +322,9 @@ impl Apex2 {
         s.buttons = s.buttons & !mask(&EXTRAS) | self.buttons;
     }
 
-    /// Puts M1 to M4 in a state SDL gave without them.
-    pub fn apply_paddles(self, s: &mut PadState) {
-        s.buttons = s.buttons & !mask(&PADDLES) | self.paddles;
+    /// Puts M1 to M4 and Home in a state SDL gave without them.
+    pub fn apply_on_receiver(self, s: &mut PadState) {
+        s.buttons = s.buttons & !mask(&ON_RECEIVER) | self.on_receiver;
     }
 }
 
@@ -498,11 +501,11 @@ impl V1Reader {
         self.info.and_then(|i| i.power(self.receiver))
     }
 
-    /// Puts what the pad last said in a state SDL gave: on the receiver, M1 to M4 too.
+    /// Puts what the pad last said in a state SDL gave: on the receiver, M1 to M4 and Home too.
     pub fn apply(&self, s: &mut PadState) {
         self.last.apply(s);
         if self.receiver {
-            self.last.apply_paddles(s);
+            self.last.apply_on_receiver(s);
         }
     }
 }
@@ -567,29 +570,36 @@ mod tests {
         for ((at, v), b) in cases {
             assert_eq!(parse(&with(&[(at, v)])).unwrap().buttons, bit(b), "byte {at} bit {v:#04x}");
         }
-        // M1 to M4 (byte 7, 0x04 to 0x20) and Home (byte 8) are SDL's.
+        // M1 to M4 (byte 7, 0x04 to 0x20) and Home (byte 8) are SDL's, but on the receiver.
         assert_eq!(parse(&with(&[(7, 0x3c), (8, 0x08)])).unwrap().buttons, 0);
     }
 
     #[test]
-    fn paddles_as_sdl_reads_them_on_the_cable() {
-        let cases = [(0x04, RIGHT_PADDLE1), (0x08, LEFT_PADDLE1), (0x10, RIGHT_PADDLE2), (0x20, LEFT_PADDLE2)];
-        for (v, b) in cases {
-            let a = parse(&with(&[(7, v)])).unwrap();
-            assert_eq!((a.paddles, a.buttons), (bit(b), 0), "bit {v:#04x}");
+    fn paddles_and_home_as_sdl_reads_them_on_the_cable() {
+        let cases = [
+            ((7, 0x04), RIGHT_PADDLE1),
+            ((7, 0x08), LEFT_PADDLE1),
+            ((7, 0x10), RIGHT_PADDLE2),
+            ((7, 0x20), LEFT_PADDLE2),
+            ((8, 0x08), HOME),
+        ];
+        for ((at, v), b) in cases {
+            let a = parse(&with(&[(at, v)])).unwrap();
+            assert_eq!((a.on_receiver, a.buttons), (bit(b), 0), "byte {at} bit {v:#04x}");
         }
-        assert_eq!(parse(&with(&[(7, 0xc3), (8, 0x19)])).unwrap().paddles, 0, "C, Z, M5, M6 and the menu buttons");
+        assert_eq!(parse(&with(&[(7, 0xc3), (8, 0x11)])).unwrap().on_receiver, 0, "C, Z, M5, M6, ))) and Return");
     }
 
     #[test]
-    fn paddles_are_ours_only_on_the_receiver() {
-        let held = Apex2 { paddles: bit(RIGHT_PADDLE1) | bit(LEFT_PADDLE2), ..Apex2::default() };
-        // On the cable SDL gives M1 to M4: what it says stays.
+    fn paddles_and_home_are_ours_only_on_the_receiver() {
+        let held = Apex2 { on_receiver: bit(RIGHT_PADDLE1) | bit(LEFT_PADDLE2) | bit(HOME), ..Apex2::default() };
+        // On the cable SDL gives M1 to M4 and Home: what it says stays.
         let mut s = PadState { buttons: bit(LEFT_PADDLE1), ..PadState::default() };
         held.apply(&mut s);
         assert_eq!(s.buttons, bit(LEFT_PADDLE1));
-        held.apply_paddles(&mut s);
-        assert_eq!(s.buttons, bit(RIGHT_PADDLE1) | bit(LEFT_PADDLE2));
+        // On the receiver SDL's mapping has no Home.
+        held.apply_on_receiver(&mut s);
+        assert_eq!(s.buttons, bit(RIGHT_PADDLE1) | bit(LEFT_PADDLE2) | bit(HOME));
         let wired = extras(&PADDLES, false);
         let receiver = extras(&[], true);
         assert_eq!(wired, receiver, "the same buttons either way");

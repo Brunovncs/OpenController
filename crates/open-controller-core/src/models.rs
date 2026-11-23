@@ -1021,6 +1021,11 @@ pub static MODELS: &[Row] = &[
     // End of the research rows.
 ];
 
+/// Models OpenController tells apart by what they say, not by their ids, which another model
+/// listed here has too: (vendor, product, family, name, drawing). For the website's list, so they
+/// can be found under their own name.
+pub static TOLD_APART: &[(u16, u16, Family, &str, &str)] = &[(0x04b4, 0x2412, Family::FlydigiApex2, "Flydigi Apex 2", "flydigiApex2")];
+
 /// For `aliases`. Many Switch Pro Controller clones copy Nintendo's ids and answer its protocol
 /// as the original does, so nothing SDL reads tells them apart.
 pub static ALIASES: &[Alias] = &[
@@ -1288,6 +1293,11 @@ mod tests {
         assert!(LAYOUTS.iter().all(|l| lookup(l.0, l.1).is_some()));
         assert_eq!(layout(0x054c, 0x0cda), Some(Art::Retro), "PlayStation Classic: no sticks");
         assert_eq!(crate::extras::art(Family::Other, 0x0583, 0x2060), Art::Retro);
+    }
+
+    #[test]
+    fn models_told_apart_share_known_ids() {
+        assert!(TOLD_APART.iter().all(|t| lookup(t.0, t.1).is_some_and(|r| r.3 != t.3)));
     }
 
     #[test]
