@@ -3,6 +3,14 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.9
+
+- Flydigi Apex 2: Home button on the 2.4 GHz receiver.
+
+Thanks to the Apex 2 owner who sent a report after every version, until every button worked.
+
+Settings carry over.
+
 ## 0.9.8
 
 - Flydigi Apex 2: extra buttons and gyro on the 2.4 GHz receiver, and the ))) button.
