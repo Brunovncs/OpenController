@@ -488,7 +488,7 @@ choice of licenses, OpenController uses it under the first one that applies.
 | [schemars_derive](https://github.com/GREsau/schemars) | 1.2.2 | MIT |
 | [scoped-tls](https://github.com/alexcrichton/scoped-tls) | 1.0.1 | MIT OR Apache-2.0 |
 | [scopeguard](https://github.com/bluss/scopeguard) | 1.2.0 | MIT OR Apache-2.0 |
-| [sdl3-sys](https://codeberg.org/maia/sdl3-sys-rs) | 0.7.2+SDL-3.4.18 | Zlib |
+| [sdl3-sys](https://codeberg.org/maia/sdl3-sys-rs) | 0.7.3+SDL-3.4.20 | Zlib |
 | [seahash](https://gitlab.redox-os.org/redox-os/seahash) | 4.1.0 | MIT |
 | [self_cell](https://github.com/Voultapher/self_cell) | 1.3.0 | Apache-2.0 OR GPL-2.0-only |
 | [semver](https://github.com/dtolnay/semver) | 1.0.28 | MIT OR Apache-2.0 |
