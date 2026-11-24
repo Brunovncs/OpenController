@@ -22,6 +22,9 @@ const MOTION_AT: usize = 42;
 const FEATURE_LEN: usize = 50;
 /// The driver answers from the last report it got, so reading faster only repeats it.
 const READ_EVERY: Duration = Duration::from_millis(2);
+/// How long reads may fail before the motion is taken as unknown, as the Flydigi air mouse is:
+/// the last reading held for good would keep turning the camera.
+const STALE_AFTER: Duration = Duration::from_millis(250);
 /// Readings in a row that must agree on the byte order before it is taken.
 const AGREE: u8 = 8;
 /// Accelerometer counts per g, and the gyro's counts per 90 °/s (DS4Windows).
@@ -173,6 +176,8 @@ pub struct Sixaxis {
     bias: RestBias,
     read_at: Option<Instant>,
     last: Option<Reading>,
+    /// When a read last worked.
+    ok_at: Option<Instant>,
     /// The words last read and how many reads failed, for reports.
     pub words: Option<Words>,
     pub failures: u32,
@@ -198,6 +203,7 @@ impl Sixaxis {
                 bias: RestBias::default(),
                 read_at: None,
                 last: None,
+                ok_at: None,
                 words: None,
                 failures: 0,
             })
@@ -220,8 +226,10 @@ impl Sixaxis {
         let n = unsafe { SDL_hid_get_feature_report(self.dev, buf.as_mut_ptr(), buf.len()) };
         let Some(w) = (n >= FEATURE_LEN as i32).then(|| words(&buf)).flatten() else {
             self.failures = self.failures.saturating_add(1);
+            self.last = held(self.last, self.ok_at, now);
             return self.last;
         };
+        self.ok_at = Some(now);
         self.words = Some(w);
         let order = self.detector.feed(&w)?;
         let accel = accel(&w, order);
@@ -237,6 +245,11 @@ impl Sixaxis {
     pub fn bias(&self) -> f32 {
         self.bias.bias
     }
+}
+
+/// The last reading while reads fail now and then; none once they have failed for a while.
+fn held(last: Option<Reading>, ok_at: Option<Instant>, now: Instant) -> Option<Reading> {
+    last.filter(|_| ok_at.is_some_and(|at| now.duration_since(at) < STALE_AFTER))
 }
 
 impl Drop for Sixaxis {
@@ -265,6 +278,14 @@ mod tests {
 
     fn close(a: [f32; 3], b: [f32; 3]) -> bool {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.05)
+    }
+
+    #[test]
+    fn a_failed_read_keeps_the_last_reading_only_for_a_moment() {
+        let (t, r) = (Instant::now(), Some(Reading { accel: [0., STANDARD_GRAVITY, 0.], yaw: 2. }));
+        assert_eq!(held(r, Some(t), t + Duration::from_millis(20)), r, "one failed read");
+        assert_eq!(held(r, Some(t), t + STALE_AFTER), None, "failing for good: still, not turning");
+        assert_eq!(held(r, None, t), None);
     }
 
     #[test]
