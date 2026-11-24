@@ -1310,6 +1310,7 @@ impl MainView {
             Role::Unmapped if pad.form.left_as_is() => text.as_native.into(),
             Role::Unmapped => text.unmapped.into(),
             Role::Unavailable => text.unavailable.into(),
+            Role::Idle => text.idle_games.into(),
             Role::KeptNative => text.as_native.into(),
         };
         let note = match (&pad.role, pad.hidden) {
@@ -1396,7 +1397,9 @@ impl MainView {
                     .into_any_element(),
             ))
             .when_some(output, |d, o| d.child(line(text.games_see, o)))
-            .when(pad.own_mapping && !pad.guid.is_empty(), |d| {
+            .when((pad.own_mapping || pad.listed_mapping) && !pad.guid.is_empty(), |d| {
+                let (from, act) =
+                    if pad.own_mapping { (text.learn_own, text.learn_redo) } else { (text.learn_listed, text.learn_yourself) };
                 d.child(line(
                     text.learn_info,
                     div()
@@ -1404,8 +1407,8 @@ impl MainView {
                         .flex_wrap()
                         .items_center()
                         .gap(px(12.))
-                        .child(body(text.learn_own, t.text))
-                        .child(button("map-again", text.learn_redo, Kind::Standard, &t).on_click(cx.listener(move |this, _, _, cx| {
+                        .child(body(from, t.text))
+                        .child(button("map-again", act, Kind::Standard, &t).on_click(cx.listener(move |this, _, _, cx| {
                             if let Some(pad) = this.pad(key, cx) {
                                 this.map_again(&pad, cx);
                             }

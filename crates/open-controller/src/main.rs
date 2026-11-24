@@ -266,6 +266,11 @@ impl Control {
                 });
             }
             ToTray::Unmap(guid) => {
+                // A layout from SDL's list rather than one its owner made: set aside until mapped.
+                let own = self.settings.lock().is_ok_and(|s| s.mappings.contains_key(&guid));
+                if !own {
+                    return self.engine.send(Command::Forget(guid));
+                }
                 return self.edit_mappings(|m| {
                     m.remove(&guid);
                 });

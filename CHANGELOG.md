@@ -9,6 +9,8 @@ plays with OpenController, and whether settings carry over.
 - Flydigi and DualShock 3: nothing stays held or keeps turning when the controller switches off or the PC wakes from sleep.
 - 8BitDo Ultimate 2: gyro and rumble keep working after reconnecting over Bluetooth.
 - Controller fixes from SDL 3.4.20, for Switch, Flydigi Vader and Xbox One S controllers.
+- PS2 adapters: an empty port no longer takes player 1, so games that only use the first controller see the one you hold.
+- A controller whose buttons or sticks come out wrong can be mapped by hand on its page.
 
 Settings carry over.
 

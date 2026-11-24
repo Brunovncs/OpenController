@@ -170,6 +170,9 @@ pub enum Command {
     /// Replaces the gamepad mappings owners made, by GUID. A joystick whose mapping is new
     /// becomes a gamepad; one whose mapping was taken away is a joystick without a layout again.
     SetMappings(BTreeMap<String, String>),
+    /// Sets aside the layout SDL's own list gives the joysticks with this GUID, so their owner can
+    /// map them: they are joysticks without a layout until a mapping is made, or the next start.
+    Forget(String),
     /// Tells a Flydigi pad in its 360 mode to switch to its Android mode (`flydigi::ANDROID_KNOCK`).
     FlydigiAndroidMode(PadKey),
 }
@@ -188,6 +191,10 @@ pub enum Role {
     Unmapped,
     /// Recognised, but no virtual controller could be created.
     Unavailable,
+    /// A port of a PlayStation 2 adapter that has not sent anything yet: an empty port looks
+    /// like a pad at rest forever, so it gets its virtual controller once a button or stick
+    /// moves, and never takes a player from the port in use.
+    Idle,
     /// Left as it is by choice: games read the controller itself, no virtual controller is
     /// made for it and nothing is written to it.
     KeptNative,
@@ -237,6 +244,10 @@ pub struct PadView {
     /// The GUID SDL keys its mappings by; empty when unknown.
     #[serde(default)]
     pub guid: String,
+    /// Its buttons are read through a layout from SDL's list of controllers, which its owner can
+    /// replace by mapping it: a joystick SDL reads with no driver of its own.
+    #[serde(default)]
+    pub listed_mapping: bool,
     /// Its buttons are read through a mapping its owner made.
     #[serde(default)]
     pub own_mapping: bool,
@@ -472,6 +483,9 @@ struct Phys {
     /// A Flydigi pad in its 360 mode being told to switch to Android: since when, and the step of
     /// `flydigi::ANDROID_KNOCK` to send next.
     knock: Option<(Instant, usize)>,
+    /// It has shown it is there. False for a PlayStation 2 adapter's port until a button or stick
+    /// moves (see [`Role::Idle`]).
+    woke: bool,
 }
 
 /// What a Flydigi pad's triggers were told, left and right, and when; `None` while they were told
@@ -1224,6 +1238,11 @@ impl Core {
                 self.sdl.split_joycons(on);
             }
             Command::SetMappings(mappings) => self.set_mappings(mappings, now),
+            Command::Forget(guid) => {
+                self.note(format!("layout set aside for {guid}"));
+                self.forgotten.insert(guid);
+                self.unmap_forgotten(now);
+            }
         }
         self.changed = true;
     }
@@ -1253,6 +1272,12 @@ impl Core {
             self.note(format!("mapping taken away for {guid}"));
             self.forgotten.insert(guid);
         }
+        self.unmap_forgotten(now);
+    }
+
+    /// Takes the controllers whose layout was taken away or set aside back to joysticks without
+    /// one, shown to games as they are.
+    fn unmap_forgotten(&mut self, now: Instant) {
         let gone: Vec<DeviceId> = self.phys.iter().filter(|(_, p)| self.forgotten.contains(&p.model.guid)).map(|(&id, _)| id).collect();
         for id in gone {
             let instances = self.phys[&id].instances.clone();
@@ -1888,9 +1913,11 @@ impl Core {
             takes_report: true,
             sdl_state: PadState::default(),
             knock: None,
+            woke: starts_awake(family),
             pad,
         };
         p.read_pad(Instant::now());
+        p.woke |= mapping::significant(&PadState::default(), &p.state);
         p.tools.runtime.output = p.state;
         let xbox = matches!(p.pad.pad_type(), device::PadType::Xbox360 | device::PadType::XboxOne);
         p.kind = if devnode::is_virtual(&p.path) {
@@ -2391,6 +2418,10 @@ impl Core {
             let aim_before = p.aim_out;
             let (rate_before, accel_before) = (p.rate, p.accel);
             p.read_pad(now);
+            if !p.woke && mapping::significant(&PadState::default(), &p.state) {
+                p.woke = true;
+                self.changed = true;
+            }
             if p.model.family == Family::Handheld && p.kind == Kind::Native {
                 p.state.buttons |= self.handheld_held;
             }
@@ -2760,6 +2791,7 @@ impl Core {
             .filter(|s| s.lost_since.is_none() && !self.targets.contains_key(&s.id) && !plugger.is_pending(s.id))
             .filter(|s| self.failed.get(&s.id).is_none_or(|&t| now.duration_since(t) >= RETRY))
             .filter(|s| !self.is_native(s.id))
+            .filter(|s| s.devices.iter().any(|d| self.phys.get(d).is_some_and(|p| p.woke)))
             .map(|s| (s.id, self.memo.get(&s.id).map_or(Output::Xbox360, |m| self.output_of(&m.store))))
             .collect();
         let Some(plugger) = self.plugger.as_mut() else { return };
@@ -2947,7 +2979,8 @@ impl Core {
             let target = self.targets.get(&slot.id);
             let source = slot.source.and_then(|d| self.phys.get(&d));
             let any = source.or_else(|| slot.devices.iter().find_map(|d| self.phys.get(d)));
-            let role = slot_role(self.is_native(slot.id), slot.remaining(self.roster.grace(), now), target.map(|t| t.player));
+            let awake = slot.devices.iter().any(|d| self.phys.get(d).is_some_and(|p| p.woke));
+            let role = slot_role(self.is_native(slot.id), slot.remaining(self.roster.grace(), now), target.map(|t| t.player), awake);
             let mut links: Vec<Link> = source.map(|p| p.link).into_iter().collect();
             for d in &slot.devices {
                 if let Some(p) = self.phys.get(d)
@@ -3090,6 +3123,7 @@ impl Core {
             store,
             guid: model.map(|m| m.guid.clone()).unwrap_or_default(),
             own_mapping: model.is_some_and(|m| self.mappings.contains_key(&m.guid)),
+            listed_mapping: model.is_some_and(|m| !self.mappings.contains_key(&m.guid) && listed_layout(&m.guid)),
         }
     }
 
@@ -3150,14 +3184,27 @@ fn native(profiles: &HashMap<String, Profiles>, store: &str, form: Form) -> bool
 
 /// What games see of a slot: the controller itself while it is kept native, otherwise its
 /// virtual controller (`target`, with its player), kept for `remaining` while the controller is
-/// away.
-fn slot_role(native: bool, remaining: Option<Duration>, target: Option<Option<u8>>) -> Role {
+/// away. A slot not `awake` waits for its first press rather than failing.
+fn slot_role(native: bool, remaining: Option<Duration>, target: Option<Option<u8>>, awake: bool) -> Role {
     match (remaining, target) {
         _ if native => Role::KeptNative,
         (Some(remaining), player) => Role::Waiting { player: player.flatten(), remaining },
         (None, Some(player)) => Role::Virtual { player },
+        (None, None) if !awake => Role::Idle,
         (None, None) => Role::Unavailable,
     }
+}
+
+/// Whether a controller of `family` counts as there from the start. A PlayStation 2 adapter's
+/// port reports a pad at rest whether one is plugged in or not.
+fn starts_awake(family: Family) -> bool {
+    family != Family::Ps2Adapter
+}
+
+/// Whether a joystick with this GUID gets its layout from SDL's list of controllers, rather than
+/// from one of SDL's drivers (HIDAPI, XInput, Raw Input and the like mark the GUID's 15th byte).
+fn listed_layout(guid: &str) -> bool {
+    guid.len() == 32 && guid.get(28..30) == Some("00")
 }
 
 fn dsu_source_key(store: &str, path: &str) -> String {
@@ -3289,12 +3336,42 @@ mod tests {
     #[test]
     fn a_native_slot_shows_as_native_whatever_else() {
         let wait = Some(Duration::from_secs(3));
-        assert_eq!(slot_role(true, None, None), Role::KeptNative);
-        assert_eq!(slot_role(true, wait, Some(Some(1))), Role::KeptNative);
-        assert_eq!(slot_role(false, None, Some(Some(1))), Role::Virtual { player: Some(1) });
-        assert_eq!(slot_role(false, wait, Some(Some(1))), Role::Waiting { player: Some(1), remaining: Duration::from_secs(3) });
-        assert_eq!(slot_role(false, wait, None), Role::Waiting { player: None, remaining: Duration::from_secs(3) });
-        assert_eq!(slot_role(false, None, None), Role::Unavailable);
+        assert_eq!(slot_role(true, None, None, true), Role::KeptNative);
+        assert_eq!(slot_role(true, wait, Some(Some(1)), true), Role::KeptNative);
+        assert_eq!(slot_role(false, None, Some(Some(1)), true), Role::Virtual { player: Some(1) });
+        assert_eq!(slot_role(false, wait, Some(Some(1)), true), Role::Waiting { player: Some(1), remaining: Duration::from_secs(3) });
+        assert_eq!(slot_role(false, wait, None, true), Role::Waiting { player: None, remaining: Duration::from_secs(3) });
+        assert_eq!(slot_role(false, None, None, true), Role::Unavailable);
+    }
+
+    #[test]
+    fn an_empty_adapter_port_waits_for_a_press_and_takes_no_player() {
+        // A ShanWan Twin USB Joystick owner's report: the empty port got player 1, and Roblox,
+        // which moves with player 1 only, ignored the pad in use.
+        assert!(!starts_awake(Family::Ps2Adapter));
+        assert!(starts_awake(Family::DualShock4) && starts_awake(Family::Other) && starts_awake(Family::Xbox));
+        assert_eq!(slot_role(false, None, None, false), Role::Idle);
+        // Once it has a virtual controller it keeps it, awake or not; native stays native.
+        assert_eq!(slot_role(false, None, Some(Some(0)), false), Role::Virtual { player: Some(0) });
+        assert_eq!(slot_role(true, None, None, false), Role::KeptNative);
+        // An empty port at rest never wakes; a press or a stick moved does.
+        let rest = PadState::default();
+        assert!(!mapping::significant(&rest, &rest));
+        assert!(mapping::significant(&rest, &PadState { buttons: 1, ..rest }));
+        let mut stick = rest;
+        stick.axes[0] = 20000;
+        assert!(mapping::significant(&rest, &stick));
+    }
+
+    #[test]
+    fn layouts_from_sdls_list_can_be_mapped_anew_driver_ones_cannot() {
+        // The Twin USB Joystick's: no driver, a line in the list.
+        assert!(listed_layout("030003c5632500005505000000000000"));
+        // HIDAPI ('h'), XInput ('x') and Raw Input ('r') read the pad themselves.
+        assert!(!listed_layout("0300d8b74c050000cc09000000016800"));
+        assert!(!listed_layout("030029c4b40400001124000000007800"));
+        assert!(!listed_layout("03000000c82d00000b31000000007200"));
+        assert!(!listed_layout(""));
     }
 
     #[test]

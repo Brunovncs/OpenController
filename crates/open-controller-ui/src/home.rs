@@ -68,6 +68,7 @@ pub fn status(pad: &PadView, text: &Text) -> String {
         Role::Unmapped if pad.form.left_as_is() => text.kept_native.to_string(),
         Role::Unmapped => text.unmapped.to_string(),
         Role::Unavailable => text.unavailable.to_string(),
+        Role::Idle => text.idle.to_string(),
         Role::KeptNative => text.kept_native.to_string(),
     }
 }
@@ -176,7 +177,7 @@ impl MainView {
     fn tile(&self, i: usize, pad: &PadView, width: f32, text: &'static Text, cx: &mut Context<Self>) -> AnyElement {
         let t = self.theme;
         let key = pad.key;
-        let away = matches!(pad.role, Role::Waiting { .. } | Role::Unmapped | Role::Unavailable);
+        let away = matches!(pad.role, Role::Waiting { .. } | Role::Unmapped | Role::Unavailable | Role::Idle);
         let n = player(&pad.role);
         let shown_status = status(pad, text);
         // So a button that does something else is not taken for a broken one.

@@ -45,6 +45,7 @@ pub(crate) fn pad(key: PadKey, name: &str, brand: Brand, family: Family, (vendor
         in_use: 0,
         guid: format!("03000000{:02x}{:02x}0000{:02x}{:02x}000000000000", vendor & 0xff, vendor >> 8, product & 0xff, product >> 8),
         own_mapping: false,
+        listed_mapping: false,
     }
 }
 
