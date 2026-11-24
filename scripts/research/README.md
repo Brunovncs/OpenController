@@ -59,6 +59,58 @@ nobody explains is a button nobody reads.
   the cause; the same session then tests the fix.
 - Whatever is still a guess (a scale, a direction) goes into the CHANGELOG as untested and into
   the reply to the user as a question.
+- Break the fix on purpose, one piece at a time, and run the tests: each piece must make at least
+  one test fail. A guard no test misses is a guard nobody checked.
+- Before blaming our code, compare SDL's release tags (`gh api
+  repos/libsdl-org/SDL/compare/release-A...release-B`): the fix may already be upstream.
+
+## 5. With the controller in hand
+
+Three tools in `crates/open-controller-core/examples`, built with `cargo build -p
+open-controller-core --example <name>`:
+
+- `hidprobe list` names every HID interface with its usage page. `hidprobe watch <seconds>
+  <vendor>...` logs, per interface and per second, how many reports came, how many repeated the
+  last one byte for byte, the longest gap, read errors with Windows' reason, and reopens what
+  went away. It opens only what exists when it starts: start it again after a device turns up.
+- `xinputwatch <seconds>` logs what games read through XInput, slot by slot: every change, and
+  slots appearing or going.
+- `padcheck <seconds>` opens every gamepad through SDL and prints the state SDL gives right at
+  open, whether gyro and rumble work, and gyro readings over time, for each connection.
+
+Setting up:
+
+- OpenController hides controllers from every other program while it runs (HidHide). Quit it
+  (`open-controller.exe --quit`) and the tools see them; it reveals them on the way out. Reopen
+  it with `--minimized` when done.
+- To run a local build, quit the installed one first and start `target\debug\open-controller.exe`.
+  To try a setting without touching the user's own, copy `settings.json` into a scratch folder,
+  change it there and pass `--data-dir <folder>`.
+- The driver tests (`cargo test -p open-controller-core -- --ignored --test-threads=1
+  hidhide_round_trip hiding_thread_round_trip plug_on_the_bus`) hide, reveal and plug on the
+  real drivers and undo it. Run them with OpenController closed.
+
+What to try, and what it taught us (DualShock 4 and 8BitDo Ultimate 2, November 2026):
+
+- **Idle.** `hidprobe watch 15`. Wireless pads report all the time when still (8BitDo over
+  Bluetooth about 120 a second, DualShock 4 about 32), but a counter or the motion sensor makes
+  every report differ: "same report twice" never happens on them.
+- **Switched off while holding a stick or a button.** No pad sends a "released" report: it just
+  stops. The 8BitDo over Bluetooth went silent for about 1.5 s, then reads failed. The DualShock 4
+  went silent with no error at all, and the same handle worked again when it came back. SDL lets
+  go of a PlayStation pad after 500 ms; for others the state holds until the device is removed.
+- **Its dongle.** The 8BitDo's dongle in XInput mode is a different device (2dc8:310B, with
+  keyboard and mouse collections that answer "access denied", which is normal) and, with no pad,
+  another one again (2dc8:6013). Switched off, it kept giving the last state for about 7 s.
+- **Unplugged and plugged back,** and **switched off and on**: watch `xinputwatch` to check that
+  the virtual pad returns to rest, keeps its slot, and starts centred.
+- **Through OpenController.** Run `xinputwatch` (and `hidprobe watch` on 054c for a virtual
+  DualShock 4) while OpenController runs and the pad is switched off: what games get is what
+  counts. Press a button on another pad meanwhile: if its virtual pad keeps changing,
+  OpenController did not hang.
+- **Gyro and rumble across a reconnect.** `padcheck`, then switch the pad off and on. This is how
+  SDL 3.4.18 was caught losing the 8BitDo's gyro and rumble after a Bluetooth reconnect, and
+  starting its virtual pad off centre; 3.4.20 fixed both.
 
 ## Safety
 
