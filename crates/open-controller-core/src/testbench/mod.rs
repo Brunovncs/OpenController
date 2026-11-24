@@ -216,7 +216,10 @@ pub fn decoder(name: &str) -> Option<Decoder> {
         }),
         "flydigi-apex2-receiver" => Some(Decoder {
             name: "flydigi-apex2-receiver",
-            owns: |t| matches!(t, Target::Button(b) if EXTRAS.contains(&b) || ON_RECEIVER.contains(&b)) || matches!(t, Target::Trigger(_)),
+            owns: |t| {
+                matches!(t, Target::Button(b) if EXTRAS.contains(&b) || ON_RECEIVER.contains(&b))
+                    || matches!(t, Target::Trigger(_) | Target::Axis(0..4))
+            },
             apply: |r, s| {
                 let a = Apex2::default().after(r);
                 a.apply(s);
@@ -265,10 +268,16 @@ impl Lcg {
     }
 }
 
-/// What a decoder makes of a report, from a state where SDL holds nothing.
+/// What a decoder makes of a report, from a state where SDL holds nothing. The sticks it reads are
+/// left out: they are checked on their own.
 fn decode(d: &Decoder, report: &[u8]) -> PadState {
     let mut s = PadState::default();
     (d.apply)(report, &mut s);
+    for (i, a) in s.axes.iter_mut().enumerate() {
+        if (d.owns)(Target::Axis(i)) {
+            *a = 0;
+        }
+    }
     s
 }
 
@@ -364,6 +373,20 @@ pub fn check(pad: &Pad, d: &Decoder) -> Vec<String> {
             }
         }
     }
+    // The sticks it reads: each end of their byte is each end of the stick, and 0x7F the middle.
+    for a in &pad.axes {
+        let Some(Target::Axis(i)) = target(&a.to).filter(|&t| (d.owns)(t)) else { continue };
+        for (v, want) in [(0x00, i16::MIN), (0x7f, 0), (0xff, i16::MAX)] {
+            let mut r = rest.clone();
+            r[a.byte] = v;
+            let mut s = PadState::default();
+            (d.apply)(&r, &mut s);
+            if s.axes[i] != want {
+                bad.push(format!("{} (byte {}) at {v:#04x}: got {}, want {want}", a.name, a.byte, s.axes[i]));
+            }
+        }
+    }
+
     let mut rng = Lcg(0x5eed);
     for _ in 0..500 {
         let mut r = all.clone();

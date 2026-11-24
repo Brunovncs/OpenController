@@ -15,7 +15,8 @@
 //! On its 2.4G receiver (04b4:2411) SDL reads the pad as a plain gamepad, without M1 to M4 either.
 //! The same report comes on the receiver's interface 2, as Flydigi's app reads it, so
 //! OpenController opens that, asks which pad is on the receiver and, for an Apex 2, takes the
-//! paddles and Home from it as well.
+//! whole pad from it: SDL's plain gamepad has no paddles or Home, and falls silent while Flydigi's
+//! app is open, which turns the pad over to its own report (an owner's report from 0.9.9).
 //!
 //! Two things SDL does not give for any of these pads come from the same report: the battery, in
 //! the reply to the question SDL asks only once to learn the model, and the motion the pad's air
@@ -198,9 +199,35 @@ pub const EXTRAS: [u8; 6] = [MISC1, MISC2, MISC3, MISC4, MISC5, MISC6];
 /// M1 to M4, SDL's on the cable (`SDL_GAMEPAD_BUTTON_FLYDIGI_M1` and on), OpenController's on the
 /// receiver.
 pub const PADDLES: [u8; 4] = [RIGHT_PADDLE1, LEFT_PADDLE1, RIGHT_PADDLE2, LEFT_PADDLE2];
-const HOME: u8 = button::GUIDE as u8;
-/// What SDL leaves out only on the receiver, whose mapping has no Home: M1 to M4 and Home.
-pub const ON_RECEIVER: [u8; 5] = [RIGHT_PADDLE1, LEFT_PADDLE1, RIGHT_PADDLE2, LEFT_PADDLE2, HOME];
+const fn b(button: u32) -> u8 {
+    button as u8
+}
+const HOME: u8 = b(button::GUIDE);
+const DPAD: [(u8, u8); 4] =
+    [(0x01, b(button::DPAD_UP)), (0x02, b(button::DPAD_RIGHT)), (0x04, b(button::DPAD_DOWN)), (0x08, b(button::DPAD_LEFT))];
+/// What is read from the report only on the receiver, besides [`EXTRAS`] and the triggers: every
+/// other button, and the sticks.
+pub const ON_RECEIVER: [u8; 19] = [
+    b(button::SOUTH),
+    b(button::EAST),
+    b(button::WEST),
+    b(button::NORTH),
+    b(button::BACK),
+    HOME,
+    b(button::START),
+    b(button::LEFT_STICK),
+    b(button::RIGHT_STICK),
+    b(button::LEFT_SHOULDER),
+    b(button::RIGHT_SHOULDER),
+    b(button::DPAD_UP),
+    b(button::DPAD_DOWN),
+    b(button::DPAD_LEFT),
+    b(button::DPAD_RIGHT),
+    RIGHT_PADDLE1,
+    LEFT_PADDLE1,
+    RIGHT_PADDLE2,
+    LEFT_PADDLE2,
+];
 
 /// The extra buttons of an Apex 2 SDL gave `have`: SDL's and those read here.
 pub fn extras(have: &[u8], receiver: bool) -> Vec<u8> {
@@ -217,14 +244,38 @@ pub struct Apex2 {
     pub buttons: u64,
     /// [`ON_RECEIVER`] held, the same way.
     pub on_receiver: u64,
+    /// Left x and y, right x and y, as SDL reads them on the cable.
+    pub sticks: [i16; 4],
 }
 
 /// ))) is the bit SDL leaves out on purpose, as the Vader's gyro mouse button.
 const BUTTON_BITS: [(usize, u8, u8); 6] =
     [(8, 0x01, MISC1), (7, 0x01, MISC2), (7, 0x02, MISC3), (7, 0x80, MISC4), (7, 0x40, MISC5), (8, 0x10, MISC6)];
-/// As SDL reads them on the cable.
-const RECEIVER_BITS: [(usize, u8, u8); 5] =
-    [(7, 0x04, RIGHT_PADDLE1), (7, 0x08, LEFT_PADDLE1), (7, 0x10, RIGHT_PADDLE2), (7, 0x20, LEFT_PADDLE2), (8, 0x08, HOME)];
+/// As SDL reads them on the cable (`HIDAPI_DriverFlydigi_HandleStatePacketV1`), the d-pad aside.
+const RECEIVER_BITS: [(usize, u8, u8); 15] = [
+    (9, 0x10, b(button::SOUTH)),
+    (9, 0x20, b(button::EAST)),
+    (9, 0x40, b(button::BACK)),
+    (9, 0x80, b(button::WEST)),
+    (10, 0x01, b(button::NORTH)),
+    (10, 0x02, b(button::START)),
+    (10, 0x04, b(button::LEFT_SHOULDER)),
+    (10, 0x08, b(button::RIGHT_SHOULDER)),
+    (10, 0x40, b(button::LEFT_STICK)),
+    (10, 0x80, b(button::RIGHT_STICK)),
+    (7, 0x04, RIGHT_PADDLE1),
+    (7, 0x08, LEFT_PADDLE1),
+    (7, 0x10, RIGHT_PADDLE2),
+    (7, 0x20, LEFT_PADDLE2),
+    (8, 0x08, HOME),
+];
+/// Where the sticks are: left x and y, right x and y.
+const STICK_BYTES: [usize; 4] = [17, 19, 21, 22];
+
+/// A stick byte as SDL scales it, 0x7F as the middle.
+fn stick(v: u8) -> i16 {
+    if v == 0x7f { 0 } else { (-32768.0f32 + 65535.0 * f32::from(v) / 255.0) as i16 }
+}
 
 fn bits(r: &[u8], table: &[(usize, u8, u8)]) -> u64 {
     table.iter().filter(|&&(at, bit, _)| r[at] & bit != 0).fold(0, |b, &(.., to)| b | 1 << to)
@@ -240,7 +291,14 @@ pub fn parse(r: &[u8]) -> Option<Apex2> {
     if r.len() < 25 || r[0] != 0x04 || r[1] != 0xFE {
         return None;
     }
-    Some(Apex2 { lt: r[10] & 0x10 != 0, rt: r[10] & 0x20 != 0, buttons: bits(r, &BUTTON_BITS), on_receiver: bits(r, &RECEIVER_BITS) })
+    let dpad = DPAD.iter().filter(|&&(bit, _)| r[9] & bit != 0).fold(0, |m, &(_, to)| m | 1 << to);
+    Some(Apex2 {
+        lt: r[10] & 0x10 != 0,
+        rt: r[10] & 0x20 != 0,
+        buttons: bits(r, &BUTTON_BITS),
+        on_receiver: bits(r, &RECEIVER_BITS) | dpad,
+        sticks: STICK_BYTES.map(|at| stick(r[at])),
+    })
 }
 
 /// What a pad says of itself in its reply to [`ASK_MODEL`], as FlydigiPcSpace's `handerDeviceInfo`
@@ -322,9 +380,11 @@ impl Apex2 {
         s.buttons = s.buttons & !mask(&EXTRAS) | self.buttons;
     }
 
-    /// Puts M1 to M4 and Home in a state SDL gave without them.
+    /// Puts the rest of the pad in a state SDL gave without M1 to M4 and Home, or with nothing at
+    /// all while Flydigi's app is open.
     pub fn apply_on_receiver(self, s: &mut PadState) {
         s.buttons = s.buttons & !mask(&ON_RECEIVER) | self.on_receiver;
+        s.axes[..4].copy_from_slice(&self.sticks);
     }
 }
 
@@ -370,7 +430,12 @@ impl Drop for Port {
 /// The pad's report, opened beside SDL's handle, and what it last said. Until a report comes the
 /// triggers are released, rather than SDL's half press.
 pub struct V1Reader {
-    port: Port,
+    /// `None` once a read failed, until it opens again.
+    port: Option<Port>,
+    /// Where it was opened, to open it again.
+    origin: Origin,
+    /// When it was lost, or last tried again.
+    lost_at: Option<Instant>,
     pub last: Apex2,
     /// Opened on the receiver rather than at SDL's path.
     pub receiver: bool,
@@ -380,6 +445,8 @@ pub struct V1Reader {
     /// What the air mouse last read, right and down, and when a report last came.
     pub air: (i16, i16),
     heard: Option<Instant>,
+    /// Whether its report is coming, for the receiver.
+    input: Heard,
 }
 
 /// How long without a report before the air mouse is taken as still: a pad that leaves its
@@ -404,57 +471,111 @@ pub struct Read {
 /// second over the cable.
 const MOST_PER_LOOK: usize = 64;
 
+/// How a reader opened its pad: at SDL's path for it, or on the receiver SDL reads at that path.
+#[derive(Clone, Debug)]
+enum Origin {
+    Pad(String),
+    Receiver(String),
+}
+
+impl Origin {
+    fn open(&self) -> Option<Port> {
+        match self {
+            Origin::Pad(path) => Port::open(path),
+            Origin::Receiver(sdl_path) => receiver_port(sdl_path),
+        }
+    }
+}
+
+/// How often a reader whose handle failed tries to open it again, as the handheld reader does: a
+/// resume from sleep may leave SDL's handle working and this one dead.
+const REOPEN_EVERY: Duration = Duration::from_secs(2);
+
+/// Interface 2 of the receiver SDL reads as a gamepad at `sdl_path`.
+fn receiver_port(sdl_path: &str) -> Option<Port> {
+    unsafe {
+        if SDL_hid_init() != 0 {
+            return None;
+        }
+    }
+    let own = devnode::usb_device(sdl_path);
+    let all: Vec<_> = hidtap::interfaces(VENDOR, RECEIVER).into_iter().filter(|(_, s)| s.interface == 2).collect();
+    unsafe { SDL_hid_exit() };
+    let mut found: Vec<_> = match own {
+        Some(_) => all.into_iter().filter(|(p, _)| devnode::usb_device(p) == own).collect(),
+        // Where the USB device cannot be told (outside Windows), only a receiver on its own:
+        // with two, each pad would read the other's. One receiver has one collection on
+        // Flydigi's own page, whatever else its interface lists (macOS lists each collection).
+        None => {
+            let own_page: Vec<_> = all.iter().filter(|(_, s)| s.usage_page >= 0xFF00).cloned().collect();
+            match (own_page.len(), all.len()) {
+                (1, _) => own_page,
+                (0, 1) => all,
+                _ => Vec::new(),
+            }
+        }
+    };
+    // Flydigi's report has a page of its own; any other collection there comes after.
+    found.sort_by_key(|(_, s)| s.usage_page < 0xFF00);
+    Port::open(&found.first()?.0)
+}
+
 impl V1Reader {
     /// Opens the device at SDL's path for the pad: the interface with its own report.
     pub fn open(path: &str) -> Option<V1Reader> {
-        Port::open(path).map(|port| Self::on(port, false))
+        let origin = Origin::Pad(path.to_string());
+        origin.open().map(|port| Self::on(Some(port), origin, false))
     }
 
     /// Opens interface 2 of the receiver SDL reads as a gamepad at `sdl_path`, and asks which pad
     /// is on it. `info` says once it answers.
     pub fn on_receiver(sdl_path: &str, now: Instant) -> Option<V1Reader> {
-        unsafe {
-            if SDL_hid_init() != 0 {
-                return None;
-            }
-        }
-        let own = devnode::usb_device(sdl_path);
-        let all: Vec<_> = hidtap::interfaces(VENDOR, RECEIVER).into_iter().filter(|(_, s)| s.interface == 2).collect();
-        unsafe { SDL_hid_exit() };
-        let mut found: Vec<_> = match own {
-            Some(_) => all.into_iter().filter(|(p, _)| devnode::usb_device(p) == own).collect(),
-            // Where the USB device cannot be told (outside Windows), only a receiver on its own:
-            // with two, each pad would read the other's. One receiver has one collection on
-            // Flydigi's own page, whatever else its interface lists (macOS lists each collection).
-            None => {
-                let own_page: Vec<_> = all.iter().filter(|(_, s)| s.usage_page >= 0xFF00).cloned().collect();
-                match (own_page.len(), all.len()) {
-                    (1, _) => own_page,
-                    (0, 1) => all,
-                    _ => Vec::new(),
-                }
-            }
-        };
-        // Flydigi's report has a page of its own; any other collection there comes after.
-        found.sort_by_key(|(_, s)| s.usage_page < 0xFF00);
-        let mut r = Self::on(Port::open(&found.first()?.0)?, true);
+        let origin = Origin::Receiver(sdl_path.to_string());
+        let mut r = Self::on(Some(origin.open()?), origin, true);
         r.ask(now);
         Some(r)
     }
 
-    fn on(port: Port, receiver: bool) -> V1Reader {
-        V1Reader { port, last: Apex2::default(), receiver, info: None, asked: None, air: (0, 0), heard: None }
+    fn on(port: Option<Port>, origin: Origin, receiver: bool) -> V1Reader {
+        V1Reader {
+            port,
+            origin,
+            lost_at: None,
+            last: Apex2::default(),
+            receiver,
+            info: None,
+            asked: None,
+            air: (0, 0),
+            heard: None,
+            input: Heard::default(),
+        }
     }
 
-    /// Sends a command to the pad (output report 0x05).
+    /// Sends a command to the pad (output report 0x05). Not while its handle is lost.
     pub fn write(&self, report: &[u8]) -> bool {
-        self.port.write(report)
+        self.port.as_ref().is_some_and(|p| p.write(report))
     }
 
     fn ask(&mut self, now: Instant) {
         // It may fail now and then, as SDL finds: asked again later.
-        self.port.write(&ASK_MODEL);
+        self.write(&ASK_MODEL);
         self.asked = Some(now);
+    }
+
+    /// Its handle failed: what the pad held is let go, and SDL's reading of the receiver stands
+    /// until it opens again. What the pad said of itself is kept.
+    fn lose(&mut self, now: Instant) {
+        self.port = None;
+        self.lost_at = Some(now);
+        self.last = Apex2::default();
+        self.air = (0, 0);
+        self.heard = None;
+        self.input = Heard { was_live: self.input.was_live, ..Heard::default() };
+    }
+
+    /// Whether it is time to open a lost handle again.
+    fn reopen_due(&self, now: Instant) -> bool {
+        self.port.is_none() && self.lost_at.is_none_or(|at| now.duration_since(at) >= REOPEN_EVERY)
     }
 
     /// Asks the pad about itself when it is time: every few seconds until it answers, then now and
@@ -470,15 +591,34 @@ impl V1Reader {
     pub fn read(&mut self, now: Instant) -> Read {
         let mut buf = [0u8; 64];
         let (before, air) = (self.last, self.air);
-        for _ in 0..MOST_PER_LOOK {
-            let n = self.port.read(&mut buf);
-            if n <= 0 {
-                break;
+        if self.reopen_due(now) {
+            self.port = self.origin.open();
+            self.lost_at = Some(now);
+        }
+        if let Some(port) = self.port.take() {
+            let mut lost = false;
+            for _ in 0..MOST_PER_LOOK {
+                let n = port.read(&mut buf);
+                if n < 0 {
+                    lost = true;
+                    break;
+                }
+                if n == 0 {
+                    break;
+                }
+                self.take(&buf[..n as usize], now);
             }
-            self.take(&buf[..n as usize], now);
+            if lost {
+                drop(port);
+                self.lose(now);
+            } else {
+                self.port = Some(port);
+            }
         }
         self.settle(now);
-        Read { input: self.last != before, motion: self.air != air }
+        // The report starting or stopping changes what the pad holds even when it says nothing.
+        let flipped = self.input.flipped(now);
+        Read { input: self.last != before || flipped, motion: self.air != air }
     }
 
     fn take(&mut self, report: &[u8], now: Instant) {
@@ -488,8 +628,15 @@ impl V1Reader {
         if let Some(a) = air(report) {
             self.air = a;
             self.heard = Some(now);
+            self.input.report(report, now);
         }
         self.last = self.last.after(report);
+    }
+
+    /// Whether the report started or stopped coming, as [`V1Reader::read`] tells the engine.
+    #[cfg(test)]
+    fn read_flips(&mut self, now: Instant) -> bool {
+        self.input.flipped(now)
     }
 
     fn settle(&mut self, now: Instant) {
@@ -501,12 +648,56 @@ impl V1Reader {
         self.info.and_then(|i| i.power(self.receiver))
     }
 
-    /// Puts what the pad last said in a state SDL gave: on the receiver, M1 to M4 and Home too.
-    pub fn apply(&self, s: &mut PadState) {
-        self.last.apply(s);
-        if self.receiver {
-            self.last.apply_on_receiver(s);
-        }
+    /// Puts what the pad last said in a state SDL gave. On the receiver, the whole pad while its
+    /// report comes; otherwise SDL's reading stands.
+    pub fn apply(&self, s: &mut PadState, now: Instant) {
+        put(self.last, self.receiver, self.input.live(now), s);
+    }
+}
+
+fn put(last: Apex2, receiver: bool, live: bool, s: &mut PadState) {
+    if !receiver {
+        last.apply(s);
+    } else if live {
+        last.apply(s);
+        last.apply_on_receiver(s);
+    }
+}
+
+/// How long a pad that repeats its report may fall silent before it is taken as gone: switched
+/// off, out of the receiver's range or flat, with whatever it held let go.
+pub const GONE_AFTER: Duration = Duration::from_millis(500);
+
+/// Whether a pad's report is coming, on the receiver. Until one comes, and once a pad that keeps
+/// sending falls silent, SDL's reading of the receiver's plain gamepad stands: the report must
+/// never blank a pad SDL reads, should Flydigi's interface say nothing (a handle lost to sleep, a
+/// receiver that does not send it). A pad seen only sending changes is never taken as gone: its
+/// silence may be a button held still.
+#[derive(Clone, Copy, Debug, Default)]
+struct Heard {
+    /// When the last input report came, and what it said.
+    last: Option<(Instant, [u8; 30])>,
+    /// It sent the same report twice running: it sends all the time, not only on a change.
+    repeats: bool,
+    /// What [`Heard::flipped`] last found.
+    was_live: bool,
+}
+
+impl Heard {
+    fn report(&mut self, r: &[u8], now: Instant) {
+        let Some(said) = r.get(2..32).and_then(|b| <[u8; 30]>::try_from(b).ok()) else { return };
+        self.repeats |= self.last.is_some_and(|(_, before)| before == said);
+        self.last = Some((now, said));
+    }
+
+    fn live(&self, now: Instant) -> bool {
+        self.last.is_some_and(|(at, _)| !self.repeats || now.duration_since(at) < GONE_AFTER)
+    }
+
+    /// Whether it started or stopped coming since the last look.
+    fn flipped(&mut self, now: Instant) -> bool {
+        let live = self.live(now);
+        std::mem::replace(&mut self.was_live, live) != live
     }
 }
 
@@ -547,9 +738,10 @@ mod tests {
 
     #[test]
     fn at_rest_nothing_is_held_whatever_the_wheel_says() {
-        assert_eq!(parse(&REST), Some(Apex2::default()));
+        let rest = Apex2 { sticks: [stick(0x84), 0, stick(0x7e), 0], ..Apex2::default() };
+        assert_eq!(parse(&REST), Some(rest));
         // The wheel dragged all the way: SDL would read full triggers.
-        assert_eq!(parse(&with(&[(23, 0xff), (24, 0x00)])), Some(Apex2::default()));
+        assert_eq!(parse(&with(&[(23, 0xff), (24, 0x00)])), Some(rest));
     }
 
     #[test]
@@ -588,6 +780,190 @@ mod tests {
             assert_eq!((a.on_receiver, a.buttons), (bit(b), 0), "byte {at} bit {v:#04x}");
         }
         assert_eq!(parse(&with(&[(7, 0xc3), (8, 0x11)])).unwrap().on_receiver, 0, "C, Z, M5, M6, ))) and Return");
+    }
+
+    fn at(t: Instant, ms: u64) -> Instant {
+        t + Duration::from_millis(ms)
+    }
+
+    /// A pad on the receiver: what it sends and when, and what games get on top of SDL's reading.
+    struct OnReceiver {
+        heard: Heard,
+        last: Apex2,
+    }
+
+    impl OnReceiver {
+        fn new() -> OnReceiver {
+            OnReceiver { heard: Heard::default(), last: Apex2::default() }
+        }
+
+        fn send(&mut self, r: &[u8], now: Instant) {
+            self.heard.report(r, now);
+            self.last = self.last.after(r);
+        }
+
+        fn games_get(&self, sdl: PadState, now: Instant) -> PadState {
+            let mut s = sdl;
+            put(self.last, true, self.heard.live(now), &mut s);
+            s
+        }
+    }
+
+    /// What SDL reads of the receiver's plain gamepad with A held, the left stick right, LT pulled.
+    fn sdl_holding_a() -> PadState {
+        let mut s = PadState { buttons: 1 << button::SOUTH, ..PadState::default() };
+        (s.axes[axis::LEFT_X], s.axes[axis::LEFT_TRIGGER]) = (20000, i16::MAX);
+        s
+    }
+
+    #[test]
+    fn with_flydigis_app_open_the_report_alone_is_the_pad() {
+        // The app turned SDL's side off: SDL reads nothing at all.
+        let (t, mut pad) = (Instant::now(), OnReceiver::new());
+        pad.send(&with(&[(9, 0x10), (17, 0xff), (10, 0x10)]), t);
+        let s = pad.games_get(PadState::default(), at(t, 5));
+        assert_eq!(s.buttons, 1 << button::SOUTH);
+        assert_eq!((s.axes[axis::LEFT_X], s.axes[axis::LEFT_TRIGGER]), (i16::MAX, i16::MAX));
+    }
+
+    #[test]
+    fn a_silent_report_never_blanks_what_sdl_reads() {
+        // Flydigi's interface opened but says nothing (a lost handle, another receiver): before,
+        // the pad would have been taken as at rest whatever SDL read.
+        let (t, pad) = (Instant::now(), OnReceiver::new());
+        assert_eq!(pad.games_get(sdl_holding_a(), at(t, 10_000)), sdl_holding_a());
+    }
+
+    #[test]
+    fn a_pad_that_keeps_sending_is_gone_once_silent_and_what_it_held_is_let_go() {
+        // Switched off, flat or out of range with A and the stick held, Flydigi's app open.
+        let (t, mut pad) = (Instant::now(), OnReceiver::new());
+        let held = with(&[(9, 0x10), (17, 0xff)]);
+        for ms in 0..20 {
+            pad.send(&held, at(t, ms * 2));
+        }
+        assert!(pad.heard.repeats);
+        assert_eq!(pad.games_get(PadState::default(), at(t, 300)).buttons, 1 << button::SOUTH, "a short gap is not gone");
+        let gone = pad.games_get(PadState::default(), at(t, 38 + GONE_AFTER.as_millis() as u64));
+        assert_eq!(gone, PadState::default(), "nothing held, the stick centred");
+        // Switched back on.
+        pad.send(&REST, at(t, 5000));
+        assert!(pad.heard.live(at(t, 5000)));
+    }
+
+    #[test]
+    fn a_pad_that_sends_only_changes_keeps_a_held_button() {
+        // Never the same report twice: its silence may be A held still for a long while.
+        let (t, mut pad) = (Instant::now(), OnReceiver::new());
+        pad.send(&REST, t);
+        pad.send(&with(&[(9, 0x10)]), at(t, 10));
+        assert!(!pad.heard.repeats);
+        assert_eq!(pad.games_get(PadState::default(), at(t, 60_000)).buttons, 1 << button::SOUTH);
+    }
+
+    #[test]
+    fn motion_alone_does_not_count_as_repeating() {
+        // The air mouse moving makes every report differ, so a held button with the air mouse on
+        // never teaches that the pad repeats itself.
+        let (t, mut pad) = (Instant::now(), OnReceiver::new());
+        for i in 0..50u8 {
+            pad.send(&with(&[(9, 0x10), (4, i)]), at(t, u64::from(i)));
+        }
+        assert!(!pad.heard.repeats);
+    }
+
+    #[test]
+    fn replies_and_cut_reports_say_nothing_of_the_pad_being_there() {
+        let (t, mut h) = (Instant::now(), Heard::default());
+        h.report(&REST[..20], t);
+        assert!(!h.live(t), "too short to be the pad");
+    }
+
+    #[test]
+    fn the_engine_is_woken_when_the_report_starts_and_stops() {
+        let (t, mut pad) = (Instant::now(), OnReceiver::new());
+        assert!(!pad.heard.flipped(t));
+        pad.send(&REST, t);
+        pad.send(&REST, at(t, 2));
+        assert!(pad.heard.flipped(at(t, 3)), "started");
+        assert!(!pad.heard.flipped(at(t, 4)));
+        assert!(pad.heard.flipped(at(t, 2 + GONE_AFTER.as_millis() as u64)), "stopped");
+    }
+
+    #[test]
+    fn on_the_cable_sdl_reads_the_report_itself_and_nothing_changes() {
+        let mut s = sdl_holding_a();
+        put(Apex2::default(), false, false, &mut s);
+        assert_eq!(
+            (s.buttons, s.axes[axis::LEFT_X], s.axes[axis::LEFT_TRIGGER]),
+            (1 << button::SOUTH, 20000, 0),
+            "triggers are the report's"
+        );
+    }
+
+    /// A reader on the receiver whose handle is not open, fed by hand.
+    fn unopened() -> V1Reader {
+        V1Reader::on(None, Origin::Receiver(String::new()), true)
+    }
+
+    #[test]
+    fn a_lost_handle_lets_go_and_hands_the_pad_back_to_sdl() {
+        // A resume from sleep: SDL's handle works, this one fails mid-press, Flydigi's app closed.
+        let (t, mut r) = (Instant::now(), unopened());
+        r.info = Some(Info { model: APEX2_MODEL, battery: Some(80), wired: Some(false) });
+        for ms in 0..5 {
+            r.take(&with(&[(9, 0x10), (4, 0x20), (10, 0x10)]), at(t, ms));
+        }
+        assert!(r.read_flips(at(t, 5)), "the report started");
+        r.lose(at(t, 6));
+        assert!(r.read_flips(at(t, 6)), "the engine is woken to let go");
+        let mut s = sdl_holding_a();
+        r.apply(&mut s, at(t, 6));
+        assert_eq!(s, sdl_holding_a(), "SDL's reading stands, its trigger too");
+        assert_eq!((r.air, r.last), ((0, 0), Apex2::default()), "no air mouse turning, nothing held");
+        assert_eq!(r.info.map(|i| i.model), Some(APEX2_MODEL), "what it said of itself is kept");
+        assert!(!r.write(&ASK_MODEL), "nothing goes out while lost");
+    }
+
+    #[test]
+    fn a_lost_handle_is_tried_again_every_two_seconds() {
+        let (t, mut r) = (Instant::now(), unopened());
+        assert!(r.reopen_due(t), "never opened: tried at once");
+        r.lose(t);
+        assert!(!r.reopen_due(at(t, 1999)));
+        assert!(r.reopen_due(at(t, 2000)));
+    }
+
+    #[test]
+    fn on_the_cable_a_lost_handle_releases_what_sdl_gets_wrong() {
+        // SDL holds the triggers half way on the cable: lost, they are released, not held.
+        let (t, mut r) = (Instant::now(), V1Reader::on(None, Origin::Pad(String::new()), false));
+        r.take(&with(&[(10, 0x10)]), t);
+        r.lose(at(t, 1));
+        let mut s = PadState { axes: [0, 0, 0, 0, 16000, 16000], ..PadState::default() };
+        r.apply(&mut s, at(t, 1));
+        assert_eq!(s.axes[axis::LEFT_TRIGGER..], [0, 0]);
+    }
+
+    #[test]
+    fn the_sticks_end_to_end_with_0x7f_the_middle() {
+        assert_eq!((stick(0x00), stick(0x7f), stick(0xff)), (i16::MIN, 0, i16::MAX));
+        assert!(stick(0x80) > 0 && stick(0x7e) < 0);
+    }
+
+    #[test]
+    fn on_the_receiver_the_whole_pad_comes_from_the_report() {
+        // A, Select, Y, Start, the bumpers and the stick clicks, and the d-pad up and left.
+        let a = parse(&with(&[(9, 0x59), (10, 0xcf), (17, 0x00), (22, 0xff)])).unwrap();
+        let want = [button::SOUTH, button::BACK, button::NORTH, button::START, button::LEFT_SHOULDER, button::RIGHT_SHOULDER]
+            .into_iter()
+            .chain([button::LEFT_STICK, button::RIGHT_STICK, button::DPAD_UP, button::DPAD_LEFT]);
+        assert_eq!(a.on_receiver, want.fold(0, |m, b| m | 1 << b));
+        let mut s = PadState { buttons: 1 << button::EAST, axes: [100; 6], ..PadState::default() };
+        a.apply_on_receiver(&mut s);
+        assert_eq!(s.buttons & 1 << button::EAST, 0, "B is let go: SDL's view is not the pad's");
+        assert_eq!(s.axes[..4], [i16::MIN, 0, stick(0x7e), i16::MAX]);
+        assert_eq!(s.axes[4..], [100, 100], "the triggers are apply's");
     }
 
     #[test]
@@ -712,7 +1088,7 @@ mod tests {
     #[test]
     fn motion_and_replies_are_not_input() {
         // The air mouse's two 12-bit values in bytes 4 to 6 move whenever the pad does.
-        assert_eq!(parse(&with(&[(4, 0xff), (5, 0xff), (6, 0xff)])), Some(Apex2::default()));
+        assert_eq!(parse(&with(&[(4, 0xff), (5, 0xff), (6, 0xff)])), parse(&REST));
         // A reply to SDL's question about the model, in the same report.
         let mut reply = REST;
         (reply[1], reply[10], reply[15]) = (0xff, 0x30, 0xec);

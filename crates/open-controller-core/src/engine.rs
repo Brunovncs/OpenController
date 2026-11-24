@@ -619,12 +619,12 @@ impl Tools {
 impl Phys {
     /// Its state as SDL has it, with what an Apex 2's own report says in place of what SDL reads
     /// wrong. Should its report not open, its triggers are at least released rather than held.
-    fn read_pad(&mut self) {
+    fn read_pad(&mut self, now: Instant) {
         self.pad.read(&mut self.state);
         self.sdl_state = self.state;
         if self.model.family == Family::FlydigiApex2 && self.takes_report {
             match &self.v1 {
-                Some(r) => r.apply(&mut self.state),
+                Some(r) => r.apply(&mut self.state, now),
                 None => flydigi::Apex2::default().apply(&mut self.state),
             }
         }
@@ -1890,7 +1890,7 @@ impl Core {
             knock: None,
             pad,
         };
-        p.read_pad();
+        p.read_pad(Instant::now());
         p.tools.runtime.output = p.state;
         let xbox = matches!(p.pad.pad_type(), device::PadType::Xbox360 | device::PadType::XboxOne);
         p.kind = if devnode::is_virtual(&p.path) {
@@ -2390,7 +2390,7 @@ impl Core {
             let sdl_before = p.sdl_state;
             let aim_before = p.aim_out;
             let (rate_before, accel_before) = (p.rate, p.accel);
-            p.read_pad();
+            p.read_pad(now);
             if p.model.family == Family::Handheld && p.kind == Kind::Native {
                 p.state.buttons |= self.handheld_held;
             }

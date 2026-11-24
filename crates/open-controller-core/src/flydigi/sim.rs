@@ -1,4 +1,4 @@
-//! A Flydigi Apex 2 and SDL 3.4.18's reading of it, simulated, to try the fix without the pad.
+//! A Flydigi Apex 2 and SDL 3.4's reading of it (the same from 3.4.18 to 3.4.20), simulated, to try the fix without the pad.
 //!
 //! [`Pad`] builds the pad's report from what is held, by the layout in the module above. [`SdlV1`]
 //! is SDL ported line by line: `HIDAPI_DriverFlydigi_HandleStatePacketV1` (SDL_hidapi_flydigi.c),
@@ -413,6 +413,35 @@ fn every_extra_button_arrives_on_its_own_bit() {
         assert_eq!(crate::extras::printed_name(crate::extras::Family::FlydigiApex2, crate::extras::Art::Offset, b), Some(name));
         run.hold(REST);
         assert_eq!(run.fixed().buttons, 0, "{name} let go");
+    }
+}
+
+/// While Flydigi's app is open the receiver's plain gamepad says nothing; the report alone must give
+/// games what SDL and the fix give on the cable.
+#[test]
+fn on_the_receiver_the_report_alone_is_the_whole_pad() {
+    let mut m = [false; 6];
+    m[1] = true;
+    let mut session = owners_session();
+    session.extend([
+        Pad { home: true, ..REST },
+        Pad { dpad: 0x03, ..REST },
+        Pad { dpad: 0x0c, ls: true, rs: true, ..REST },
+        Pad { a: true, y: true, lb: true, m, ..REST },
+        REST,
+    ]);
+    let mut run = Run::new();
+    for p in session {
+        run.hold(p);
+        let mut alone = PadState::default();
+        run.ours.apply(&mut alone);
+        run.ours.apply_on_receiver(&mut alone);
+        let sdl = run.fixed();
+        assert_eq!(alone.buttons, sdl.buttons, "{p:?}");
+        // SDL holds a stick's first small move back (`SDL_SendJoystickAxis`); nothing else differs.
+        for (ours, sdl) in alone.axes.iter().zip(sdl.axes) {
+            assert!((i32::from(*ours) - i32::from(sdl)).abs() <= AXIS_MAX / 80, "{p:?}: {:?} {:?}", alone.axes, run.fixed().axes);
+        }
     }
 }
 
