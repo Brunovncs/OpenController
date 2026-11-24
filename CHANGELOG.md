@@ -3,9 +3,11 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
-## Unreleased
+## 0.9.10
 
 - The triggers can be remapped like any other button, under All buttons. Swapping LT and RT keeps them analog.
+
+Settings carry over.
 
 ## 0.9.9
 
