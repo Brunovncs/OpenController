@@ -124,14 +124,14 @@ fn sideways(pad: &PadView) -> bool {
 
 /// What is printed on one of `binding::NORMAL`, on this controller.
 fn normal_label(pad: &PadView, b: u8) -> &'static str {
-    const XBOX: [&str; 15] = ["A", "B", "X", "Y", "LB", "RB", "View", "Menu", "Xbox", "LS", "RS", "↑", "↓", "←", "→"];
-    const NINTENDO: [&str; 15] = ["B", "A", "Y", "X", "L", "R", "−", "+", "⌂", "LS", "RS", "↑", "↓", "←", "→"];
-    const DUALSHOCK3: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Select", "Start", "PS", "L3", "R3", "↑", "↓", "←", "→"];
-    const DUALSHOCK4: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Share", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
+    const XBOX: [&str; 17] = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu", "Xbox", "LS", "RS", "↑", "↓", "←", "→"];
+    const NINTENDO: [&str; 17] = ["B", "A", "Y", "X", "L", "R", "ZL", "ZR", "−", "+", "⌂", "LS", "RS", "↑", "↓", "←", "→"];
+    const DUALSHOCK3: [&str; 17] = ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Select", "Start", "PS", "L3", "R3", "↑", "↓", "←", "→"];
+    const DUALSHOCK4: [&str; 17] = ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Share", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
     // Held sideways, the arrows point where they now do, and SL and SR are the bumpers.
-    const JOYCON_LEFT: [&str; 15] = ["▼", "▶", "◀", "▲", "SL", "SR", "", "−", "Capture", "LS", "", "", "", "", ""];
-    const JOYCON_RIGHT: [&str; 15] = ["A", "X", "B", "Y", "SL", "SR", "", "+", "⌂", "LS", "", "", "", "", ""];
-    const DUALSENSE: [&str; 15] = ["✕", "○", "□", "△", "L1", "R1", "Create", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
+    const JOYCON_LEFT: [&str; 17] = ["▼", "▶", "◀", "▲", "SL", "SR", "", "", "", "−", "Capture", "LS", "", "", "", "", ""];
+    const JOYCON_RIGHT: [&str; 17] = ["A", "X", "B", "Y", "SL", "SR", "", "", "", "+", "⌂", "LS", "", "", "", "", ""];
+    const DUALSENSE: [&str; 17] = ["✕", "○", "□", "△", "L1", "R1", "L2", "R2", "Create", "Options", "PS", "L3", "R3", "↑", "↓", "←", "→"];
     let names = match pad.family {
         Family::DualShock3 | Family::Ps2Adapter => &DUALSHOCK3,
         Family::DualShock4 => &DUALSHOCK4,

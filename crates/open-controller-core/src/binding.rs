@@ -4,7 +4,7 @@
 
 use crate::device::Identity;
 use crate::extras;
-use crate::mapping::{PadState, XusbReport, button, to_xusb, xusb};
+use crate::mapping::{LEFT_TRIGGER_BUTTON, PadState, RIGHT_TRIGGER_BUTTON, TRIGGER_BUTTONS, XusbReport, button, to_xusb, trigger, xusb};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -292,15 +292,17 @@ pub fn store_key(identity: &Identity, vendor: u16, product: u16) -> String {
 }
 
 /// The buttons every gamepad has, by SDL index, in the order they are listed: the face buttons,
-/// the bumpers, View, Menu and Guide, the stick clicks and the d-pad. Games see each as the Xbox
-/// button in its place until it is given something else to do.
-pub const NORMAL: [u8; 15] = [
+/// the bumpers, the triggers, View, Menu and Guide, the stick clicks and the d-pad. Games see
+/// each as the Xbox button in its place until it is given something else to do.
+pub const NORMAL: [u8; 17] = [
     button::SOUTH as u8,
     button::EAST as u8,
     button::WEST as u8,
     button::NORTH as u8,
     button::LEFT_SHOULDER as u8,
     button::RIGHT_SHOULDER as u8,
+    LEFT_TRIGGER_BUTTON,
+    RIGHT_TRIGGER_BUTTON,
     button::BACK as u8,
     button::START as u8,
     button::GUIDE as u8,
@@ -341,11 +343,36 @@ pub fn repeat_on(since: std::time::Instant, now: std::time::Instant) -> bool {
     (now.duration_since(since).as_millis() / u128::from(XBOX_TAP_MS)).is_multiple_of(2)
 }
 
-/// Presses the Xbox buttons and triggers the held buttons stand for. `buttons` is what is held,
-/// before the buttons that do something else are taken out of the report.
-pub fn overlay(bindings: &Bindings, buttons: u64, r: &mut XusbReport) {
+/// Takes out of a state the buttons that do something else, and a trigger that does along with
+/// how far it is pulled, so games no longer see them.
+pub fn take_out(bindings: &Bindings, s: &mut PadState) {
+    let taken = taken(bindings);
+    s.buttons &= !taken;
+    for (b, a) in TRIGGER_BUTTONS {
+        if taken & bit(b) != 0 {
+            s.axes[a] = 0;
+        }
+    }
+}
+
+/// For a trigger given a trigger to be, its axis and that trigger: it moves the trigger as far
+/// as it is pulled itself, rather than all the way once past half.
+fn as_trigger(b: u8, action: &Action) -> Option<(usize, XboxButton)> {
+    let (_, a) = TRIGGER_BUTTONS.into_iter().find(|&(t, _)| t == b)?;
+    match action {
+        Action::Xbox(x @ (XboxButton::LeftTrigger | XboxButton::RightTrigger)) => Some((a, *x)),
+        _ => None,
+    }
+}
+
+/// Presses the Xbox buttons and triggers the held buttons stand for. `held` is the state before
+/// the buttons that do something else are taken out of it (see [`take_out`]).
+pub fn overlay(bindings: &Bindings, held: &PadState, r: &mut XusbReport) {
     for (&b, action) in bindings {
-        if buttons & bit(b) != 0
+        if let Some((a, x)) = as_trigger(b, action) {
+            let t = if x == XboxButton::LeftTrigger { &mut r.left_trigger } else { &mut r.right_trigger };
+            *t = (*t).max(trigger(held.axes[a]));
+        } else if held.buttons & bit(b) != 0
             && let Some(x) = action.xbox()
         {
             x.press(r);
@@ -356,8 +383,10 @@ pub fn overlay(bindings: &Bindings, buttons: u64, r: &mut XusbReport) {
 /// The Xbox buttons games see pressed for a controller's state, through its assignments; a
 /// button that types keys presses none.
 pub fn xbox_pressed(bindings: &Bindings, s: &PadState) -> Buttons {
-    let mut r = to_xusb(&PadState { buttons: s.buttons & !taken(bindings), ..*s });
-    overlay(bindings, s.buttons, &mut r);
+    let mut out = *s;
+    take_out(bindings, &mut out);
+    let mut r = to_xusb(&out);
+    overlay(bindings, s, &mut r);
     Buttons::in_report(&r)
 }
 
@@ -413,7 +442,7 @@ mod tests {
         b.insert(button::SOUTH as u8, Action::Off);
         assert_eq!(taken(&b), 1 << button::SOUTH);
         let mut r = XusbReport::default();
-        overlay(&b, 1 << button::SOUTH, &mut r);
+        overlay(&b, &PadState { buttons: 1 << button::SOUTH, ..PadState::default() }, &mut r);
         assert_eq!(r, XusbReport::default());
     }
     use super::*;
@@ -425,9 +454,18 @@ mod tests {
     /// What the engine sends for `held`: the buttons that do something else taken out, then
     /// what they stand for added.
     fn report(b: &Bindings, held: &[u32]) -> XusbReport {
-        let buttons = held.iter().fold(0, |m, &x| m | 1 << x);
-        let mut r = to_xusb(&PadState { buttons: buttons & !taken(b), ..PadState::default() });
-        overlay(b, buttons, &mut r);
+        pulled(b, held, [0, 0])
+    }
+
+    /// The same with the triggers pulled this far, 0 to 32767.
+    fn pulled(b: &Bindings, held: &[u32], triggers: [i16; 2]) -> XusbReport {
+        let mut s = PadState { buttons: held.iter().fold(0, |m, &x| m | 1 << x), ..PadState::default() };
+        (s.axes[axis::LEFT_TRIGGER], s.axes[axis::RIGHT_TRIGGER]) = (triggers[0], triggers[1]);
+        s.trigger_buttons(0);
+        let mut out = s;
+        take_out(b, &mut out);
+        let mut r = to_xusb(&out);
+        overlay(b, &s, &mut r);
         r
     }
 
@@ -507,6 +545,41 @@ mod tests {
     }
 
     #[test]
+    fn a_trigger_can_be_assigned() {
+        let mut b = Bindings::new();
+        assert_eq!(pulled(&b, &[], [20000, 9000]).left_trigger, trigger(20000), "itself until assigned");
+        b.insert(LEFT_TRIGGER_BUTTON, Action::Xbox(XboxButton::A));
+        let r = pulled(&b, &[], [20000, 9000]);
+        assert_eq!((r.buttons, r.left_trigger, r.right_trigger), (xusb::A, 0, trigger(9000)), "gone from the game, A pressed");
+        assert_eq!(pulled(&b, &[], [9000, 0]), XusbReport::default(), "not pulled far enough to press A");
+        b.insert(LEFT_TRIGGER_BUTTON, Action::Off);
+        assert_eq!(pulled(&b, &[], [32767, 0]), XusbReport::default());
+    }
+
+    #[test]
+    fn triggers_that_trade_stay_analog() {
+        let mut b = Bindings::new();
+        b.insert(LEFT_TRIGGER_BUTTON, Action::Xbox(XboxButton::RightTrigger));
+        b.insert(RIGHT_TRIGGER_BUTTON, Action::Xbox(XboxButton::LeftTrigger));
+        let r = pulled(&b, &[], [9000, 30000]);
+        assert_eq!((r.left_trigger, r.right_trigger), (trigger(30000), trigger(9000)));
+        b.insert(button::EAST as u8, Action::Xbox(XboxButton::RightTrigger));
+        assert_eq!(pulled(&b, &[button::EAST], [9000, 0]).right_trigger, 255, "a button pulls it all the way");
+        assert_eq!(xbox_pressed(&b, &PadState::default()), Buttons::default());
+    }
+
+    #[test]
+    fn a_trigger_held_near_the_middle_does_not_flicker() {
+        let mut s = PadState::default();
+        let mut at = |v: i16| {
+            s.axes[axis::LEFT_TRIGGER] = v;
+            s.trigger_buttons(s.buttons);
+            s.pressed(u32::from(LEFT_TRIGGER_BUTTON))
+        };
+        assert!(!at(16000) && at(17000) && at(13000) && !at(12000) && !at(15000));
+    }
+
+    #[test]
     fn a_button_given_a_key_leaves_the_game() {
         let mut b = Bindings::new();
         b.insert(button::BACK as u8, Action::Keys(Chord { mods: 0, key: 0x4D }));
@@ -534,7 +607,7 @@ mod tests {
         s.axes[axis::LEFT_Y] = -32000;
         motion::apply_dpad_stick(&mut s, DpadStick::Left);
         let mut r = to_xusb(&s);
-        overlay(&b, held, &mut r);
+        overlay(&b, &PadState { buttons: held, ..PadState::default() }, &mut r);
         assert_eq!(r.buttons, xusb::DPAD_UP | xusb::Y, "the stick still pushes up, the button is Y");
     }
 
@@ -552,7 +625,9 @@ mod tests {
 
     #[test]
     fn extras_are_not_normal_buttons() {
-        assert_eq!(NORMAL.iter().fold(0u64, |m, &b| m | bit(b)), (1 << 15) - 1, "SDL's buttons 0 to 14");
+        let triggers = bit(LEFT_TRIGGER_BUTTON) | bit(RIGHT_TRIGGER_BUTTON);
+        assert_eq!(NORMAL.iter().fold(0u64, |m, &b| m | bit(b)), ((1 << 15) - 1) | triggers, "SDL's buttons 0 to 14 and the triggers");
+        assert!(LEFT_TRIGGER_BUTTON > *extras::HANDHELD.last().unwrap() && RIGHT_TRIGGER_BUTTON < 64);
         assert!(extras::ALL.iter().all(|&b| !is_normal(b)));
         let mut b = Bindings::new();
         b.insert(extras::LEFT_PADDLE1, Action::Xbox(XboxButton::A));

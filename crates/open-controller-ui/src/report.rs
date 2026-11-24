@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 const MONO: &str = "Consolas";
 
 /// SDL's gamepad buttons, then the ones OpenController adds, by bit.
-const BUTTON_NAMES: [&str; 41] = [
+const BUTTON_NAMES: [&str; 43] = [
     "south (A/✕)",
     "east (B/○)",
     "west (X/□)",
@@ -71,6 +71,8 @@ const BUTTON_NAMES: [&str; 41] = [
     "handheld 10",
     "handheld 11",
     "handheld 12",
+    "left trigger",
+    "right trigger",
 ];
 const AXIS_NAMES: [&str; axis::COUNT] = ["left x", "left y", "right x", "right y", "left trigger", "right trigger"];
 
@@ -170,8 +172,12 @@ impl Report {
     /// controller with a gamepad mapping (`mapping`), only the joystick's parts the mapping leaves
     /// out: the rest already arrived under their gamepad names.
     fn arrived(&self, mapping: Option<&str>) -> Vec<String> {
-        let mut out: Vec<String> =
-            (0..BUTTON_NAMES.len()).filter(|&b| self.seen & 1 << b != 0).map(|b| BUTTON_NAMES[b].to_string()).collect();
+        // The triggers' own bits say no more than how far they went, listed below.
+        let triggers = mapping::TRIGGER_BUTTONS.map(|(b, _)| usize::from(b));
+        let mut out: Vec<String> = (0..BUTTON_NAMES.len())
+            .filter(|&b| self.seen & 1 << b != 0 && !triggers.contains(&b))
+            .map(|b| BUTTON_NAMES[b].to_string())
+            .collect();
         out.extend(self.axes.iter().zip(AXIS_NAMES).filter(|((lo, hi), _)| moved(*lo, *hi)).map(|(_, n)| n.to_string()));
         if turned(self.gyro_peak) {
             out.push("gyro".into());

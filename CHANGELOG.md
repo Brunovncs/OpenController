@@ -3,6 +3,10 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## Unreleased
+
+- The triggers can be remapped like any other button, under All buttons. Swapping LT and RT keeps them analog.
+
 ## 0.9.9
 
 - Flydigi Apex 2: Home button on the 2.4 GHz receiver.

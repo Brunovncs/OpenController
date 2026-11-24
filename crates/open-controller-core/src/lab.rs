@@ -475,6 +475,7 @@ impl Runtime {
             self.flick = FlickState::default();
             self.triggers = Default::default();
         }
+        output.trigger_buttons(self.output.buttons);
         self.output = output;
         mouse
     }
@@ -612,7 +613,8 @@ mod tests {
             ..Default::default()
         };
         let mouse = r.update(p, cfg, false, Some([1.; 3]), Instant::now());
-        assert_eq!(r.output, p);
+        let pulled = 1 << crate::mapping::LEFT_TRIGGER_BUTTON;
+        assert_eq!(r.output, PadState { buttons: p.buttons | pulled, ..p }, "only the pulled trigger's own bit is added");
         assert_eq!((mouse.dx, mouse.dy), (0., 0.));
     }
 

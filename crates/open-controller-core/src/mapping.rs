@@ -90,9 +90,26 @@ pub struct PadState {
     pub pressure: [u8; PRESSURE.len()],
 }
 
+/// Bits OpenController sets in [`PadState::buttons`] for the triggers, past the handheld's
+/// buttons, so a trigger can be assigned as a button is.
+pub const LEFT_TRIGGER_BUTTON: u8 = 41;
+pub const RIGHT_TRIGGER_BUTTON: u8 = 42;
+pub const TRIGGER_BUTTONS: [(u8, usize); 2] = [(LEFT_TRIGGER_BUTTON, axis::LEFT_TRIGGER), (RIGHT_TRIGGER_BUTTON, axis::RIGHT_TRIGGER)];
+
 impl PadState {
     pub fn pressed(&self, b: u32) -> bool {
         self.buttons & (1 << b) != 0
+    }
+
+    /// Sets each trigger's bit once it is pulled past half way, as an Xbox trigger counts as
+    /// pressed, and clears it only below three eighths, so a trigger held near the middle does
+    /// not press and let go over and over. `before` is the last state's buttons.
+    pub fn trigger_buttons(&mut self, before: u64) {
+        for (b, a) in TRIGGER_BUTTONS {
+            let v = self.axes[a];
+            let on = v > i16::MAX / 2 || before & 1 << b != 0 && v > i16::MAX / 8 * 3;
+            self.buttons = self.buttons & !(1 << b) | u64::from(on) << b;
+        }
     }
 }
 
@@ -245,7 +262,7 @@ fn flip(v: i16) -> i16 {
 }
 
 /// 0..=32767 to 0..=255, rounded, so a fully pressed trigger is exactly 255.
-fn trigger(v: i16) -> u8 {
+pub fn trigger(v: i16) -> u8 {
     let v = v.max(0) as u32;
     ((v * 255 + 16383) / 32767) as u8
 }

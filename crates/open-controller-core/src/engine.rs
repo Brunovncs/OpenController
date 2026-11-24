@@ -2134,7 +2134,7 @@ impl Core {
         let profile = self.profile_of(&p.model.store);
         let mut state = p.tools.runtime.output;
         if let Some(pr) = profile {
-            state.buttons &= !binding::taken(&pr.bindings);
+            binding::take_out(&pr.bindings, &mut state);
             // The real triggers, before pressure can move them too.
             let triggers = motion::take_triggers(&mut state, pr.sticks.triggers);
             if p.model.features.pressure {
@@ -2155,7 +2155,7 @@ impl Core {
             r.thumb_ry = (i32::from(r.thumb_ry) + i32::from(p.aim_out.1)).clamp(-32768, 32767) as i16;
         }
         if let Some(pr) = profile {
-            binding::overlay(&pr.bindings, p.tools.runtime.output.buttons, &mut r);
+            binding::overlay(&pr.bindings, &p.tools.runtime.output, &mut r);
             if let Some((since, _)) = p.repeat
                 && binding::repeat_on(since, Instant::now())
             {
