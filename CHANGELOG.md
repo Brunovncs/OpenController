@@ -3,6 +3,15 @@
 Each release's section here is its release notes on GitHub. It says what changed for someone who
 plays with OpenController, and whether settings carry over.
 
+## 0.9.11
+
+- Flydigi Apex 2: every button and stick on the 2.4 GHz receiver while Flydigi's app is open.
+- Flydigi and DualShock 3: nothing stays held or keeps turning when the controller switches off or the PC wakes from sleep.
+- 8BitDo Ultimate 2: gyro and rumble keep working after reconnecting over Bluetooth.
+- Controller fixes from SDL 3.4.20, for Switch, Flydigi Vader and Xbox One S controllers.
+
+Settings carry over.
+
 ## 0.9.10
 
 - The triggers can be remapped like any other button, under All buttons. Swapping LT and RT keeps them analog.
