@@ -35,7 +35,7 @@ fn enumerate() -> Vec<Iface> {
                 let mut units = Vec::new();
                 let mut n = 0;
                 while *p.add(n) != 0 {
-                    units.push(*p.add(n) as u32);
+                    units.push(u32::from(*p.add(n)));
                     n += 1;
                 }
                 if size_of::<sdl3_sys::ffi::c_wchar_t>() == 2 {
