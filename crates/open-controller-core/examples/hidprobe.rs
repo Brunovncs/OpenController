@@ -18,6 +18,24 @@ struct Iface {
     name: String,
 }
 
+/// A C wide string: UTF-16 on Windows, UTF-32 elsewhere.
+fn wide(p: *const sdl3_sys::ffi::c_wchar_t) -> String {
+    if p.is_null() {
+        return String::new();
+    }
+    let mut n = 0;
+    unsafe {
+        while *p.add(n) != 0 {
+            n += 1;
+        }
+        let units = std::slice::from_raw_parts(p, n);
+        #[cfg(windows)]
+        return String::from_utf16_lossy(units);
+        #[cfg(not(windows))]
+        return units.iter().map(|&u| char::from_u32(u).unwrap_or('?')).collect();
+    }
+}
+
 fn enumerate() -> Vec<Iface> {
     let mut out = Vec::new();
     unsafe {
@@ -27,30 +45,13 @@ fn enumerate() -> Vec<Iface> {
         while !d.is_null() {
             let i = &*d;
             let s = |p: *const std::ffi::c_char| if p.is_null() { String::new() } else { CStr::from_ptr(p).to_string_lossy().into_owned() };
-            // wchar_t is UTF-16 on Windows and UTF-32 elsewhere.
-            let w = |p: *const sdl3_sys::ffi::c_wchar_t| {
-                if p.is_null() {
-                    return String::new();
-                }
-                let mut units = Vec::new();
-                let mut n = 0;
-                while *p.add(n) != 0 {
-                    units.push(u32::from(*p.add(n)));
-                    n += 1;
-                }
-                if size_of::<sdl3_sys::ffi::c_wchar_t>() == 2 {
-                    String::from_utf16_lossy(&units.iter().map(|&u| u as u16).collect::<Vec<_>>())
-                } else {
-                    units.into_iter().map(|u| char::from_u32(u).unwrap_or('?')).collect()
-                }
-            };
             out.push(Iface {
                 path: s(i.path),
                 vendor: i.vendor_id,
                 product: i.product_id,
                 number: i.interface_number,
                 page: i.usage_page,
-                name: w(i.product_string),
+                name: wide(i.product_string),
             });
             d = i.next;
         }
