@@ -191,8 +191,11 @@ jobs:
           name: macos
           path: dist/*.zip*
 
+  # Windows and Linux are published as soon as they are built: GitHub's Mac machines are
+  # sometimes all taken for a while (three tries five minutes apart, then the job is cancelled),
+  # and the release should not wait for them. The Mac app joins it in publish-macos.
   publish:
-    needs: [version, windows, linux, macos]
+    needs: [version, windows, linux]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -218,6 +221,30 @@ jobs:
             --verify-tag
       # The site caches the latest release for an hour; this makes it link the new one at once.
       # Skipped until SITE_REVALIDATE_SECRET is set (the same value as REVALIDATE_SECRET on Vercel).
+      - name: Refresh the website
+        env:
+          SECRET: ${{ secrets.SITE_REVALIDATE_SECRET }}
+        run: |
+          [ -n "$SECRET" ] || { echo "SITE_REVALIDATE_SECRET is not set; the site updates within two hours"; exit 0; }
+          curl -fsS --location-trusted -X POST -H "Authorization: Bearer $SECRET" https://opencontroller.com.br/api/revalidate
+
+  # The Mac app, added to the release once it is built. When GitHub had no Mac machine and the
+  # macos job was cancelled, "Re-run failed jobs" later runs it again, and this after it.
+  publish-macos:
+    needs: [version, macos, publish]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: macos
+          path: dist
+      - name: Add the Mac app to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
       - name: Refresh the website
         env:
           SECRET: ${{ secrets.SITE_REVALIDATE_SECRET }}
