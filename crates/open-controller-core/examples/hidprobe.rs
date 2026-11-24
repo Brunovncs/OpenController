@@ -26,16 +26,23 @@ fn enumerate() -> Vec<Iface> {
         let mut d = list;
         while !d.is_null() {
             let i = &*d;
-            let s = |p: *const i8| if p.is_null() { String::new() } else { CStr::from_ptr(p).to_string_lossy().into_owned() };
-            let w = |p: *const Wchar| {
+            let s = |p: *const std::ffi::c_char| if p.is_null() { String::new() } else { CStr::from_ptr(p).to_string_lossy().into_owned() };
+            // wchar_t is UTF-16 on Windows and UTF-32 elsewhere.
+            let w = |p: *const sdl3_sys::ffi::c_wchar_t| {
                 if p.is_null() {
                     return String::new();
                 }
+                let mut units = Vec::new();
                 let mut n = 0;
                 while *p.add(n) != 0 {
+                    units.push(*p.add(n) as u32);
                     n += 1;
                 }
-                String::from_utf16_lossy(std::slice::from_raw_parts(p, n))
+                if size_of::<sdl3_sys::ffi::c_wchar_t>() == 2 {
+                    String::from_utf16_lossy(&units.iter().map(|&u| u as u16).collect::<Vec<_>>())
+                } else {
+                    units.into_iter().map(|u| char::from_u32(u).unwrap_or('?')).collect()
+                }
             };
             out.push(Iface {
                 path: s(i.path),
@@ -43,7 +50,7 @@ fn enumerate() -> Vec<Iface> {
                 product: i.product_id,
                 number: i.interface_number,
                 page: i.usage_page,
-                name: w(i.product_string as *const Wchar),
+                name: w(i.product_string),
             });
             d = i.next;
         }
@@ -51,8 +58,6 @@ fn enumerate() -> Vec<Iface> {
     }
     out
 }
-
-type Wchar = u16;
 
 struct Watched {
     label: String,
